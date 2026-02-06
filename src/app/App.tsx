@@ -6,10 +6,14 @@ import { TlpPanel } from './components/TlpPanel';
 import { VacancyManagement } from './components/VacancyManagement';
 import { Requisitions } from './components/Requisitions';
 import { DatabaseDemo } from './components/DatabaseDemo';
+import { Oris } from './components/Oris';
+import { Login } from './components/Login';
 import { ThemeProvider } from './components/ThemeProvider';
 import { SidebarProvider, useSidebar } from './components/SidebarContext';
+import { useAuth } from './hooks/useAuth';
 
 function AppContent() {
+  const { isAuthenticated } = useAuth();
   const [currentView, setCurrentView] = useState('dashboard');
   const { isCollapsed } = useSidebar();
 
@@ -25,10 +29,16 @@ function AppContent() {
         return <Requisitions />;
       case 'database':
         return <DatabaseDemo />;
+      case 'oris':
+        return <Oris />;
       default:
         return <Dashboard />;
     }
   };
+
+  if (!isAuthenticated) {
+    return <Login onLoginSuccess={() => setCurrentView('dashboard')} />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950">
@@ -38,25 +48,11 @@ function AppContent() {
       {/* Main Content */}
       <div className={`transition-all duration-300 ${isCollapsed ? 'ml-20' : 'ml-64'}`}>
         <Header />
-        
+
         {/* Content Area */}
         <main className="pt-16 p-6">
-          {/* Database Demo Banner */}
-          <div className="mb-6 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg p-4 shadow-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold">🎉 Sistema conectado ao Supabase!</h2>
-                <p className="text-sm opacity-90">Clique no botão para ver a demonstração da integração com banco de dados</p>
-              </div>
-              <button
-                onClick={() => setCurrentView('database')}
-                className="px-4 py-2 bg-white text-blue-600 rounded-lg hover:bg-blue-50 transition-colors font-medium"
-              >
-                Ver Demo
-              </button>
-            </div>
-          </div>
-          
+
+
           {renderView()}
         </main>
       </div>

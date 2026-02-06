@@ -1,16 +1,23 @@
 import { useState, useEffect } from 'react';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
-
-const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-068aaf90`;
+import { supabase } from '@/lib/supabase';
 
 interface FetchOptions extends RequestInit {
   method?: string;
   body?: any;
 }
 
+// Fallback para Edge Function se necessário
 async function fetchAPI(endpoint: string, options: FetchOptions = {}) {
+  const projectId = import.meta.env.VITE_SUPABASE_URL?.split('https://')[1]?.split('.')[0];
+  const publicAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  if (!projectId || !publicAnonKey) {
+    throw new Error('Supabase credentials not configured');
+  }
+
+  const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-068aaf90`;
   const url = `${API_URL}${endpoint}`;
-  
+
   const config: RequestInit = {
     ...options,
     headers: {
@@ -26,12 +33,12 @@ async function fetchAPI(endpoint: string, options: FetchOptions = {}) {
 
   try {
     const response = await fetch(url, config);
-    
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Request failed' }));
       throw new Error(error.error || `HTTP ${response.status}`);
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error(`API Error [${endpoint}]:`, error);

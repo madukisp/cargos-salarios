@@ -1,9 +1,15 @@
-import { Users, Briefcase, TrendingUp, AlertCircle, Calendar, Clock } from 'lucide-react';
+import { Users, Briefcase, TrendingUp, AlertCircle, Calendar, Clock, Filter } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { StatCard } from './StatCard';
 import { StatusBadge } from './StatusBadge';
+import { useFuncionariosAtivosFiltered } from '../hooks/useDatabase';
+import { useFantasiaFilter, useFuncionariosFiltered } from '../hooks/useFantasiaFilter';
 
 export function Dashboard() {
+  const { fantasias, selectedFantasia, setSelectedFantasia, loading: loadingFantasias } = useFantasiaFilter();
+  const { count: funcionariosAtivos, loading: loadingAtivos } = useFuncionariosAtivosFiltered(selectedFantasia);
+  const { data: funcionariosFiltered, loading: loadingFiltered } = useFuncionariosFiltered(selectedFantasia);
+
   const stats = [
     {
       title: 'Total TLP',
@@ -14,7 +20,7 @@ export function Dashboard() {
     },
     {
       title: 'Funcionários Ativos',
-      value: '1.198',
+      value: loadingAtivos ? '...' : String(funcionariosAtivos),
       icon: Users,
       iconBg: 'bg-green-100',
       iconColor: 'text-green-600',
@@ -62,9 +68,29 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Dashboard</h1>
-        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Visão geral do quadro de funcionários</p>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Dashboard</h1>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Visão geral do quadro de funcionários</p>
+        </div>
+
+        {/* Contrato Filter */}
+        <div className="flex items-center gap-3">
+          <Filter className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+          <select
+            value={selectedFantasia}
+            onChange={(e) => setSelectedFantasia(e.target.value)}
+            disabled={loadingFantasias}
+            className="px-4 py-2 border border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="todos">Ver Todos</option>
+            {fantasias.map((contrato) => (
+              <option key={contrato.id} value={contrato.cnpj}>
+                {contrato.display_name}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Stats Grid */}
@@ -137,6 +163,68 @@ export function Dashboard() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Funcionários Filtrados */}
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700">
+        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+            Funcionários {selectedFantasia !== 'todos' && `- ${fantasias.find(c => c.cnpj === selectedFantasia)?.display_name || selectedFantasia}`}
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            {loadingFiltered ? 'Carregando...' : `Total: ${funcionariosFiltered.length} registros`}
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          {loadingFiltered ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <span className="ml-2 text-slate-600 dark:text-slate-400">Carregando funcionários...</span>
+            </div>
+          ) : funcionariosFiltered.length > 0 ? (
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 dark:bg-slate-900/50">
+                <tr>
+                  <th className="px-6 py-3 text-left font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">ID</th>
+                  <th className="px-6 py-3 text-left font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Nome</th>
+                  <th className="px-6 py-3 text-left font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Cargo</th>
+                  <th className="px-6 py-3 text-left font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Unidade</th>
+                  <th className="px-6 py-3 text-left font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Situação</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
+                {funcionariosFiltered.slice(0, 20).map((func: any, index) => (
+                  <tr key={index} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300">{func.id || '-'}</td>
+                    <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-100">{func.nome || '-'}</td>
+                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300">{func.cargo || '-'}</td>
+                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300">{func.nome_fantasia || '-'}</td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                        func.situacao === '01-ATIVO'
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : 'bg-gray-100 dark:bg-gray-900/30 text-gray-700 dark:text-gray-400'
+                      }`}>
+                        {func.situacao || '-'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="flex items-center justify-center py-8">
+              <p className="text-slate-600 dark:text-slate-400">Nenhum funcionário encontrado para esta unidade.</p>
+            </div>
+          )}
+        </div>
+        {funcionariosFiltered.length > 20 && (
+          <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Mostrando 20 de {funcionariosFiltered.length} registros
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Recent Vacancies */}

@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Briefcase, FileText, Settings, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Users, Briefcase, FileText, Settings, Building2, ChevronLeft, ChevronRight, Table } from 'lucide-react';
 import { useSidebar } from './SidebarContext';
 
 interface SidebarProps {
@@ -14,6 +14,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
     { id: 'tlp-panel', label: 'TLP vs Ativos', icon: Users },
     { id: 'vacancies', label: 'Gestão de Vagas', icon: Briefcase },
     { id: 'requisitions', label: 'Requisições', icon: FileText },
+    { id: 'oris', label: 'Oris', icon: Table },
   ];
 
   return (
