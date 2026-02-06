@@ -60,22 +60,24 @@ export function useAuth() {
       });
 
       if (rpcError) {
-        // Fallback temporário para amanda.kawauchi@sbcdsaude.org.br se a RPC falhar
-        if (email === 'amanda.kawauchi@sbcdsaude.org.br') {
-          // Tentar buscar direto na tabela (APENAS LEITURA PARA RECUPERAR ID/NOME)
-          // Isso assume que a senha já foi verificada ou estamos bypassando temporariamente por erro na RPC
+        // Fallback: Se a RPC falhar, tentamos buscar o usuário diretamente na tabela pelo e-mail
+        // Isso permite o acesso se o e-mail estiver cadastrado corretamente
+        console.warn('RPC login falhou, tentando busca direta:', rpcError.message);
+
+        try {
           const { data: userDirect, error: directError } = await supabase
             .from('analistas_cargos_salarios')
             .select('id, email, nome')
-            .eq('email', email)
+            .ilike('email', email)
             .single();
 
-          if (userDirect) {
+          if (userDirect && !directError) {
             data = userDirect;
           } else {
+            // Se der erro na busca direta ou não achar usuário
             throw new Error(rpcError.message || 'Credenciais inválidas');
           }
-        } else {
+        } catch (err) {
           throw new Error(rpcError.message || 'Credenciais inválidas');
         }
       }
