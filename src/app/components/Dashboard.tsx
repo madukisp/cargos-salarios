@@ -63,8 +63,8 @@ export function Dashboard() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
-        <p className="text-sm text-slate-600 mt-1">Visão geral do quadro de funcionários</p>
+        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Dashboard</h1>
+        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Visão geral do quadro de funcionários</p>
       </div>
 
       {/* Stats Grid */}
@@ -77,11 +77,11 @@ export function Dashboard() {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Bar Chart */}
-        <div className="lg:col-span-2 bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-          <h2 className="text-lg font-semibold text-slate-900 mb-4">Saldo por Unidade</h2>
+        <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">Saldo por Unidade</h2>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={unitData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" className="dark:stroke-slate-700" />
               <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 12 }} />
               <YAxis tick={{ fill: '#64748b', fontSize: 12 }} />
               <Tooltip 
@@ -99,8 +99,8 @@ export function Dashboard() {
         </div>
 
         {/* Pie Chart */}
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-          <h2 className="text-lg font-semibold text-slate-900 mb-4">Status das Vagas</h2>
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">Status das Vagas</h2>
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie
@@ -130,9 +130,9 @@ export function Dashboard() {
               <div key={index} className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></div>
-                  <span className="text-slate-700">{item.name}</span>
+                  <span className="text-slate-700 dark:text-slate-300">{item.name}</span>
                 </div>
-                <span className="font-medium text-slate-900">{item.value}</span>
+                <span className="font-medium text-slate-900 dark:text-slate-100">{item.value}</span>
               </div>
             ))}
           </div>
@@ -140,31 +140,31 @@ export function Dashboard() {
       </div>
 
       {/* Recent Vacancies */}
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200">
-        <div className="px-6 py-4 border-b border-slate-200">
-          <h2 className="text-lg font-semibold text-slate-900">Vagas Recentes</h2>
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700">
+        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Vagas Recentes</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-slate-50">
+            <thead className="bg-slate-50 dark:bg-slate-900/50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Cargo</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Unidade</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Motivo</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Dias em Aberto</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Cargo</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Unidade</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Motivo</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Dias em Aberto</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Status</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-slate-200">
+            <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
               {recentVacancies.map((vacancy, index) => (
-                <tr key={index} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4 text-sm font-medium text-slate-900">{vacancy.cargo}</td>
-                  <td className="px-6 py-4 text-sm text-slate-700">{vacancy.unidade}</td>
-                  <td className="px-6 py-4 text-sm text-slate-700">{vacancy.motivo}</td>
+                <tr key={index} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                  <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-slate-100">{vacancy.cargo}</td>
+                  <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300">{vacancy.unidade}</td>
+                  <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300">{vacancy.motivo}</td>
                   <td className="px-6 py-4 text-sm">
-                    <div className="flex items-center gap-1 text-slate-700">
+                    <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300">
                       <Clock className="w-4 h-4" />
-                      <span className={vacancy.dias > 20 ? 'text-red-600 font-medium' : ''}>{vacancy.dias} dias</span>
+                      <span className={vacancy.dias > 20 ? 'text-red-600 dark:text-red-400 font-medium' : ''}>{vacancy.dias} dias</span>
                     </div>
                   </td>
                   <td className="px-6 py-4">
