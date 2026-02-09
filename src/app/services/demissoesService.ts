@@ -1,0 +1,335 @@
+import { supabase } from '@/lib/supabase';
+
+export interface EventoDemissao {
+  id_evento: number;
+  nome: string;
+  cargo: string;
+  cnpj: string;
+  data_evento: string;
+  status_evento: 'PENDENTE' | 'RESPONDIDO';
+  dias_em_aberto: number;
+  situacao_origem: string;
+  lotacao: string;
+  tipo_rescisao?: string;
+}
+
+export interface RespostaGestor {
+  id_resposta?: number;
+  id_evento: number;
+  tipo_origem: 'DEMISSAO' | 'AFASTAMENTO';
+  abriu_vaga: boolean | null;
+  data_abertura_vaga: string | null;
+  vaga_preenchida: 'SIM' | 'NAO' | null;
+  id_substituto: number | null;
+  observacao: string | null;
+  data_resposta?: string;
+  pendente_efetivacao?: boolean | null;
+  nome_candidato?: string | null;
+}
+
+export async function carregarDemissoes(
+  lotacao?: string,
+  status: 'PENDENTE' | 'RESPONDIDO' = 'PENDENTE',
+  cnpj?: string
+): Promise<EventoDemissao[]> {
+  try {
+    console.log('[carregarDemissoes] Iniciando com status:', status, 'lotacao:', lotacao);
+
+    let query = supabase
+      .from('eventos_gestao_vagas_public')
+      .select('id_evento,nome,cargo,cnpj,data_evento,status_evento,dias_em_aberto,situacao_origem,lotacao')
+      .eq('status_evento', status)
+      .order('data_evento', { ascending: false })
+      .limit(500);
+
+    if (lotacao && lotacao !== 'TODAS') {
+      query = query.eq('lotacao', lotacao);
+    }
+
+    if (cnpj && cnpj !== 'todos') {
+      query = query.eq('cnpj', cnpj);
+    }
+
+    const { data, error } = await query;
+
+    console.log('[carregarDemissoes] Query error:', error, 'data length:', data?.length);
+
+    if (error) {
+      console.error('[carregarDemissoes] Erro:', error);
+      return [];
+    }
+
+    // Filtrar apenas demissões (99-Demitido)
+    const demissoes = ((data || []) as any[]).filter(
+      (d) => d.situacao_origem === '99-Demitido'
+    );
+
+    // Buscar tipo_rescisao na tabela oris_funcionarios
+    const nomes = demissoes.map((d: any) => d.nome).filter(Boolean);
+    let mapaRescisao: Record<string, string> = {};
+
+    if (nomes.length > 0) {
+      const { data: orisData } = await supabase
+        .from('oris_funcionarios')
+        .select('nome, tipo_rescisao')
+        .in('nome', nomes);
+
+      (orisData || []).forEach((oris: any) => {
+        mapaRescisao[oris.nome] = oris.tipo_rescisao;
+      });
+    }
+
+    // Adicionar tipo_rescisao aos resultados
+    const demissoesComRescisao = demissoes.map((d: any) => ({
+      ...d,
+      tipo_rescisao: mapaRescisao[d.nome] || null,
+    })) as EventoDemissao[];
+
+    console.log('[carregarDemissoes] Retornando', demissoesComRescisao.length, 'demissões');
+    return demissoesComRescisao;
+  } catch (error) {
+    console.error('[carregarDemissoes] Exception:', error);
+    return [];
+  }
+}
+
+export async function carregarAfastamentos(
+  lotacao?: string,
+  cnpj?: string
+): Promise<EventoDemissao[]> {
+  try {
+    console.log('[carregarAfastamentos] Iniciando');
+
+    let query = supabase
+      .from('eventos_gestao_vagas_public')
+      .select('id_evento,nome,cargo,cnpj,data_evento,status_evento,dias_em_aberto,situacao_origem,lotacao')
+      .eq('status_evento', 'PENDENTE')
+      .order('data_evento', { ascending: false })
+      .limit(500);
+
+    if (lotacao && lotacao !== 'TODAS') {
+      query = query.eq('lotacao', lotacao);
+    }
+
+    if (cnpj && cnpj !== 'todos') {
+      query = query.eq('cnpj', cnpj);
+    }
+
+    const { data, error } = await query;
+
+    console.log('[carregarAfastamentos] Query error:', error, 'data length:', data?.length);
+
+    if (error) {
+      console.error('[carregarAfastamentos] Erro:', error);
+      return [];
+    }
+
+    // Filtrar apenas afastamentos (NÃO demissões e NÃO atestados)
+    const afastamentos = ((data || []) as any[]).filter(
+      (d) =>
+        d.situacao_origem !== '99-Demitido' &&
+        d.situacao_origem !== '18-Atestado Médico' &&
+        d.situacao_origem !== '19-Atestado Odont'
+    );
+
+    // Buscar tipo_rescisao na tabela oris_funcionarios
+    const nomes = afastamentos.map((d: any) => d.nome).filter(Boolean);
+    let mapaRescisao: Record<string, string> = {};
+
+    if (nomes.length > 0) {
+      const { data: orisData } = await supabase
+        .from('oris_funcionarios')
+        .select('nome, tipo_rescisao')
+        .in('nome', nomes);
+
+      (orisData || []).forEach((oris: any) => {
+        mapaRescisao[oris.nome] = oris.tipo_rescisao;
+      });
+    }
+
+    // Adicionar tipo_rescisao aos resultados
+    const afastamentosComRescisao = afastamentos.map((d: any) => ({
+      ...d,
+      tipo_rescisao: mapaRescisao[d.nome] || null,
+    })) as EventoDemissao[];
+
+    console.log('[carregarAfastamentos] Retornando', afastamentosComRescisao.length, 'afastamentos');
+    return afastamentosComRescisao;
+  } catch (error) {
+    console.error('[carregarAfastamentos] Exception:', error);
+    return [];
+  }
+}
+
+export async function carregarRespostasLote(
+  ids_eventos: number[]
+): Promise<Record<number, RespostaGestor>> {
+  if (!ids_eventos || ids_eventos.length === 0) return {};
+
+  try {
+    const { data, error } = await supabase
+      .from('respostas_gestor')
+      .select('*')
+      .in('id_evento', ids_eventos);
+
+    if (error) {
+      console.error('Erro ao carregar respostas em lote:', error);
+      return {};
+    }
+
+    const mapa: Record<number, RespostaGestor> = {};
+    (data || []).forEach((resp: any) => {
+      mapa[resp.id_evento] = resp;
+    });
+
+    // Carregar nomes dos substitutos se houver id_substituto
+    const idsSubstitutos = (data || [])
+      .map((resp: any) => resp.id_substituto)
+      .filter((id): id is number => id !== null && id !== undefined);
+
+    if (idsSubstitutos.length > 0) {
+      const { data: substitutos } = await supabase
+        .from('oris_funcionarios')
+        .select('id, nome')
+        .in('id', idsSubstitutos);
+
+      const mapaSubstitutos: Record<number, string> = {};
+      (substitutos || []).forEach((sub: any) => {
+        mapaSubstitutos[sub.id] = sub.nome;
+      });
+
+      // Adicionar nome_substituto aos objetos de resposta
+      (data || []).forEach((resp: any) => {
+        if (resp.id_substituto && mapaSubstitutos[resp.id_substituto]) {
+          mapa[resp.id_evento].nome_candidato = mapaSubstitutos[resp.id_substituto];
+        }
+      });
+    }
+
+    return mapa;
+  } catch (error) {
+    console.error('Erro:', error);
+    return {};
+  }
+}
+
+export async function carregarRespostas(
+  id_evento: number
+): Promise<RespostaGestor | null> {
+  const result = await carregarRespostasLote([id_evento]);
+  return result[id_evento] || null;
+}
+
+export async function salvarResposta(
+  id_evento: number,
+  tipo_origem: 'DEMISSAO' | 'AFASTAMENTO',
+  dados: Partial<RespostaGestor>
+): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('respostas_gestor')
+      .upsert(
+        {
+          id_evento,
+          tipo_origem,
+          ...dados,
+          data_resposta: new Date().toISOString().split('T')[0], // Apenas a data
+        },
+        { onConflict: 'id_evento' }
+      );
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Erro ao salvar resposta:', error);
+    throw error;
+  }
+}
+
+/**
+ * Confirma a efetivação (retira o status de pendente_efetivacao)
+ */
+export async function confirmarEfetivacao(
+  id_evento: number,
+  tipo_origem: 'DEMISSAO' | 'AFASTAMENTO'
+): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('respostas_gestor')
+      .update({
+        pendente_efetivacao: false,
+        data_fechamento_vaga: new Date().toISOString().split('T')[0]
+      })
+      .match({ id_evento, tipo_origem });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Erro ao confirmar efetivação:', error);
+    throw error;
+  }
+}
+
+export async function carregarLotacoes(): Promise<string[]> {
+  try {
+    const { data, error } = await supabase
+      .from('eventos_gestao_vagas_public')
+      .select('lotacao')
+      .order('lotacao')
+      .limit(500);
+
+    if (error) {
+      console.error('[carregarLotacoes] Erro:', error);
+      return ['TODAS'];
+    }
+
+    const lotacoes = new Set(['TODAS']);
+    (data || []).forEach((item: any) => {
+      if (item?.lotacao) lotacoes.add(item.lotacao);
+    });
+
+    console.log('[carregarLotacoes] Retornando', lotacoes.size, 'lotações');
+    return Array.from(lotacoes).sort();
+  } catch (error) {
+    console.error('[carregarLotacoes] Exception:', error);
+    return ['TODAS'];
+  }
+}
+
+export async function buscarFuncionarioPorCpf(cpf: string): Promise<any | null> {
+  if (!cpf) return null;
+  try {
+    const { data, error } = await supabase
+      .from('oris_funcionarios')
+      .select('*')
+      .eq('cpf', cpf)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erro ao buscar funcionário por CPF:', error);
+      return null;
+    }
+    return data;
+  } catch (error) {
+    console.error('Erro:', error);
+    return null;
+  }
+}
+
+export async function buscarFuncionarioPorNome(nome: string): Promise<any | null> {
+  if (!nome) return null;
+  try {
+    const { data, error } = await supabase
+      .from('oris_funcionarios')
+      .select('*')
+      .ilike('nome', nome)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erro ao buscar funcionário por nome:', error);
+      return null;
+    }
+    return data;
+  } catch (error) {
+    console.error('Erro:', error);
+    return null;
+  }
+}

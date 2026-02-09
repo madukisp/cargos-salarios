@@ -18,7 +18,7 @@ export const VISIBLE_COLUMNS: ColumnConfig[] = [
   { field: 'id', label: 'ID', visible: true },
   { field: 'nome', label: 'Nome', visible: true },
   { field: 'cpf', label: 'CPF', visible: true },
-  { field: 'nascimento', label: 'Data Nascimento', visible: true },
+  { field: 'dt_nascimento', label: 'Data Nascimento', visible: true },
   { field: 'sexo', label: 'Sexo', visible: true },
 
   // Cargo e Função
@@ -34,9 +34,9 @@ export const VISIBLE_COLUMNS: ColumnConfig[] = [
   { field: 'nome_fantasia', label: 'Fantasia', visible: true },
 
   // Lotação e Centro de Custo
-  { field: 'lotacao', label: 'Lotação', visible: true },
+  { field: 'local_de_trabalho', label: 'Lotação', visible: true },
   { field: 'centro_custo', label: 'Centro Custo', visible: true },
-  { field: 'local_trabalho', label: 'Local Trabalho', visible: true },
+  { field: 'unidade', label: 'Unidade', visible: false }, // Caso exista em alguma view
 
   // Escala e Carga Horária
   { field: 'escala', label: 'Escala', visible: true },
@@ -44,15 +44,14 @@ export const VISIBLE_COLUMNS: ColumnConfig[] = [
   { field: 'carga_horaria_semanal', label: 'Carga Horária Semanal', visible: true },
 
   // Datas Importantes
-  { field: 'admissao', label: 'Admissão', visible: true },
-  { field: 'data_rescisao', label: 'Data Rescisão', visible: true },
-  { field: 'situacao_atual', label: 'Situação Atual', visible: true },
-  { field: 'data_inicio_situacao', label: 'Início Situação', visible: true },
-  { field: 'data_inicio_cargo', label: 'Início Cargo', visible: true },
-  { field: 'data_inicio_centro_custo', label: 'Início Centro Custo', visible: true },
-  { field: 'data_inicio_escala', label: 'Início Escala', visible: true },
-  { field: 'data_inicio_lotacao', label: 'Início Lotação', visible: true },
+  { field: 'dt_admissao', label: 'Admissão', visible: true },
+  { field: 'dt_rescisao', label: 'Data Rescisão', visible: true },
   { field: 'situacao', label: 'Situação', visible: true },
+  { field: 'dt_inicio_situacao', label: 'Início Situação', visible: true },
+  { field: 'dt_inicio_cargo', label: 'Início Cargo', visible: true },
+  { field: 'dt_inicio_centro_custo', label: 'Início Centro Custo', visible: true },
+  { field: 'dt_inicio_escala', label: 'Início Escala', visible: true },
+  { field: 'dt_inicio_lotacao', label: 'Início Lotação', visible: true },
 
   // Informações Especiais
   { field: 'pcd', label: 'PCD', visible: true },

@@ -36,51 +36,30 @@ export function FuncionarioProfile({ funcionario, onClose }: FuncionarioProfileP
   };
 
   const infoSections = [
-    {
-      title: 'Informações Pessoais',
-      items: [
-        { label: 'CPF', value: getFormattedValue('cpf', funcionario.cpf), icon: User },
-        { label: 'Data de Nascimento', value: getFormattedValue('nascimento', funcionario.nascimento), icon: Calendar },
-        { label: 'Sexo', value: getFormattedValue('sexo', funcionario.sexo), icon: User },
-        { label: 'Estado Civil', value: getFormattedValue('estado_civil', funcionario.estado_civil), icon: User },
-        { label: 'Naturalidade', value: getFormattedValue('naturalidade', funcionario.naturalidade), icon: MapPin },
-      ],
-    },
-    {
-      title: 'Contato',
-      items: [
-        { label: 'Email Corporativo', value: getFormattedValue('email', funcionario.email), icon: Mail },
-        { label: 'Celular', value: getFormattedValue('celular', funcionario.celular), icon: Phone },
-        { label: 'Email Pessoal', value: getFormattedValue('email_pessoal', funcionario.email_pessoal), icon: Mail },
-        { label: 'Telefone Residencial', value: getFormattedValue('telefone_residencial', funcionario.telefone_residencial), icon: Phone },
-      ],
-    },
+
     {
       title: 'Informações Profissionais',
       items: [
         { label: 'Cargo', value: getFormattedValue('cargo', funcionario.cargo), icon: Briefcase },
-        { label: 'Função', value: getFormattedValue('funcao', funcionario.funcao), icon: Briefcase },
-        { label: 'CBO', value: getFormattedValue('cbo', funcionario.cbo), icon: Briefcase },
         { label: 'Tipo de Funcionário', value: getFormattedValue('tipo_funcionario', funcionario.tipo_funcionario), icon: User },
-      ],
-    },
-    {
-      title: 'Lotação e Centro de Custo',
-      items: [
-        { label: 'Empresa', value: getFormattedValue('empresa', funcionario.empresa), icon: Building2 },
-        { label: 'Fantasia', value: getFormattedValue('nome_fantasia', funcionario.nome_fantasia), icon: Building2 },
-        { label: 'Lotação', value: getFormattedValue('lotacao', funcionario.lotacao), icon: MapPin },
-        { label: 'Local de Trabalho', value: getFormattedValue('local_trabalho', funcionario.local_trabalho), icon: MapPin },
+        { label: 'Nome Fantasia', value: getFormattedValue('nome_fantasia', funcionario.nome_fantasia), icon: Briefcase },
         { label: 'Centro de Custo', value: getFormattedValue('centro_custo', funcionario.centro_custo), icon: Briefcase },
       ],
     },
     {
       title: 'Datas Importantes',
       items: [
-        { label: 'Admissão', value: getFormattedValue('admissao', funcionario.admissao), icon: Calendar },
         { label: 'Situação', value: getFormattedValue('situacao', funcionario.situacao), icon: User },
-        { label: 'Data da Situação', value: getFormattedValue('data_inicio_situacao', funcionario.data_inicio_situacao), icon: Calendar },
-        { label: 'Data de Rescisão', value: getFormattedValue('data_rescisao', funcionario.data_rescisao), icon: Calendar },
+        { label: 'Admissão', value: getFormattedValue('admissao', funcionario.dt_admissao), icon: Calendar },
+        { label: 'Data da Situação', value: getFormattedValue('data_inicio_situacao', funcionario.dt_inicio_situacao), icon: Calendar },
+        { label: 'Data de Rescisão', value: getFormattedValue('data_rescisao', funcionario.dt_rescisao), icon: Calendar },
+      ],
+    },
+    {
+      title: 'Informações Pessoais',
+      items: [
+        { label: 'Data de Nascimento', value: getFormattedValue('nascimento', funcionario.dt_nascimento), icon: Calendar },
+        { label: 'Sexo', value: getFormattedValue('sexo', funcionario.sexo), icon: User },
       ],
     },
   ];
@@ -123,11 +102,10 @@ export function FuncionarioProfile({ funcionario, onClose }: FuncionarioProfileP
             {/* Status Badge */}
             <div className="mb-6">
               <span
-                className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
-                  funcionario.situacao === '01-ATIVO'
+                className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${funcionario.situacao === '01-ATIVO'
                     ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
                     : 'bg-gray-100 dark:bg-gray-900/30 text-gray-700 dark:text-gray-400'
-                }`}
+                  }`}
               >
                 {funcionario.situacao}
               </span>

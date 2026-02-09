@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { Dashboard } from './components/Dashboard';
@@ -13,37 +13,25 @@ import { SidebarProvider, useSidebar } from './components/SidebarContext';
 import { useAuth } from './hooks/useAuth';
 
 function AppContent() {
-  const { isAuthenticated } = useAuth();
-  const [currentView, setCurrentView] = useState('dashboard');
+  const { isAuthenticated, loading } = useAuth();
   const { isCollapsed } = useSidebar();
 
-  const renderView = () => {
-    switch (currentView) {
-      case 'dashboard':
-        return <Dashboard />;
-      case 'tlp-panel':
-        return <TlpPanel />;
-      case 'vacancies':
-        return <VacancyManagement />;
-      case 'requisitions':
-        return <Requisitions />;
-      case 'database':
-        return <DatabaseDemo />;
-      case 'oris':
-        return <Oris />;
-      default:
-        return <Dashboard />;
-    }
-  };
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-100 dark:bg-slate-950">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
-    return <Login onLoginSuccess={() => setCurrentView('dashboard')} />;
+    return <Login onLoginSuccess={() => window.location.href = '/'} />;
   }
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950">
       {/* Sidebar */}
-      <Sidebar currentView={currentView} onViewChange={setCurrentView} />
+      <Sidebar />
 
       {/* Main Content */}
       <div className={`transition-all duration-300 ${isCollapsed ? 'ml-20' : 'ml-64'}`}>
@@ -51,9 +39,15 @@ function AppContent() {
 
         {/* Content Area */}
         <main className="pt-16 p-6">
-
-
-          {renderView()}
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/tlp" element={<TlpPanel />} />
+            <Route path="/vacancies" element={<VacancyManagement />} />
+            <Route path="/requisitions" element={<Requisitions />} />
+            <Route path="/database" element={<DatabaseDemo />} />
+            <Route path="/oris" element={<Oris />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </main>
       </div>
     </div>
@@ -64,7 +58,9 @@ export default function App() {
   return (
     <ThemeProvider>
       <SidebarProvider>
-        <AppContent />
+        <BrowserRouter>
+          <AppContent />
+        </BrowserRouter>
       </SidebarProvider>
     </ThemeProvider>
   );

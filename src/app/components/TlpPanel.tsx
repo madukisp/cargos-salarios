@@ -1,144 +1,116 @@
-import { Filter, ChevronDown, ChevronUp, Users, TrendingDown, TrendingUp } from 'lucide-react';
-import { StatusBadge, StatusType } from './StatusBadge';
-import { useState } from 'react';
-import React from 'react';
-
-interface TlpData {
-  cargo: string;
-  unidade: string;
-  tlp: number;
-  ativos: number;
-  saldo: number;
-  status: StatusType;
-  funcionarios?: { nome: string; dataAdmissao: string }[];
-}
+import { Filter, ChevronDown, ChevronUp, Users, AlertCircle, RefreshCw, ArrowUpDown } from 'lucide-react';
+import { StatusBadge } from './StatusBadge';
+import { useState, useMemo } from 'react'; // ensure useMemo is imported
+import { useTlpData } from '@/app/hooks/useTlpData';
 
 export function TlpPanel() {
+  const { data: tlpData, loading, error, updateTlp } = useTlpData();
   const [selectedUnit, setSelectedUnit] = useState('todas');
+  const [selectedCostCenter, setSelectedCostCenter] = useState('todos');
   const [selectedRole, setSelectedRole] = useState('todos');
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  const [updating, setUpdating] = useState<string | null>(null);
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
-  const tlpData: TlpData[] = [
-    {
-      cargo: 'Enfermeiro',
-      unidade: 'UPA Central',
-      tlp: 25,
-      ativos: 22,
-      saldo: -3,
-      status: 'deficit',
-      funcionarios: [
-        { nome: 'Maria Santos', dataAdmissao: '15/03/2020' },
-        { nome: 'João Oliveira', dataAdmissao: '22/08/2021' },
-        { nome: 'Ana Costa', dataAdmissao: '10/01/2022' },
-      ],
-    },
-    {
-      cargo: 'Médico Clínico',
-      unidade: 'Hospital Geral',
-      tlp: 45,
-      ativos: 42,
-      saldo: -3,
-      status: 'deficit',
-      funcionarios: [
-        { nome: 'Dr. Pedro Silva', dataAdmissao: '05/06/2019' },
-        { nome: 'Dra. Carla Mendes', dataAdmissao: '18/11/2020' },
-      ],
-    },
-    {
-      cargo: 'Técnico Enfermagem',
-      unidade: 'UBS Norte',
-      tlp: 18,
-      ativos: 20,
-      saldo: 2,
-      status: 'excedente',
-      funcionarios: [
-        { nome: 'Paula Ferreira', dataAdmissao: '20/02/2021' },
-        { nome: 'Carlos Souza', dataAdmissao: '14/07/2022' },
-      ],
-    },
-    {
-      cargo: 'Recepcionista',
-      unidade: 'Centro Especial',
-      tlp: 12,
-      ativos: 12,
-      saldo: 0,
-      status: 'completo',
-      funcionarios: [
-        { nome: 'Lucia Martins', dataAdmissao: '30/09/2020' },
-        { nome: 'Roberto Lima', dataAdmissao: '12/04/2021' },
-      ],
-    },
-    {
-      cargo: 'Auxiliar Administrativo',
-      unidade: 'Administrativo',
-      tlp: 35,
-      ativos: 30,
-      saldo: -5,
-      status: 'deficit',
-      funcionarios: [
-        { nome: 'Fernanda Alves', dataAdmissao: '08/01/2020' },
-        { nome: 'Ricardo Gomes', dataAdmissao: '25/05/2021' },
-      ],
-    },
-    {
-      cargo: 'Farmacêutico',
-      unidade: 'Hospital Geral',
-      tlp: 15,
-      ativos: 15,
-      saldo: 0,
-      status: 'completo',
-      funcionarios: [
-        { nome: 'Sandra Rodrigues', dataAdmissao: '17/03/2019' },
-        { nome: 'Marcos Pereira', dataAdmissao: '29/08/2020' },
-      ],
-    },
-    {
-      cargo: 'Fisioterapeuta',
-      unidade: 'UPA Central',
-      tlp: 10,
-      ativos: 8,
-      saldo: -2,
-      status: 'deficit',
-      funcionarios: [
-        { nome: 'Julia Nascimento', dataAdmissao: '11/06/2021' },
-        { nome: 'Felipe Santos', dataAdmissao: '03/12/2021' },
-      ],
-    },
-    {
-      cargo: 'Psicólogo',
-      unidade: 'Centro Especial',
-      tlp: 8,
-      ativos: 8,
-      saldo: 0,
-      status: 'completo',
-      funcionarios: [
-        { nome: 'Beatriz Costa', dataAdmissao: '19/04/2020' },
-        { nome: 'André Silveira', dataAdmissao: '07/09/2021' },
-      ],
-    },
-  ];
+  const units = ['todas', ...Array.from(new Set(tlpData.map(d => d.unidade))).sort()];
+  const costCenters = ['todos', ...Array.from(new Set(tlpData.map(d => d.centro_custo))).sort()];
+  const roles = ['todos', ...Array.from(new Set(tlpData.map(d => d.cargo))).sort()];
 
-  const units = ['todas', ...Array.from(new Set(tlpData.map(d => d.unidade)))];
-  const roles = ['todos', ...Array.from(new Set(tlpData.map(d => d.cargo)))];
+  const handleUpdateTlpValue = async (item: any, newValue: number) => {
+    if (newValue === item.tlp) return;
 
-  const filteredData = tlpData.filter(item => {
-    if (selectedUnit !== 'todas' && item.unidade !== selectedUnit) return false;
-    if (selectedRole !== 'todos' && item.cargo !== selectedRole) return false;
-    return true;
-  });
+    try {
+      setUpdating(`${item.centro_custo}-${item.cargo}`);
+      await updateTlp(item.id, item.cargo, item.centro_custo, newValue);
+    } catch (err) {
+      alert('Erro ao atualizar TLP');
+    } finally {
+      setUpdating(null);
+    }
+  };
 
-  const summary = filteredData.reduce(
+  const sortedData = useMemo(() => {
+    let data = tlpData.filter(item => {
+      if (selectedUnit !== 'todas' && item.unidade !== selectedUnit) return false;
+      if (selectedCostCenter !== 'todos' && item.centro_custo !== selectedCostCenter) return false;
+      if (selectedRole !== 'todos' && item.cargo !== selectedRole) return false;
+      return true;
+    });
+
+    if (sortConfig !== null) {
+      data.sort((a, b) => {
+        // @ts-ignore - dynamic sorting
+        if (a[sortConfig.key] < b[sortConfig.key]) {
+          return sortConfig.direction === 'asc' ? -1 : 1;
+        }
+        // @ts-ignore
+        if (a[sortConfig.key] > b[sortConfig.key]) {
+          return sortConfig.direction === 'asc' ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+    return data;
+  }, [tlpData, selectedUnit, selectedCostCenter, selectedRole, sortConfig]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-slate-500 dark:text-slate-400">
+        <RefreshCw className="w-10 h-10 animate-spin mb-4" />
+        <p>Carregando dados TLP...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/10 rounded-lg">
+        <AlertCircle className="w-10 h-10 mb-4" />
+        <p>Erro ao carregar dados: {error}</p>
+      </div>
+    );
+  }
+
+  const requestSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const SortIcon = ({ columnKey }: { columnKey: string }) => {
+    if (sortConfig?.key === columnKey) {
+      return sortConfig.direction === 'asc' ? <ChevronUp className="w-4 h-4 ml-1" /> : <ChevronDown className="w-4 h-4 ml-1" />;
+    }
+    return <ArrowUpDown className="w-4 h-4 ml-1 text-slate-400" />;
+  };
+
+  const renderHeader = (label: string, key: string, align: 'left' | 'center' = 'left') => (
+    <th
+      className={`px-6 py-3 text-${align} text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors select-none`}
+      onClick={() => requestSort(key)}
+    >
+      <div className={`flex items-center ${align === 'center' ? 'justify-center' : ''}`}>
+        {label}
+        <SortIcon columnKey={key} />
+      </div>
+    </th>
+  );
+
+  const totalAfastados = sortedData.reduce((acc, item) => acc + (item.afastados || 0), 0);
+  const summary = sortedData.reduce(
     (acc, item) => ({
       tlp: acc.tlp + item.tlp,
       ativos: acc.ativos + item.ativos,
-      saldo: acc.saldo + item.saldo,
+      saldo: acc.saldo + (item.ativos - item.tlp),
     }),
     { tlp: 0, ativos: 0, saldo: 0 }
   );
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header & Filters */}
       <div>
         <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">TLP vs Funcionários Ativos</h1>
         <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Comparação entre quadro necessário e quadro real</p>
@@ -151,7 +123,7 @@ export function TlpPanel() {
             <Filter className="w-5 h-5" />
             <span className="font-medium">Filtros:</span>
           </div>
-          
+
           <select
             value={selectedUnit}
             onChange={(e) => setSelectedUnit(e.target.value)}
@@ -160,6 +132,18 @@ export function TlpPanel() {
             {units.map((unit) => (
               <option key={unit} value={unit}>
                 {unit === 'todas' ? 'Todas as Unidades' : unit}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={selectedCostCenter}
+            onChange={(e) => setSelectedCostCenter(e.target.value)}
+            className="px-4 py-2 border border-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {costCenters.map((cc) => (
+              <option key={cc} value={cc}>
+                {cc === 'todos' ? 'Todos os Centros de Custo' : cc}
               </option>
             ))}
           </select>
@@ -200,41 +184,16 @@ export function TlpPanel() {
           </div>
         </div>
 
-        <div className={`rounded-lg border p-6 ${
-          summary.saldo < 0 
-            ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' 
-            : summary.saldo > 0 
-            ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
-            : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700'
-        }`}>
+        <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className={`text-sm mb-1 ${
-                summary.saldo < 0 
-                  ? 'text-red-700 dark:text-red-400' 
-                  : summary.saldo > 0 
-                  ? 'text-amber-700 dark:text-amber-400'
-                  : 'text-slate-700 dark:text-slate-300'
-              }`}>
-                Saldo (Filtrado)
-              </p>
-              <p className={`text-3xl font-semibold ${
-                summary.saldo < 0 
-                  ? 'text-red-900 dark:text-red-300' 
-                  : summary.saldo > 0 
-                  ? 'text-amber-900 dark:text-amber-300'
-                  : 'text-slate-900 dark:text-slate-100'
-              }`}>
-                {summary.saldo > 0 ? '+' : ''}{summary.saldo}
-              </p>
+              <p className="text-sm font-medium text-amber-700 dark:text-amber-400 mb-1">Total Afastados (Filtrado)</p>
+              <h3 className="text-2xl font-bold text-amber-900 dark:text-amber-100">{totalAfastados}</h3>
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Funcionários em licença</p>
             </div>
-            {summary.saldo < 0 ? (
-              <TrendingDown className="w-10 h-10 text-red-600 dark:text-red-400" />
-            ) : summary.saldo > 0 ? (
-              <TrendingUp className="w-10 h-10 text-amber-600 dark:text-amber-400" />
-            ) : (
-              <Users className="w-10 h-10 text-slate-600 dark:text-slate-400" />
-            )}
+            <div className="bg-amber-100 dark:bg-amber-900/40 p-3 rounded-full">
+              <AlertCircle className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+            </div>
           </div>
         </div>
       </div>
@@ -245,32 +204,62 @@ export function TlpPanel() {
           <table className="w-full">
             <thead className="bg-slate-50 dark:bg-slate-900/50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Cargo</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Unidade</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">TLP</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Ativos</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Saldo</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Status</th>
+                {renderHeader('Cargo', 'cargo')}
+                {renderHeader('Unidade', 'unidade')}
+                {renderHeader('Centro de Custo', 'centro_custo')}
+                {renderHeader('TLP', 'tlp', 'center')}
+                {renderHeader('Ativos', 'ativos', 'center')}
+                {renderHeader('Afastados', 'afastados', 'center')}
+                {renderHeader('Saldo', 'saldo', 'center')}
+                {renderHeader('Status', 'status', 'left')}
                 <th className="px-6 py-3 text-center text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Ações</th>
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
-              {filteredData.map((item, index) => {
+              {sortedData.map((item, index) => {
+                // ... rest of map functionality
+
                 const rowKey = `${item.cargo}-${item.unidade}-${index}`;
+                const isUpdating = updating === `${item.centro_custo}-${item.cargo}`;
                 return [
                   <tr key={rowKey} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                     <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-slate-100">{item.cargo}</td>
                     <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300">{item.unidade}</td>
-                    <td className="px-6 py-4 text-sm text-center font-medium text-slate-900 dark:text-slate-100">{item.tlp}</td>
-                    <td className="px-6 py-4 text-sm text-center font-medium text-slate-900 dark:text-slate-100">{item.ativos}</td>
+                    <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300">{item.centro_custo}</td>
+                    <td className="px-6 py-4 text-sm text-center font-medium text-slate-900 dark:text-slate-100">
+                      <div className="flex items-center justify-center gap-2">
+                        <input
+                          key={item.tlp}
+                          type="number"
+                          className={`w-16 text-center border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:outline-none bg-transparent ${isUpdating ? 'opacity-50' : ''}`}
+                          defaultValue={item.tlp}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.currentTarget.blur();
+                            }
+                          }}
+                          onBlur={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            if (!isNaN(val)) {
+                              handleUpdateTlpValue(item, val);
+                            } else {
+                              e.target.value = item.tlp.toString();
+                            }
+                          }}
+                          disabled={isUpdating}
+                        />
+                        {isUpdating && <RefreshCw className="w-3 h-3 animate-spin text-blue-500" />}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-center font-medium text-green-700 dark:text-green-400">{item.ativos}</td>
+                    <td className="px-6 py-4 text-sm text-center font-medium text-amber-700 dark:text-amber-400">{item.afastados}</td>
                     <td className="px-6 py-4 text-sm text-center">
-                      <span className={`font-medium ${
-                        item.saldo < 0 ? 'text-red-600 dark:text-red-400' : item.saldo > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'
-                      }`}>
+                      <span className={`font-medium ${item.saldo < 0 ? 'text-red-600 dark:text-red-400' : item.saldo > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-600 dark:text-slate-400'
+                        }`}>
                         {item.saldo > 0 ? '+' : ''}{item.saldo}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 text-center">
                       <StatusBadge status={item.status} />
                     </td>
                     <td className="px-6 py-4 text-center">
@@ -286,7 +275,7 @@ export function TlpPanel() {
                         ) : (
                           <>
                             <ChevronDown className="w-4 h-4" />
-                            Ver Funcionários
+                            Ver
                           </>
                         )}
                       </button>
@@ -294,17 +283,57 @@ export function TlpPanel() {
                   </tr>,
                   expandedRow === index && item.funcionarios ? (
                     <tr key={`${rowKey}-expanded`}>
-                      <td colSpan={7} className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50">
-                        <div className="space-y-2">
-                          <h4 className="text-sm font-medium text-slate-900 dark:text-slate-100 mb-3">Funcionários Ativos:</h4>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {item.funcionarios.map((func, idx) => (
-                              <div key={idx} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
-                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{func.nome}</p>
-                                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">Admissão: {func.dataAdmissao}</p>
+                      <td colSpan={9} className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50">
+                        <div className="space-y-6">
+                          {/* Active Employees */}
+                          {item.funcionarios.filter(f => f.situacao && f.situacao.toUpperCase().includes('ATIVO')).length > 0 && (
+                            <div>
+                              <h4 className="text-sm font-medium text-green-700 dark:text-green-400 mb-3 flex items-center gap-2">
+                                <Users className="w-4 h-4" />
+                                Funcionários Ativos ({item.funcionarios.filter(f => f.situacao && f.situacao.toUpperCase().includes('ATIVO')).length})
+                              </h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {item.funcionarios
+                                  .filter(f => f.situacao && f.situacao.toUpperCase().includes('ATIVO'))
+                                  .map((func, idx) => (
+                                    <div key={idx} className="bg-white dark:bg-slate-800 border border-green-200 dark:border-green-800/30 rounded-lg p-3 shadow-sm">
+                                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate" title={func.nome}>{func.nome}</p>
+                                      <div className="flex flex-col gap-1 mt-2">
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">Admissão: {func.dataAdmissao}</p>
+                                        <span className="inline-flex px-2 py-0.5 text-[10px] font-medium rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 w-fit">
+                                          {func.situacao}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
                               </div>
-                            ))}
-                          </div>
+                            </div>
+                          )}
+
+                          {/* On Leave Employees */}
+                          {item.funcionarios.filter(f => !f.situacao || !f.situacao.toUpperCase().includes('ATIVO')).length > 0 && (
+                            <div>
+                              <h4 className="text-sm font-medium text-amber-700 dark:text-amber-400 mb-3 flex items-center gap-2">
+                                <AlertCircle className="w-4 h-4" />
+                                Funcionários Afastados ({item.funcionarios.filter(f => !f.situacao || !f.situacao.toUpperCase().includes('ATIVO')).length})
+                              </h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {item.funcionarios
+                                  .filter(f => !f.situacao || !f.situacao.toUpperCase().includes('ATIVO'))
+                                  .map((func, idx) => (
+                                    <div key={idx} className="bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800/30 rounded-lg p-3 shadow-sm">
+                                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate" title={func.nome}>{func.nome}</p>
+                                      <div className="flex flex-col gap-1 mt-2">
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">Admissão: {func.dataAdmissao}</p>
+                                        <span className="inline-flex px-2 py-0.5 text-[10px] font-medium rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 w-fit">
+                                          {func.situacao || 'Situação Desconhecida'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -314,7 +343,7 @@ export function TlpPanel() {
             </tbody>
           </table>
         </div>
-      </div>
-    </div>
+      </div >
+    </div >
   );
 }

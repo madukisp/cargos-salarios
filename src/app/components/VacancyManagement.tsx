@@ -1,115 +1,247 @@
-import { Filter, Search, Eye, Edit, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
-import { StatusBadge, StatusType } from './StatusBadge';
-import { useState } from 'react';
+import { Search, ChevronDown, ChevronUp, CheckCircle, Clock, AlertTriangle, Loader2, Users, Calendar, AlertCircle, TrendingUp, UserX, UserCheck } from 'lucide-react';
+import { Badge } from './ui/badge';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { Card, CardContent } from './ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from './ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Checkbox } from './ui/checkbox';
+import { RadioGroup, RadioGroupItem } from './ui/radio-group';
+import { useGestaoVagas } from '@/app/hooks/useGestaoVagas';
+import { useFantasiaFilter } from '@/app/hooks/useFantasiaFilter';
+import { buscarFuncionarioPorCpf, buscarFuncionarioPorNome } from '@/app/services/demissoesService';
+import { FuncionarioProfile } from './FuncionarioProfile';
+import { useTlpData } from '@/app/hooks/useTlpData';
+import { StatusBadge } from './StatusBadge';
+import { formatarData } from '@/lib/column-formatters';
 
-interface Vacancy {
-  id: string;
-  cargo: string;
-  unidade: string;
-  motivo: string;
-  analista: string;
-  status: StatusType;
-  diasAberto: number;
-  dataAbertura: string;
+const FILTROS_STORAGE_KEY = 'vacancy_management_filtros';
+
+const CONTRATOS_SP = [
+  'SBCD - PAI ZN',
+  'SBCD - CORPORATIVO',
+  'SBCD - AME CRI ZN',
+  'SBCD - REDE ASSIST. NORTE-SP'
+];
+
+interface FiltrosSalvos {
+  abaSelecionada?: string;
+  lotacao?: string;
+  ordenacao?: string;
+  busca?: string;
+  mostrarMedicos?: boolean;
+  apenasContratosSP?: boolean;
 }
 
+const carregarFiltros = (): FiltrosSalvos | null => {
+  try {
+    const saved = localStorage.getItem(FILTROS_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+};
+
+const salvarFiltros = (filtros: FiltrosSalvos) => {
+  try {
+    localStorage.setItem(FILTROS_STORAGE_KEY, JSON.stringify(filtros));
+  } catch {
+    // Ignora erro
+  }
+};
+
 export function VacancyManagement() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('todos');
+  // Hook Supabase
+  const {
+    demissoesPendentes,
+    demissoesRespondidas,
+    vagasPendentesEfetivacao,
+    afastamentosPendentes,
+    respostas,
+    lotacoes: lotacoesFromHook,
+    loading,
+    error,
+    carregarDados,
+    responder,
+    efetivar,
+  } = useGestaoVagas();
 
-  const vacancies: Vacancy[] = [
-    {
-      id: 'V001',
-      cargo: 'Enfermeiro',
-      unidade: 'UPA Central',
-      motivo: 'Demissão',
-      analista: 'Ana Silva',
-      status: 'aberto',
-      diasAberto: 15,
-      dataAbertura: '20/01/2026',
-    },
-    {
-      id: 'V002',
-      cargo: 'Médico Clínico',
-      unidade: 'Hospital Geral',
-      motivo: 'Afastamento',
-      analista: 'Carlos Mendes',
-      status: 'em-processo',
-      diasAberto: 8,
-      dataAbertura: '27/01/2026',
-    },
-    {
-      id: 'V003',
-      cargo: 'Técnico Enfermagem',
-      unidade: 'UBS Norte',
-      motivo: 'Demissão',
-      analista: 'Ana Silva',
-      status: 'aberto',
-      diasAberto: 22,
-      dataAbertura: '13/01/2026',
-    },
-    {
-      id: 'V004',
-      cargo: 'Recepcionista',
-      unidade: 'Centro Especial',
-      motivo: 'Requisição',
-      analista: 'Paula Souza',
-      status: 'em-processo',
-      diasAberto: 5,
-      dataAbertura: '30/01/2026',
-    },
-    {
-      id: 'V005',
-      cargo: 'Auxiliar Administrativo',
-      unidade: 'Administrativo',
-      motivo: 'Demissão',
-      analista: 'Carlos Mendes',
-      status: 'aberto',
-      diasAberto: 31,
-      dataAbertura: '05/01/2026',
-    },
-    {
-      id: 'V006',
-      cargo: 'Farmacêutico',
-      unidade: 'Hospital Geral',
-      motivo: 'Aposentadoria',
-      analista: 'Ana Silva',
-      status: 'preenchido',
-      diasAberto: 45,
-      dataAbertura: '20/12/2025',
-    },
-    {
-      id: 'V007',
-      cargo: 'Fisioterapeuta',
-      unidade: 'UPA Central',
-      motivo: 'Demissão',
-      analista: 'Paula Souza',
-      status: 'em-processo',
-      diasAberto: 12,
-      dataAbertura: '23/01/2026',
-    },
-    {
-      id: 'V008',
-      cargo: 'Psicólogo',
-      unidade: 'Centro Especial',
-      motivo: 'Afastamento',
-      analista: 'Carlos Mendes',
-      status: 'aberto',
-      diasAberto: 18,
-      dataAbertura: '17/01/2026',
-    },
+  const { data: tlpData, updateTlp } = useTlpData();
+  const [updatingTlp, setUpdatingTlp] = useState<string | null>(null);
+
+  const {
+    fantasias,
+    selectedFantasia,
+    setSelectedFantasia,
+  } = useFantasiaFilter();
+
+  // Filtros salvos
+  const filtrosSalvos = useMemo(() => carregarFiltros(), []);
+
+  // Estados
+  const [abaSelecionada, setAbaSelecionada] = useState<string>(
+    filtrosSalvos?.abaSelecionada ?? 'pendentes'
+  );
+  const [lotacao, setLotacao] = useState<string>(filtrosSalvos?.lotacao ?? 'TODAS');
+  const [ordenacao, setOrdenacao] = useState<string>(
+    filtrosSalvos?.ordenacao ?? 'data_evento.desc'
+  );
+  const [busca, setBusca] = useState<string>(filtrosSalvos?.busca ?? '');
+  const [mostrarMedicos, setMostrarMedicos] = useState<boolean>(
+    filtrosSalvos?.mostrarMedicos ?? true
+  );
+  const [apenasContratosSP, setApenasContratosSP] = useState<boolean>(
+    filtrosSalvos?.apenasContratosSP ?? false
+  );
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [respondendo, setRespondendo] = useState<{ [key: number]: boolean }>({});
+  const [formData, setFormData] = useState<{ [key: number]: any }>({});
+
+  // Perfil do Colaborador
+  const [selectedProfileFunc, setSelectedProfileFunc] = useState<any | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+
+  // Filtros de tempo
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 5 }, (_, i) => String(currentYear - i));
+  const months = [
+    { value: '1', label: 'Janeiro' }, { value: '2', label: 'Fevereiro' },
+    { value: '3', label: 'Março' }, { value: '4', label: 'Abril' },
+    { value: '5', label: 'Maio' }, { value: '6', label: 'Junho' },
+    { value: '7', label: 'Julho' }, { value: '8', label: 'Agosto' },
+    { value: '9', label: 'Setembro' }, { value: '10', label: 'Outubro' },
+    { value: '11', label: 'Novembro' }, { value: '12', label: 'Dezembro' },
   ];
+  const [selectedYear, setSelectedYear] = useState<string>('TODOS');
+  const [selectedMonth, setSelectedMonth] = useState<string>('TODOS');
 
-  const filteredVacancies = vacancies.filter(vacancy => {
-    const matchesSearch = 
-      vacancy.cargo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      vacancy.unidade.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      vacancy.analista.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = statusFilter === 'todos' || vacancy.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
-  });
+  // Inicializar o formData com respostas existentes
+  useEffect(() => {
+    const newFormData = { ...formData };
+    let changed = false;
+    Object.keys(respostas).forEach(id => {
+      const idNum = Number(id);
+      if (!newFormData[idNum]) {
+        newFormData[idNum] = { ...respostas[idNum] };
+        changed = true;
+      }
+    });
+    if (changed) setFormData(newFormData);
+  }, [respostas]);
+
+  // Função auxiliar para atualizar formData com segurança
+  const updateFormDataMap = (idEvento: number, updates: any) => {
+    setFormData((prev) => ({
+      ...prev,
+      [idEvento]: { ...(prev[idEvento] || {}), ...updates },
+    }));
+  };
+
+  // Salvar filtros
+  useEffect(() => {
+    salvarFiltros({
+      abaSelecionada,
+      lotacao,
+      ordenacao,
+      busca,
+      mostrarMedicos,
+      apenasContratosSP,
+    });
+  }, [abaSelecionada, lotacao, ordenacao, busca, mostrarMedicos, apenasContratosSP]);
+
+  // Usar lotações do hook quando carregarem
+  const lotacoes = lotacoesFromHook;
+
+  // Aplicar filtro de data
+  const applyDateFilter = useCallback((data: any[]) => {
+    if (selectedYear === 'TODOS' && selectedMonth === 'TODOS') {
+      return data;
+    }
+
+    return data.filter((item) => {
+      if (!item.data_evento) return false;
+
+      const eventDate = new Date(item.data_evento);
+      const year = String(eventDate.getFullYear());
+      const month = String(eventDate.getMonth() + 1);
+
+      const matchYear = selectedYear === 'TODOS' || year === selectedYear;
+      const matchMonth = selectedMonth === 'TODOS' || month === selectedMonth;
+
+      return matchYear && matchMonth;
+    });
+  }, [selectedYear, selectedMonth]);
+
+  // Filtrar dados
+  const filtrarVagas = useCallback(
+    (vagas: any[], tlpData: any[] | null, fantasias: any[] | null) => {
+      if (!vagas || !Array.isArray(vagas)) return [];
+      return vagas.filter((vaga) => {
+        if (!vaga) return false;
+        const matchLotacao = lotacao === 'TODAS' || vaga.lotacao === lotacao;
+        const matchBusca =
+          (vaga.cargo?.toLowerCase() || '').includes(busca.toLowerCase()) ||
+          (vaga.nome?.toLowerCase() || '').includes(busca.toLowerCase());
+        const matchMedicos = mostrarMedicos || !(vaga.cargo?.toLowerCase() || '').includes('médico');
+
+        // Filtrar por contrato selecionado
+        const matchContrato = selectedFantasia === 'todos' || vaga.cnpj === selectedFantasia;
+
+        // Replicar a lógica de nomeContrato aqui
+        let nomeContratoAtual: string | null = null;
+        const tlpEntry = tlpData?.find(t =>
+          t.cargo.toLowerCase().trim() === vaga.cargo?.toLowerCase().trim() &&
+          (t.centro_custo.toLowerCase().trim() === vaga.lotacao?.toLowerCase().trim() ||
+            t.unidade.toLowerCase().trim() === vaga.lotacao?.toLowerCase().trim())
+        );
+
+        if (tlpEntry?.unidade) {
+          nomeContratoAtual = tlpEntry.unidade;
+        } else if (vaga.cnpj && fantasias) {
+          const f = (fantasias as any[]).find(item => item.cnpj === vaga.cnpj);
+          if (f) nomeContratoAtual = f.display_name || f.nome_fantasia;
+        }
+
+        const matchContratosSP = apenasContratosSP
+          ? (nomeContratoAtual && CONTRATOS_SP.includes(nomeContratoAtual)) || false
+          : true;
+
+        return matchLotacao && matchBusca && matchMedicos && matchContrato && matchContratosSP;
+      });
+    },
+    [lotacao, busca, mostrarMedicos, apenasContratosSP, selectedFantasia, CONTRATOS_SP, tlpData, fantasias]
+  );
+
+  // Ordenação genérica
+  const ordenarVagas = useCallback((data: any[]) => {
+    if (ordenacao === 'data_evento.desc') {
+      data.sort((a, b) => new Date(b.data_evento).getTime() - new Date(a.data_evento).getTime());
+    } else if (ordenacao === 'data_evento.asc') {
+      data.sort((a, b) => new Date(a.data_evento).getTime() - new Date(b.data_evento).getTime());
+    } else if (ordenacao === 'cargo.asc') {
+      data.sort((a, b) => (a.cargo || '').localeCompare(b.cargo || ''));
+    } else if (ordenacao === 'nome.asc') {
+      data.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+    }
+    return data;
+  }, [ordenacao]);
+
+  // Dados filtrados
+  const pendentes = useMemo(() => applyDateFilter(ordenarVagas(filtrarVagas(demissoesPendentes, tlpData, fantasias))), [filtrarVagas, ordenarVagas, demissoesPendentes, tlpData, fantasias, applyDateFilter]);
+  const respondidas = useMemo(() => applyDateFilter(ordenarVagas(filtrarVagas(demissoesRespondidas, tlpData, fantasias))), [filtrarVagas, ordenarVagas, demissoesRespondidas, tlpData, fantasias, applyDateFilter]);
+  const pendentesEf = useMemo(() => applyDateFilter(ordenarVagas(filtrarVagas(vagasPendentesEfetivacao, tlpData, fantasias))), [filtrarVagas, ordenarVagas, vagasPendentesEfetivacao, tlpData, fantasias, applyDateFilter]);
+  const afastamentos = useMemo(() => applyDateFilter(ordenarVagas(filtrarVagas(afastamentosPendentes, tlpData, fantasias))), [filtrarVagas, ordenarVagas, afastamentosPendentes, tlpData, fantasias, applyDateFilter]);
+  const vagasFechadas = useMemo(() => {
+    const fechadas = respondidas.filter((vaga) => respostas[vaga.id_evento]?.vaga_preenchida === 'SIM');
+    return fechadas;
+  }, [respondidas, respostas]);
 
   const getSlaStatus = (dias: number) => {
     if (dias > 30) return { icon: AlertTriangle, color: 'text-red-600', label: 'Crítico' };
@@ -117,157 +249,753 @@ export function VacancyManagement() {
     return { icon: CheckCircle, color: 'text-green-600', label: 'Normal' };
   };
 
-  const statusOptions = [
-    { value: 'todos', label: 'Todos Status' },
-    { value: 'aberto', label: 'Aberto' },
-    { value: 'em-processo', label: 'Em Processo' },
-    { value: 'preenchido', label: 'Preenchido' },
-  ];
+  const handleResponder = async (idEvento: number, tipoOrigem: 'DEMISSAO' | 'AFASTAMENTO') => {
+    setRespondendo((prev) => ({ ...prev, [idEvento]: true }));
+    try {
+      const dados = formData[idEvento] || {};
+      await responder(idEvento, tipoOrigem, dados);
+      setExpandedId(null);
+    } catch (err) {
+      console.error('Erro ao salvar resposta:', err);
+    } finally {
+      setRespondendo((prev) => ({ ...prev, [idEvento]: false }));
+    }
+  };
+
+  const handleEfetivar = async (idEvento: number, tipo: 'DEMISSAO' | 'AFASTAMENTO') => {
+    setRespondendo((prev) => ({ ...prev, [idEvento]: true }));
+    try {
+      await efetivar(idEvento, tipo);
+      setExpandedId(null);
+    } catch (err) {
+      console.error('Erro ao efetivar:', err);
+    } finally {
+      setRespondendo((prev) => ({ ...prev, [idEvento]: false }));
+    }
+  };
+
+  const handleUpdateTlpValue = async (cargo: string, lotacao: string, id: number | undefined, newValue: number) => {
+    const key = `${cargo}-${lotacao}`;
+    try {
+      setUpdatingTlp(key);
+      await updateTlp(id, cargo, lotacao, newValue);
+    } catch (err) {
+      console.error('Erro ao atualizar TLP:', err);
+      alert('Erro ao atualizar o quadro necessário no banco.');
+    } finally {
+      setUpdatingTlp(null);
+    }
+  };
+
+  const VagaCard = ({ vaga, mostrarSubstituto = false, mostrarSituacao = false }: { vaga: any; mostrarSubstituto?: boolean; mostrarSituacao?: boolean }) => {
+    if (!vaga || !vaga.id_evento) return null;
+    const displayDiasEmAberto = vaga.dias_em_aberto > 0 ? vaga.dias_em_aberto : calculateDaysOpen(vaga.data_evento);
+    const isExpanded = expandedId === vaga.id_evento;
+    const sla = getSlaStatus(displayDiasEmAberto || 0);
+    const SlaIcon = sla.icon;
+    const tipoOrigem = vaga.situacao_origem === '99-Demitido' ? 'DEMISSAO' : 'AFASTAMENTO';
+    const isPendenteEf = abaSelecionada === 'pendentes_ef';
+    const nomeSubstituto = respostas[vaga.id_evento]?.nome_candidato || formData[vaga.id_evento]?.nome_substituto || '';
+
+    // Encontrar dados TLP correspondentes e Nome do Contrato
+    const tlpEntry = useMemo(() => {
+      if (!tlpData) return null;
+      return tlpData.find(t =>
+        t.cargo.toLowerCase().trim() === vaga.cargo?.toLowerCase().trim() &&
+        (t.centro_custo.toLowerCase().trim() === vaga.lotacao?.toLowerCase().trim() ||
+          t.unidade.toLowerCase().trim() === vaga.lotacao?.toLowerCase().trim())
+      );
+    }, [vaga.cargo, vaga.lotacao, tlpData]);
+
+    const nomeContrato = useMemo(() => {
+      // Prioridade 1: Unidade vinda da TLP (que é o nome do contrato)
+      if (tlpEntry?.unidade) return tlpEntry.unidade;
+
+      // Prioridade 2: Buscar na lista de fantasias pelo CNPJ do evento
+      if (vaga.cnpj && fantasias) {
+        const f = (fantasias as any[]).find(item => item.cnpj === vaga.cnpj);
+        if (f) return f.display_name || f.nome_fantasia;
+      }
+
+      return null;
+    }, [tlpEntry, vaga.cnpj, fantasias]);
+
+    const handleVerPerfilClicado = async (e: React.MouseEvent) => {
+      e.stopPropagation();
+
+      setLoadingProfile(true);
+      try {
+        let func = null;
+
+        // Tenta por CPF se existir
+        if ((vaga as any).cpf) {
+          func = await buscarFuncionarioPorCpf((vaga as any).cpf);
+        }
+
+        // Fallback por Nome (mais comum nesta view)
+        if (!func && vaga.nome) {
+          func = await buscarFuncionarioPorNome(vaga.nome);
+        }
+
+        if (func) {
+          setSelectedProfileFunc(func);
+        } else {
+          alert('Colaborador não encontrado na base de dados do Oris.');
+        }
+      } catch (err) {
+        console.error('Erro ao buscar perfil:', err);
+        alert('Erro ao carregar perfil do colaborador.');
+      } finally {
+        setLoadingProfile(false);
+      }
+    };
+
+    return (
+      <Card key={vaga.id_evento} className={`mb-3 overflow-hidden border-slate-200 dark:border-slate-800 transition-all hover:shadow-md ${isPendenteEf ? 'border-l-4 border-l-amber-500' : ''}`}>
+        <div
+          className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-between"
+          onClick={() => setExpandedId(isExpanded ? null : vaga.id_evento)}
+        >
+          <div className="flex items-start gap-3">
+            <div className={`mt-1 p-2 rounded-lg ${tipoOrigem === 'DEMISSAO' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
+              <Users size={18} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="font-semibold text-slate-900 dark:text-slate-100">{vaga.cargo || 'Cargo não informado'}</h3>
+                <Badge variant="outline" className="text-[10px] h-5 uppercase">
+                  {vaga.lotacao || 'Unidade'}
+                </Badge>
+                {nomeContrato && (
+                  <Badge variant="secondary" className="text-[10px] h-5 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-none uppercase">
+                    {nomeContrato}
+                  </Badge>
+                )}
+                <SlaIcon className={`w-4 h-4 ${sla.color}`} />
+              </div>
+              {mostrarSubstituto ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+                    <UserX className="w-4 h-4" />
+                    {vaga.nome || 'Sem nome'}
+                  </div>
+                  {nomeSubstituto && (
+                    <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                      <UserCheck className="w-4 h-4" />
+                      {nomeSubstituto}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <button
+                    className="text-sm text-blue-600 dark:text-blue-400 font-medium hover:underline cursor-pointer transition-colors flex items-center gap-1 text-left"
+                    onClick={handleVerPerfilClicado}
+                    disabled={loadingProfile}
+                  >
+                    {vaga.nome || 'Sem nome'}
+                    {loadingProfile && <Loader2 className="w-3 h-3 animate-spin inline ml-1" />}
+                  </button>
+                  {mostrarSituacao && vaga.situacao_origem && (
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      {vaga.situacao_origem}
+                    </div>
+                  )}
+                  {tipoOrigem === 'DEMISSAO' && vaga.tipo_rescisao && (
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      {vaga.tipo_rescisao}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
+                <span className="flex items-center gap-1"><Calendar size={12} /> {formatarData(vaga.data_evento)}</span>
+                <span className="flex items-center gap-1"><Clock size={12} /> {displayDiasEmAberto} dias</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+          </div>
+        </div>
+
+        {isExpanded && (
+          <CardContent className="border-t border-slate-200 dark:border-slate-700 pt-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Informações */}
+              <div className="space-y-4">
+                <h4 className="text-xs font-bold uppercase text-slate-400 flex items-center gap-2">
+                  <AlertCircle size={14} /> Detalhes do Evento
+                </h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Situação</span>
+                    <span className={`font-medium ${vaga.situacao_origem === '99-Demitido' ? 'text-red-600' : ''}`}>{vaga.situacao_origem}</span>
+                  </div>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Dias em aberto</span>
+                    <span className={`font-medium ${sla.color}`}>{displayDiasEmAberto} dias</span>
+                  </div>
+                </div>
+
+                {/* TLP Info */}
+                <div className="pt-2">
+                  <h4 className="text-xs font-bold uppercase text-slate-400 flex items-center gap-2 mb-3">
+                    <TrendingUp size={14} /> Quadro Necessário (TLP)
+                  </h4>
+                  {tlpEntry ? (
+                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 space-y-3 border border-slate-100 dark:border-slate-700">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-500 uppercase font-bold">Status do Quadro</span>
+                        <StatusBadge status={tlpEntry.status} />
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Ideal</p>
+                          <div className="flex items-center justify-center gap-1">
+                            <input
+                              type="number"
+                              className={`w-12 text-center text-lg font-bold border-b border-dashed border-slate-300 hover:border-blue-500 focus:border-blue-600 focus:outline-none bg-transparent text-slate-900 dark:text-slate-100 ${updatingTlp === `${vaga.cargo}-${vaga.lotacao}` ? 'opacity-50' : ''}`}
+                              defaultValue={tlpEntry.tlp}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') e.currentTarget.blur();
+                              }}
+                              onBlur={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                if (!isNaN(val) && val !== tlpEntry.tlp) {
+                                  handleUpdateTlpValue(vaga.cargo, vaga.lotacao, tlpEntry.id, val);
+                                } else {
+                                  e.currentTarget.value = tlpEntry.tlp.toString();
+                                }
+                              }}
+                              disabled={updatingTlp === `${vaga.cargo}-${vaga.lotacao}`}
+                            />
+                            {updatingTlp === `${vaga.cargo}-${vaga.lotacao}` && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Real</p>
+                          <p className="text-lg font-bold text-green-600 dark:text-green-400">{tlpEntry.ativos}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Saldo</p>
+                          <p className={`text-lg font-bold ${tlpEntry.saldo < 0 ? 'text-red-600' : 'text-amber-600'}`}>
+                            {tlpEntry.saldo > 0 ? '+' : ''}{tlpEntry.saldo}
+                          </p>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-400 italic text-center">
+                        * Real considera ativos + afastados
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-center border border-dashed border-slate-200 dark:border-slate-700">
+                      <p className="text-xs text-slate-500 italic">Dados TLP não mapeados para esta unidade.</p>
+                    </div>
+                  )}
+                </div>
+
+                {isPendenteEf && (
+                  <div className="mt-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-lg">
+                    <p className="text-xs text-amber-800 dark:text-amber-300 font-medium leading-relaxed">
+                      Esta vaga foi marcada como "Pendente de Efetivação". Confirme quando o novo funcionário já estiver trabalhando.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Formulário de resposta */}
+              <div className="space-y-4">
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-sm font-medium mb-2 block">Abriu vaga para substituição?</Label>
+                    <RadioGroup
+                      value={formData[vaga.id_evento]?.abriu_vaga !== null && formData[vaga.id_evento]?.abriu_vaga !== undefined ? (formData[vaga.id_evento]?.abriu_vaga ? 'sim' : 'nao') : 'nao'}
+                      onValueChange={(value) =>
+                        updateFormDataMap(vaga.id_evento, {
+                          abriu_vaga: value === 'sim' ? true : value === 'nao' ? false : null,
+                        })
+                      }
+                    >
+                      <div className="flex items-center space-x-2 mb-2">
+                        <RadioGroupItem value="sim" id={`sim-${vaga.id_evento}`} />
+                        <Label htmlFor={`sim-${vaga.id_evento}`} className="cursor-pointer">
+                          SIM
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2 mb-2">
+                        <RadioGroupItem value="nao" id={`nao-${vaga.id_evento}`} />
+                        <Label htmlFor={`nao-${vaga.id_evento}`} className="cursor-pointer">
+                          NÃO
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="pertence" id={`pertence-${vaga.id_evento}`} />
+                        <Label htmlFor={`pertence-${vaga.id_evento}`} className="cursor-pointer">
+                          Não pertence à unidade
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor={`data-${vaga.id_evento}`} className="text-sm">
+                        Data Abertura
+                      </Label>
+                      <Input
+                        type="date"
+                        id={`data-${vaga.id_evento}`}
+                        className="mt-1"
+                        value={formData[vaga.id_evento]?.data_abertura_vaga || ''}
+                        onChange={(e) => updateFormDataMap(vaga.id_evento, { data_abertura_vaga: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor={`preench-${vaga.id_evento}`} className="text-sm">
+                        Vaga Preenchida?
+                      </Label>
+                      <Select
+                        value={formData[vaga.id_evento]?.vaga_preenchida || 'NAO'}
+                        onValueChange={(value) =>
+                          updateFormDataMap(vaga.id_evento, { vaga_preenchida: value as 'SIM' | 'NAO' })
+                        }
+                      >
+                        <SelectTrigger id={`preench-${vaga.id_evento}`} className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="SIM">SIM</SelectItem>
+                          <SelectItem value="NAO">NÃO</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {formData[vaga.id_evento]?.vaga_preenchida === 'SIM' && (
+                    <div>
+                      <Label htmlFor={`substituto-${vaga.id_evento}`} className="text-sm">
+                        Nome do Substituto
+                      </Label>
+                      <Input
+                        type="text"
+                        id={`substituto-${vaga.id_evento}`}
+                        className="mt-1"
+                        placeholder="Nome do novo funcionário..."
+                        value={formData[vaga.id_evento]?.nome_substituto || ''}
+                        onChange={(e) => updateFormDataMap(vaga.id_evento, { nome_substituto: e.target.value })}
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <Label htmlFor={`obs-${vaga.id_evento}`} className="text-sm">
+                      Observações
+                    </Label>
+                    <textarea
+                      id={`obs-${vaga.id_evento}`}
+                      className="w-full mt-1 p-2 text-sm border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 dark:text-slate-200"
+                      rows={2}
+                      placeholder="Adicione observações..."
+                      value={formData[vaga.id_evento]?.observacao || ''}
+                      onChange={(e) => updateFormDataMap(vaga.id_evento, { observacao: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`efetiv-${vaga.id_evento}`}
+                      checked={formData[vaga.id_evento]?.pendente_efetivacao === true}
+                      onCheckedChange={(checked) =>
+                        updateFormDataMap(vaga.id_evento, { pendente_efetivacao: checked === true })
+                      }
+                    />
+                    <Label htmlFor={`efetiv-${vaga.id_evento}`} className="text-sm cursor-pointer">
+                      Pendente efetivação
+                    </Label>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  {isPendenteEf ? (
+                    <button
+                      onClick={() => handleEfetivar(vaga.id_evento, tipoOrigem)}
+                      disabled={respondendo[vaga.id_evento]}
+                      className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded font-medium text-sm flex items-center justify-center gap-2 shadow-sm transition-colors"
+                    >
+                      {respondendo[vaga.id_evento] && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {respondendo[vaga.id_evento] ? 'Confirmando...' : 'Confirmar Contratação'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleResponder(vaga.id_evento, tipoOrigem)}
+                      disabled={respondendo[vaga.id_evento]}
+                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded font-medium text-sm flex items-center justify-center gap-2 shadow-sm transition-colors"
+                    >
+                      {respondendo[vaga.id_evento] && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {respondendo[vaga.id_evento] ? 'Salvando...' : 'Salvar Resposta'}
+                    </button>
+                  )}
+
+                  {abaSelecionada === 'respondidas' && (
+                    <button
+                      onClick={() => handleResponder(vaga.id_evento, tipoOrigem)}
+                      disabled={respondendo[vaga.id_evento]}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded font-medium text-sm transition-colors"
+                    >
+                      Atualizar
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        )}
+      </Card>
+    );
+  };
+
+  // Recarregar dados quando lotação ou contrato mudar
+  useEffect(() => {
+    carregarDados(lotacao === 'TODAS' ? undefined : lotacao, selectedFantasia);
+  }, [lotacao, selectedFantasia, carregarDados]);
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Gestão de Vagas</h1>
-        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Acompanhamento e controle de todas as vagas abertas</p>
+        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100 uppercase tracking-tight flex items-center gap-2">
+          <TrendingUp className="text-blue-600" />
+          Gestão de Vagas
+        </h1>
+        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+          Acompanhamento e controle de respostas pendentes
+        </p>
       </div>
 
-      {/* Filters and Search */}
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-4">
-        <div className="flex flex-col md:flex-row gap-4">
-          {/* Search */}
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-500" />
-            <input
-              type="text"
-              placeholder="Buscar por cargo, unidade ou analista..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          {/* Status Filter */}
-          <div className="flex items-center gap-2">
-            <Filter className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-4 py-2 border border-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {statusOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-          <p className="text-sm text-blue-700 dark:text-blue-400 mb-1">Total de Vagas</p>
-          <p className="text-2xl font-semibold text-blue-900 dark:text-blue-300">{vacancies.length}</p>
-        </div>
+      {/* Erro */}
+      {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-          <p className="text-sm text-red-700 dark:text-red-400 mb-1">Abertas</p>
-          <p className="text-2xl font-semibold text-red-900 dark:text-red-300">
-            {vacancies.filter(v => v.status === 'aberto').length}
+          <p className="text-sm text-red-700 dark:text-red-400 font-medium flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
+            {error}
           </p>
         </div>
-        <div className="bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-lg p-4">
-          <p className="text-sm text-sky-700 dark:text-sky-400 mb-1">Em Processo</p>
-          <p className="text-2xl font-semibold text-sky-900 dark:text-sky-300">
-            {vacancies.filter(v => v.status === 'em-processo').length}
-          </p>
-        </div>
-        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-          <p className="text-sm text-green-700 dark:text-green-400 mb-1">Preenchidas (30d)</p>
-          <p className="text-2xl font-semibold text-green-900 dark:text-green-300">
-            {vacancies.filter(v => v.status === 'preenchido').length}
-          </p>
-        </div>
+      )}
+
+      {/* Resumo */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="border-none shadow-sm bg-blue-50/50 dark:bg-blue-900/10">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600">
+              <Users size={24} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Demissões</p>
+              <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{pendentes.length}</h3>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm bg-indigo-50/50 dark:bg-indigo-900/10">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600">
+              <Clock size={24} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Afastamentos</p>
+              <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{afastamentos.length}</h3>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm bg-amber-50/50 dark:bg-amber-900/10">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-amber-600">
+              <AlertCircle size={24} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">Efetivação</p>
+              <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{pendentesEf.length}</h3>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm bg-red-50/50 dark:bg-red-900/10">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600">
+              <AlertTriangle size={24} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-red-600 uppercase tracking-wider">Crítico (+30d)</p>
+              <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                {[...pendentes, ...afastamentos].filter(v => (v.dias_em_aberto || 0) > 30).length}
+              </h3>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Table */}
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-50 dark:bg-slate-900/50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">ID</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Cargo</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Unidade</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Motivo</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Analista</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">SLA</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
-              {filteredVacancies.map((vacancy) => {
-                const slaStatus = getSlaStatus(vacancy.diasAberto);
-                const SlaIcon = slaStatus.icon;
+      {/* Filtros */}
+      <Card className="border-none shadow-sm bg-white dark:bg-slate-800">
+        <CardContent className="p-6 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {/* Contrato */}
+            <div>
+              <Label className="text-xs font-bold uppercase text-slate-500 mb-2 block">Empresa / Contrato</Label>
+              <Select value={selectedFantasia} onValueChange={setSelectedFantasia}>
+                <SelectTrigger className="h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos os Contratos</SelectItem>
+                  {fantasias
+                    .filter(f => !apenasContratosSP || CONTRATOS_SP.some(sp => f.display_name?.includes(sp) || f.nome_fantasia?.includes(sp)))
+                    .map((f) => (
+                      <SelectItem key={f.cnpj} value={f.cnpj}>
+                        {f.display_name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-                return (
-                  <tr key={vacancy.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                    <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-slate-100">{vacancy.id}</td>
-                    <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-slate-100">{vacancy.cargo}</td>
-                    <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300">{vacancy.unidade}</td>
-                    <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300">{vacancy.motivo}</td>
-                    <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300">{vacancy.analista}</td>
-                    <td className="px-6 py-4">
-                      <StatusBadge status={vacancy.status} />
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-center gap-2">
-                        <SlaIcon className={`w-4 h-4 ${slaStatus.color} dark:brightness-110`} />
-                        <span className={`text-sm font-medium ${slaStatus.color} dark:brightness-110`}>
-                          {vacancy.diasAberto}d
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-center gap-2">
-                        <button className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors" title="Ver detalhes">
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors" title="Editar">
-                          <Edit className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+            {/* Busca */}
+            <div className="md:col-span-1 lg:col-span-1">
+              <Label className="text-xs font-bold uppercase text-slate-500 mb-2 block">Buscar Funcionário</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Input
+                  type="text"
+                  placeholder="Nome, cargo ou lotação..."
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  className="pl-10 h-10 border-slate-200 dark:border-slate-700"
+                />
+              </div>
+            </div>
 
-        {/* Pagination */}
-        <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
-          <p className="text-sm text-slate-600 dark:text-slate-400">
-            Mostrando {filteredVacancies.length} de {vacancies.length} vagas
-          </p>
-          <div className="flex gap-2">
-            <button className="px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
-              Anterior
-            </button>
-            <button className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-              1
-            </button>
-            <button className="px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
-              2
-            </button>
-            <button className="px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
-              Próxima
-            </button>
+            {/* Lotação */}
+            <div>
+              <Label className="text-xs font-bold uppercase text-slate-500 mb-2 block">Unidade / Lotação</Label>
+              <Select value={lotacao} onValueChange={setLotacao}>
+                <SelectTrigger className="h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {lotacoes.map((l) => (
+                    <SelectItem key={l} value={l}>
+                      {l}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Ano */}
+            <div>
+              <Label className="text-xs font-bold uppercase text-slate-500 mb-2 block">Ano</Label>
+              <Select value={selectedYear} onValueChange={setSelectedYear}>
+                <SelectTrigger className="h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TODOS">Todos os Anos</SelectItem>
+                  {years.map((year) => (
+                    <SelectItem key={year} value={year}>
+                      {year}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Mês */}
+            <div>
+              <Label className="text-xs font-bold uppercase text-slate-500 mb-2 block">Mês</Label>
+              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                <SelectTrigger className="h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TODOS">Todos os Meses</SelectItem>
+                  {months.map((month) => (
+                    <SelectItem key={month.value} value={month.value}>
+                      {month.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Ordenação */}
+            <div>
+              <Label className="text-xs font-bold uppercase text-slate-500 mb-2 block">Ordenar por</Label>
+              <Select value={ordenacao} onValueChange={setOrdenacao}>
+                <SelectTrigger className="h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="data_evento.desc">Mais Recentes</SelectItem>
+                  <SelectItem value="data_evento.asc">Mais Antigos</SelectItem>
+                  <SelectItem value="cargo.asc">Alfabética (Cargo)</SelectItem>
+                  <SelectItem value="nome.asc">Alfabética (Nome)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
+
+          {/* Checkbox Médicos */}
+          <div className="flex items-center space-x-2 pt-2 border-t border-slate-100 dark:border-slate-700 mt-4">
+            <Checkbox
+              id="medicos"
+              checked={mostrarMedicos}
+              onCheckedChange={(checked) => setMostrarMedicos(checked as boolean)}
+            />
+            <Label htmlFor="medicos" className="text-sm cursor-pointer font-medium text-slate-600 dark:text-slate-300">
+              Mostrar vagas de Médicos
+            </Label>
+          </div>
+
+          <div className="flex items-center space-x-2 pt-2 border-t border-slate-100 dark:border-slate-700 mt-2">
+            <Checkbox
+              id="contratos-sp"
+              checked={apenasContratosSP}
+              onCheckedChange={(checked) => setApenasContratosSP(checked as boolean)}
+            />
+            <Label htmlFor="contratos-sp" className="text-sm cursor-pointer font-medium text-blue-600 dark:text-blue-400">
+              Exibir apenas contratos de SP (ZN/Norte)
+            </Label>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Loading State */}
+      {loading ? (
+        <div className="flex items-center justify-center py-20 bg-white/50 dark:bg-slate-800/10 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <span className="ml-3 text-slate-600 dark:text-slate-400 font-medium">Carregando eventos...</span>
         </div>
-      </div>
+      ) : (
+        <>
+          {/* Abas */}
+          <Tabs value={abaSelecionada} onValueChange={setAbaSelecionada} className="w-full">
+            <TabsList className="flex w-full overflow-x-auto justify-start border-b border-slate-200 dark:border-slate-800 bg-transparent rounded-none h-auto p-0 gap-6 mb-8">
+              <TabsTrigger
+                value="pendentes"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-1 pb-4 text-sm font-semibold"
+              >
+                Demissões Pendentes ({pendentes.length})
+              </TabsTrigger>
+              <TabsTrigger
+                value="afastamentos"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-1 pb-4 text-sm font-semibold"
+              >
+                Afastamentos ({afastamentos.length})
+              </TabsTrigger>
+              <TabsTrigger
+                value="respondidas"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-green-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-1 pb-4 text-sm font-semibold"
+              >
+                Vagas em Aberto ({respondidas.length})
+              </TabsTrigger>
+              <TabsTrigger
+                value="pendentes_ef"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-amber-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-1 pb-4 text-sm font-semibold"
+              >
+                Pendente Efetivação ({pendentesEf.length})
+              </TabsTrigger>
+              <TabsTrigger
+                value="fechadas"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-green-600 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-1 pb-4 text-sm font-semibold"
+              >
+                Vagas Fechadas ({vagasFechadas.length})
+              </TabsTrigger>
+
+            </TabsList>
+
+            <TabsContent value="pendentes" className="space-y-3 mt-0 focusVisible:outline-none">
+              {pendentes.length === 0 ? (
+                <EmptyState icon={Users} title="Nenhuma demissão pendente" description="Não há registros de demissões que aguardam resposta nesta unidade ou filtro." />
+              ) : (
+                pendentes.map((vaga) => <VagaCard key={vaga.id_evento} vaga={vaga} />)
+              )}
+            </TabsContent>
+
+            <TabsContent value="afastamentos" className="space-y-3 mt-0 focusVisible:outline-none">
+              {afastamentos.length === 0 ? (
+                <EmptyState icon={Clock} title="Nenhum afastamento pendente" description="Não há registros de afastamentos que aguardam resposta nesta unidade ou filtro." />
+              ) : (
+                afastamentos.map((vaga) => <VagaCard key={vaga.id_evento} vaga={vaga} mostrarSituacao={true} />)
+              )}
+            </TabsContent>
+
+            <TabsContent value="pendentes_ef" className="space-y-3 mt-0 focusVisible:outline-none">
+              {pendentesEf.length === 0 ? (
+                <EmptyState icon={AlertCircle} title="Sem pendências de efetivação" description="Vagas marcadas como 'Pendente efetivação' aparecerão aqui." />
+              ) : (
+                pendentesEf.map((vaga) => <VagaCard key={vaga.id_evento} vaga={vaga} />)
+              )}
+            </TabsContent>
+
+            <TabsContent value="respondidas" className="space-y-3 mt-0 focusVisible:outline-none">
+              {respondidas.length === 0 ? (
+                <EmptyState icon={TrendingUp} title="Nenhuma resposta registrada" description="Eventos já respondidos serão listados aqui para histórico." />
+              ) : (
+                respondidas.map((vaga) => <VagaCard key={vaga.id_evento} vaga={vaga} />)
+              )}
+            </TabsContent>
+
+            <TabsContent value="fechadas" className="space-y-3 mt-0 focusVisible:outline-none">
+              {vagasFechadas.length === 0 ? (
+                <EmptyState icon={CheckCircle} title="Nenhuma vaga fechada" description="Vagas que foram preenchidas aparecerão aqui." />
+              ) : (
+                vagasFechadas.map((vaga) => <VagaCard key={vaga.id_evento} vaga={vaga} mostrarSubstituto={true} />)
+              )}
+            </TabsContent>
+          </Tabs>
+        </>
+      )}
+
+      {/* Perfil do Colaborador Modal */}
+      {selectedProfileFunc && (
+        <FuncionarioProfile
+          funcionario={selectedProfileFunc}
+          onClose={() => setSelectedProfileFunc(null)}
+        />
+      )}
     </div>
   );
+}
+
+function EmptyState({ icon: Icon, title, description }: { icon: any, title: string, description: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-24 bg-slate-50/50 dark:bg-slate-900/10 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 transition-all">
+      <div className="w-16 h-16 rounded-2xl bg-white dark:bg-slate-800 shadow-sm flex items-center justify-center mb-4 border border-slate-100 dark:border-slate-700">
+        <Icon size={32} className="text-slate-400" />
+      </div>
+      <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-xs text-center leading-relaxed">
+        {description}
+      </p>
+    </div>
+  );
+}
+
+function calculateDaysOpen(dataEvento: string): number {
+  if (!dataEvento) return 0;
+  try {
+    const eventDate = new Date(dataEvento + 'T00:00:00'); // Ensure UTC for consistent calculation
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Set today to start of day for consistent comparison
+
+    // Calculate difference in milliseconds
+    const diffTime = Math.abs(today.getTime() - eventDate.getTime());
+    // Convert to days, rounding up to include the current day
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  } catch (e) {
+    console.error("Error calculating days open:", e);
+    return 0;
+  }
 }

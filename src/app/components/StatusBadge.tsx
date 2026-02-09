@@ -20,7 +20,7 @@ export function StatusBadge({ status, label }: StatusBadgeProps) {
     'normal': { bg: 'bg-slate-100 dark:bg-slate-700', text: 'text-slate-700 dark:text-slate-300', label: label || 'Normal' },
   };
 
-  const config = statusConfig[status];
+  const config = statusConfig[status] || { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-700 dark:text-gray-300', label: label || status || 'Desconhecido' };
 
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>

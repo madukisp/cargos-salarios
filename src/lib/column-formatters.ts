@@ -26,23 +26,49 @@ const COLUMN_FORMATTERS: Record<string, FormatterFunction> = {
 
   // Datas
   nascimento: (value) => formatarData(value),
+  dt_nascimento: (value) => formatarData(value),
   admissao: (value) => formatarData(value),
+  dt_admissao: (value) => formatarData(value),
   data_rescisao: (value) => formatarData(value),
+  dt_rescisao: (value) => formatarData(value),
   data_emissao_rg: (value) => formatarData(value),
+  dt_emissao_rg: (value) => formatarData(value),
   data_inicio_situacao: (value) => formatarData(value),
+  dt_inicio_situacao: (value) => formatarData(value),
   data_inicio_cargo: (value) => formatarData(value),
+  dt_inicio_cargo: (value) => formatarData(value),
   data_inicio_centro_custo: (value) => formatarData(value),
+  dt_inicio_centro_custo: (value) => formatarData(value),
   data_inicio_escala: (value) => formatarData(value),
+  dt_inicio_escala: (value) => formatarData(value),
   data_inicio_lotacao: (value) => formatarData(value),
+  dt_inicio_lotacao: (value) => formatarData(value),
 };
 
 /**
  * Formatar data para formato brasileiro (DD/MM/YYYY)
  */
-function formatarData(data: any): string {
+export function formatarData(data: any): string {
   if (!data) return '-';
   try {
+    // Se a data vier no formato ISO (YYYY-MM-DD), o JS interpreta como UTC.
+    // Para evitar o atraso de 1 dia em fusos horários negativos (Brasil),
+    // vamos garantir que a data seja interpretada como local ou formatada diretamente.
+    if (typeof data === 'string' && data.includes('-')) {
+      const datePart = data.split('T')[0]; // Pega apenas YYYY-MM-DD
+      const parts = datePart.split('-');
+      if (parts.length === 3) {
+        const [year, month, day] = parts;
+        // Se o ano for o primeiro item (formato ISO)
+        if (year.length === 4) {
+          return `${day}/${month}/${year}`;
+        }
+      }
+    }
+
     const date = new Date(data);
+    // Fallback para objetos Date ou outros formatos
+    if (isNaN(date.getTime())) return String(data);
     return date.toLocaleDateString('pt-BR');
   } catch {
     return String(data);
