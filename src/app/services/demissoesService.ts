@@ -25,6 +25,8 @@ export interface RespostaGestor {
   data_resposta?: string;
   pendente_efetivacao?: boolean | null;
   nome_candidato?: string | null;
+  nao_pertence_unidade?: boolean | null;
+  data_fechamento_vaga?: string | null;
 }
 
 export async function carregarDemissoes(
@@ -234,8 +236,11 @@ export async function salvarResposta(
           tipo_origem,
           ...dados,
           data_resposta: new Date().toISOString().split('T')[0], // Apenas a data
+          data_fechamento_vaga: dados.vaga_preenchida === 'SIM'
+            ? (dados.data_fechamento_vaga || new Date().toISOString().split('T')[0])
+            : null,
         },
-        { onConflict: 'id_evento' }
+        { onConflict: 'id_evento, tipo_origem' }
       );
 
     if (error) throw error;
@@ -331,5 +336,39 @@ export async function buscarFuncionarioPorNome(nome: string): Promise<any | null
   } catch (error) {
     console.error('Erro:', error);
     return null;
+  }
+}
+
+export async function buscarSugestoesSubstitutos(termo: string, nomeFantasia?: string): Promise<any[]> {
+
+
+  try {
+    let query = supabase
+      .from('oris_funcionarios')
+      .select('id, nome, cargo, centro_custo, local_de_trabalho, nome_fantasia, cnpj, situacao, dt_admissao');
+
+    // Filtrar por nome se termo foi fornecido
+    if (termo && termo.length > 0) {
+      query = query.ilike('nome', `%${termo}%`);
+    }
+
+    // Filtrar apenas funcionários do mesmo contrato (nome_fantasia)
+    if (nomeFantasia) {
+      query = query.eq('nome_fantasia', nomeFantasia);
+    }
+
+    const { data, error } = await query
+      .order('dt_admissao', { ascending: false }) // Mais recentes primeiro
+      .limit(100); // Reduzido porque agora filtra por contrato
+
+    if (error) {
+      console.error('Erro ao buscar sugestões:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('Erro ao buscar sugestões:', error);
+    return [];
   }
 }

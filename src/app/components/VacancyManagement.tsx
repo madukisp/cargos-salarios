@@ -1,6 +1,6 @@
-import { Search, ChevronDown, ChevronUp, CheckCircle, Clock, AlertTriangle, Loader2, Users, Calendar, AlertCircle, TrendingUp, UserX, UserCheck } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, CheckCircle, Clock, AlertTriangle, Loader2, Users, Calendar, AlertCircle, TrendingUp, UserX, UserCheck, ChevronsUpDown, Check } from 'lucide-react';
 import { Badge } from './ui/badge';
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Card, CardContent } from './ui/card';
 import {
   Select,
@@ -16,7 +16,7 @@ import { Checkbox } from './ui/checkbox';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { useGestaoVagas } from '@/app/hooks/useGestaoVagas';
 import { useFantasiaFilter } from '@/app/hooks/useFantasiaFilter';
-import { buscarFuncionarioPorCpf, buscarFuncionarioPorNome } from '@/app/services/demissoesService';
+import { buscarFuncionarioPorCpf, buscarFuncionarioPorNome, buscarSugestoesSubstitutos } from '@/app/services/demissoesService';
 import { FuncionarioProfile } from './FuncionarioProfile';
 import { useTlpData } from '@/app/hooks/useTlpData';
 import { StatusBadge } from './StatusBadge';
@@ -238,16 +238,20 @@ export function VacancyManagement() {
   const respondidas = useMemo(() => applyDateFilter(ordenarVagas(filtrarVagas(demissoesRespondidas, tlpData, fantasias))), [filtrarVagas, ordenarVagas, demissoesRespondidas, tlpData, fantasias, applyDateFilter]);
   const pendentesEf = useMemo(() => applyDateFilter(ordenarVagas(filtrarVagas(vagasPendentesEfetivacao, tlpData, fantasias))), [filtrarVagas, ordenarVagas, vagasPendentesEfetivacao, tlpData, fantasias, applyDateFilter]);
   const afastamentos = useMemo(() => applyDateFilter(ordenarVagas(filtrarVagas(afastamentosPendentes, tlpData, fantasias))), [filtrarVagas, ordenarVagas, afastamentosPendentes, tlpData, fantasias, applyDateFilter]);
+  const vagasEmAberto = useMemo(() => {
+    return respondidas.filter((vaga) => {
+      const resp = respostas[vaga.id_evento];
+      // Só mostra se abriu vaga E não foi preenchida
+      return resp?.abriu_vaga === true && resp?.vaga_preenchida !== 'SIM';
+    });
+  }, [respondidas, respostas]);
+
   const vagasFechadas = useMemo(() => {
     const fechadas = respondidas.filter((vaga) => respostas[vaga.id_evento]?.vaga_preenchida === 'SIM');
     return fechadas;
   }, [respondidas, respostas]);
 
-  const getSlaStatus = (dias: number) => {
-    if (dias > 30) return { icon: AlertTriangle, color: 'text-red-600', label: 'Crítico' };
-    if (dias > 15) return { icon: Clock, color: 'text-amber-600', label: 'Atenção' };
-    return { icon: CheckCircle, color: 'text-green-600', label: 'Normal' };
-  };
+
 
   const handleResponder = async (idEvento: number, tipoOrigem: 'DEMISSAO' | 'AFASTAMENTO') => {
     setRespondendo((prev) => ({ ...prev, [idEvento]: true }));
@@ -287,373 +291,7 @@ export function VacancyManagement() {
     }
   };
 
-  const VagaCard = ({ vaga, mostrarSubstituto = false, mostrarSituacao = false }: { vaga: any; mostrarSubstituto?: boolean; mostrarSituacao?: boolean }) => {
-    if (!vaga || !vaga.id_evento) return null;
-    const displayDiasEmAberto = vaga.dias_em_aberto > 0 ? vaga.dias_em_aberto : calculateDaysOpen(vaga.data_evento);
-    const isExpanded = expandedId === vaga.id_evento;
-    const sla = getSlaStatus(displayDiasEmAberto || 0);
-    const SlaIcon = sla.icon;
-    const tipoOrigem = vaga.situacao_origem === '99-Demitido' ? 'DEMISSAO' : 'AFASTAMENTO';
-    const isPendenteEf = abaSelecionada === 'pendentes_ef';
-    const nomeSubstituto = respostas[vaga.id_evento]?.nome_candidato || formData[vaga.id_evento]?.nome_substituto || '';
 
-    // Encontrar dados TLP correspondentes e Nome do Contrato
-    const tlpEntry = useMemo(() => {
-      if (!tlpData) return null;
-      return tlpData.find(t =>
-        t.cargo.toLowerCase().trim() === vaga.cargo?.toLowerCase().trim() &&
-        (t.centro_custo.toLowerCase().trim() === vaga.lotacao?.toLowerCase().trim() ||
-          t.unidade.toLowerCase().trim() === vaga.lotacao?.toLowerCase().trim())
-      );
-    }, [vaga.cargo, vaga.lotacao, tlpData]);
-
-    const nomeContrato = useMemo(() => {
-      // Prioridade 1: Unidade vinda da TLP (que é o nome do contrato)
-      if (tlpEntry?.unidade) return tlpEntry.unidade;
-
-      // Prioridade 2: Buscar na lista de fantasias pelo CNPJ do evento
-      if (vaga.cnpj && fantasias) {
-        const f = (fantasias as any[]).find(item => item.cnpj === vaga.cnpj);
-        if (f) return f.display_name || f.nome_fantasia;
-      }
-
-      return null;
-    }, [tlpEntry, vaga.cnpj, fantasias]);
-
-    const handleVerPerfilClicado = async (e: React.MouseEvent) => {
-      e.stopPropagation();
-
-      setLoadingProfile(true);
-      try {
-        let func = null;
-
-        // Tenta por CPF se existir
-        if ((vaga as any).cpf) {
-          func = await buscarFuncionarioPorCpf((vaga as any).cpf);
-        }
-
-        // Fallback por Nome (mais comum nesta view)
-        if (!func && vaga.nome) {
-          func = await buscarFuncionarioPorNome(vaga.nome);
-        }
-
-        if (func) {
-          setSelectedProfileFunc(func);
-        } else {
-          alert('Colaborador não encontrado na base de dados do Oris.');
-        }
-      } catch (err) {
-        console.error('Erro ao buscar perfil:', err);
-        alert('Erro ao carregar perfil do colaborador.');
-      } finally {
-        setLoadingProfile(false);
-      }
-    };
-
-    return (
-      <Card key={vaga.id_evento} className={`mb-3 overflow-hidden border-slate-200 dark:border-slate-800 transition-all hover:shadow-md ${isPendenteEf ? 'border-l-4 border-l-amber-500' : ''}`}>
-        <div
-          className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-between"
-          onClick={() => setExpandedId(isExpanded ? null : vaga.id_evento)}
-        >
-          <div className="flex items-start gap-3">
-            <div className={`mt-1 p-2 rounded-lg ${tipoOrigem === 'DEMISSAO' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
-              <Users size={18} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="font-semibold text-slate-900 dark:text-slate-100">{vaga.cargo || 'Cargo não informado'}</h3>
-                <Badge variant="outline" className="text-[10px] h-5 uppercase">
-                  {vaga.lotacao || 'Unidade'}
-                </Badge>
-                {nomeContrato && (
-                  <Badge variant="secondary" className="text-[10px] h-5 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-none uppercase">
-                    {nomeContrato}
-                  </Badge>
-                )}
-                <SlaIcon className={`w-4 h-4 ${sla.color}`} />
-              </div>
-              {mostrarSubstituto ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
-                    <UserX className="w-4 h-4" />
-                    {vaga.nome || 'Sem nome'}
-                  </div>
-                  {nomeSubstituto && (
-                    <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-                      <UserCheck className="w-4 h-4" />
-                      {nomeSubstituto}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <button
-                    className="text-sm text-blue-600 dark:text-blue-400 font-medium hover:underline cursor-pointer transition-colors flex items-center gap-1 text-left"
-                    onClick={handleVerPerfilClicado}
-                    disabled={loadingProfile}
-                  >
-                    {vaga.nome || 'Sem nome'}
-                    {loadingProfile && <Loader2 className="w-3 h-3 animate-spin inline ml-1" />}
-                  </button>
-                  {mostrarSituacao && vaga.situacao_origem && (
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      {vaga.situacao_origem}
-                    </div>
-                  )}
-                  {tipoOrigem === 'DEMISSAO' && vaga.tipo_rescisao && (
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      {vaga.tipo_rescisao}
-                    </div>
-                  )}
-                </div>
-              )}
-              <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
-                <span className="flex items-center gap-1"><Calendar size={12} /> {formatarData(vaga.data_evento)}</span>
-                <span className="flex items-center gap-1"><Clock size={12} /> {displayDiasEmAberto} dias</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
-          </div>
-        </div>
-
-        {isExpanded && (
-          <CardContent className="border-t border-slate-200 dark:border-slate-700 pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Informações */}
-              <div className="space-y-4">
-                <h4 className="text-xs font-bold uppercase text-slate-400 flex items-center gap-2">
-                  <AlertCircle size={14} /> Detalhes do Evento
-                </h4>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                    <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Situação</span>
-                    <span className={`font-medium ${vaga.situacao_origem === '99-Demitido' ? 'text-red-600' : ''}`}>{vaga.situacao_origem}</span>
-                  </div>
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                    <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Dias em aberto</span>
-                    <span className={`font-medium ${sla.color}`}>{displayDiasEmAberto} dias</span>
-                  </div>
-                </div>
-
-                {/* TLP Info */}
-                <div className="pt-2">
-                  <h4 className="text-xs font-bold uppercase text-slate-400 flex items-center gap-2 mb-3">
-                    <TrendingUp size={14} /> Quadro Necessário (TLP)
-                  </h4>
-                  {tlpEntry ? (
-                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 space-y-3 border border-slate-100 dark:border-slate-700">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-slate-500 uppercase font-bold">Status do Quadro</span>
-                        <StatusBadge status={tlpEntry.status} />
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 text-center">
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Ideal</p>
-                          <div className="flex items-center justify-center gap-1">
-                            <input
-                              type="number"
-                              className={`w-12 text-center text-lg font-bold border-b border-dashed border-slate-300 hover:border-blue-500 focus:border-blue-600 focus:outline-none bg-transparent text-slate-900 dark:text-slate-100 ${updatingTlp === `${vaga.cargo}-${vaga.lotacao}` ? 'opacity-50' : ''}`}
-                              defaultValue={tlpEntry.tlp}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') e.currentTarget.blur();
-                              }}
-                              onBlur={(e) => {
-                                const val = parseInt(e.target.value, 10);
-                                if (!isNaN(val) && val !== tlpEntry.tlp) {
-                                  handleUpdateTlpValue(vaga.cargo, vaga.lotacao, tlpEntry.id, val);
-                                } else {
-                                  e.currentTarget.value = tlpEntry.tlp.toString();
-                                }
-                              }}
-                              disabled={updatingTlp === `${vaga.cargo}-${vaga.lotacao}`}
-                            />
-                            {updatingTlp === `${vaga.cargo}-${vaga.lotacao}` && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
-                          </div>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Real</p>
-                          <p className="text-lg font-bold text-green-600 dark:text-green-400">{tlpEntry.ativos}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Saldo</p>
-                          <p className={`text-lg font-bold ${tlpEntry.saldo < 0 ? 'text-red-600' : 'text-amber-600'}`}>
-                            {tlpEntry.saldo > 0 ? '+' : ''}{tlpEntry.saldo}
-                          </p>
-                        </div>
-                      </div>
-                      <p className="text-[10px] text-slate-400 italic text-center">
-                        * Real considera ativos + afastados
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-center border border-dashed border-slate-200 dark:border-slate-700">
-                      <p className="text-xs text-slate-500 italic">Dados TLP não mapeados para esta unidade.</p>
-                    </div>
-                  )}
-                </div>
-
-                {isPendenteEf && (
-                  <div className="mt-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-lg">
-                    <p className="text-xs text-amber-800 dark:text-amber-300 font-medium leading-relaxed">
-                      Esta vaga foi marcada como "Pendente de Efetivação". Confirme quando o novo funcionário já estiver trabalhando.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Formulário de resposta */}
-              <div className="space-y-4">
-                <div className="space-y-3">
-                  <div>
-                    <Label className="text-sm font-medium mb-2 block">Abriu vaga para substituição?</Label>
-                    <RadioGroup
-                      value={formData[vaga.id_evento]?.abriu_vaga !== null && formData[vaga.id_evento]?.abriu_vaga !== undefined ? (formData[vaga.id_evento]?.abriu_vaga ? 'sim' : 'nao') : 'nao'}
-                      onValueChange={(value) =>
-                        updateFormDataMap(vaga.id_evento, {
-                          abriu_vaga: value === 'sim' ? true : value === 'nao' ? false : null,
-                        })
-                      }
-                    >
-                      <div className="flex items-center space-x-2 mb-2">
-                        <RadioGroupItem value="sim" id={`sim-${vaga.id_evento}`} />
-                        <Label htmlFor={`sim-${vaga.id_evento}`} className="cursor-pointer">
-                          SIM
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2 mb-2">
-                        <RadioGroupItem value="nao" id={`nao-${vaga.id_evento}`} />
-                        <Label htmlFor={`nao-${vaga.id_evento}`} className="cursor-pointer">
-                          NÃO
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="pertence" id={`pertence-${vaga.id_evento}`} />
-                        <Label htmlFor={`pertence-${vaga.id_evento}`} className="cursor-pointer">
-                          Não pertence à unidade
-                        </Label>
-                      </div>
-                    </RadioGroup>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label htmlFor={`data-${vaga.id_evento}`} className="text-sm">
-                        Data Abertura
-                      </Label>
-                      <Input
-                        type="date"
-                        id={`data-${vaga.id_evento}`}
-                        className="mt-1"
-                        value={formData[vaga.id_evento]?.data_abertura_vaga || ''}
-                        onChange={(e) => updateFormDataMap(vaga.id_evento, { data_abertura_vaga: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor={`preench-${vaga.id_evento}`} className="text-sm">
-                        Vaga Preenchida?
-                      </Label>
-                      <Select
-                        value={formData[vaga.id_evento]?.vaga_preenchida || 'NAO'}
-                        onValueChange={(value) =>
-                          updateFormDataMap(vaga.id_evento, { vaga_preenchida: value as 'SIM' | 'NAO' })
-                        }
-                      >
-                        <SelectTrigger id={`preench-${vaga.id_evento}`} className="mt-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="SIM">SIM</SelectItem>
-                          <SelectItem value="NAO">NÃO</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {formData[vaga.id_evento]?.vaga_preenchida === 'SIM' && (
-                    <div>
-                      <Label htmlFor={`substituto-${vaga.id_evento}`} className="text-sm">
-                        Nome do Substituto
-                      </Label>
-                      <Input
-                        type="text"
-                        id={`substituto-${vaga.id_evento}`}
-                        className="mt-1"
-                        placeholder="Nome do novo funcionário..."
-                        value={formData[vaga.id_evento]?.nome_substituto || ''}
-                        onChange={(e) => updateFormDataMap(vaga.id_evento, { nome_substituto: e.target.value })}
-                      />
-                    </div>
-                  )}
-
-                  <div>
-                    <Label htmlFor={`obs-${vaga.id_evento}`} className="text-sm">
-                      Observações
-                    </Label>
-                    <textarea
-                      id={`obs-${vaga.id_evento}`}
-                      className="w-full mt-1 p-2 text-sm border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 dark:text-slate-200"
-                      rows={2}
-                      placeholder="Adicione observações..."
-                      value={formData[vaga.id_evento]?.observacao || ''}
-                      onChange={(e) => updateFormDataMap(vaga.id_evento, { observacao: e.target.value })}
-                    />
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`efetiv-${vaga.id_evento}`}
-                      checked={formData[vaga.id_evento]?.pendente_efetivacao === true}
-                      onCheckedChange={(checked) =>
-                        updateFormDataMap(vaga.id_evento, { pendente_efetivacao: checked === true })
-                      }
-                    />
-                    <Label htmlFor={`efetiv-${vaga.id_evento}`} className="text-sm cursor-pointer">
-                      Pendente efetivação
-                    </Label>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  {isPendenteEf ? (
-                    <button
-                      onClick={() => handleEfetivar(vaga.id_evento, tipoOrigem)}
-                      disabled={respondendo[vaga.id_evento]}
-                      className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded font-medium text-sm flex items-center justify-center gap-2 shadow-sm transition-colors"
-                    >
-                      {respondendo[vaga.id_evento] && <Loader2 className="w-4 h-4 animate-spin" />}
-                      {respondendo[vaga.id_evento] ? 'Confirmando...' : 'Confirmar Contratação'}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleResponder(vaga.id_evento, tipoOrigem)}
-                      disabled={respondendo[vaga.id_evento]}
-                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded font-medium text-sm flex items-center justify-center gap-2 shadow-sm transition-colors"
-                    >
-                      {respondendo[vaga.id_evento] && <Loader2 className="w-4 h-4 animate-spin" />}
-                      {respondendo[vaga.id_evento] ? 'Salvando...' : 'Salvar Resposta'}
-                    </button>
-                  )}
-
-                  {abaSelecionada === 'respondidas' && (
-                    <button
-                      onClick={() => handleResponder(vaga.id_evento, tipoOrigem)}
-                      disabled={respondendo[vaga.id_evento]}
-                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded font-medium text-sm transition-colors"
-                    >
-                      Atualizar
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        )}
-      </Card>
-    );
-  };
 
   // Recarregar dados quando lotação ou contrato mudar
   useEffect(() => {
@@ -897,7 +535,7 @@ export function VacancyManagement() {
                 value="respondidas"
                 className="rounded-none border-b-2 border-transparent data-[state=active]:border-green-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-1 pb-4 text-sm font-semibold"
               >
-                Vagas em Aberto ({respondidas.length})
+                Vagas em Aberto ({vagasEmAberto.length})
               </TabsTrigger>
               <TabsTrigger
                 value="pendentes_ef"
@@ -918,7 +556,28 @@ export function VacancyManagement() {
               {pendentes.length === 0 ? (
                 <EmptyState icon={Users} title="Nenhuma demissão pendente" description="Não há registros de demissões que aguardam resposta nesta unidade ou filtro." />
               ) : (
-                pendentes.map((vaga) => <VagaCard key={vaga.id_evento} vaga={vaga} />)
+                pendentes.map((vaga) => (
+                  <VagaCard
+                    key={vaga.id_evento}
+                    vaga={vaga}
+                    expandedId={expandedId}
+                    setExpandedId={setExpandedId}
+                    abaSelecionada={abaSelecionada}
+                    respostas={respostas}
+                    formData={formData}
+                    updateFormDataMap={updateFormDataMap}
+                    tlpData={tlpData}
+                    fantasias={fantasias}
+                    loadingProfile={loadingProfile}
+                    setLoadingProfile={setLoadingProfile}
+                    setSelectedProfileFunc={setSelectedProfileFunc}
+                    handleResponder={handleResponder}
+                    handleEfetivar={handleEfetivar}
+                    respondendo={respondendo}
+                    handleUpdateTlpValue={handleUpdateTlpValue}
+                    updatingTlp={updatingTlp}
+                  />
+                ))
               )}
             </TabsContent>
 
@@ -926,7 +585,29 @@ export function VacancyManagement() {
               {afastamentos.length === 0 ? (
                 <EmptyState icon={Clock} title="Nenhum afastamento pendente" description="Não há registros de afastamentos que aguardam resposta nesta unidade ou filtro." />
               ) : (
-                afastamentos.map((vaga) => <VagaCard key={vaga.id_evento} vaga={vaga} mostrarSituacao={true} />)
+                afastamentos.map((vaga) => (
+                  <VagaCard
+                    key={vaga.id_evento}
+                    vaga={vaga}
+                    mostrarSituacao={true}
+                    expandedId={expandedId}
+                    setExpandedId={setExpandedId}
+                    abaSelecionada={abaSelecionada}
+                    respostas={respostas}
+                    formData={formData}
+                    updateFormDataMap={updateFormDataMap}
+                    tlpData={tlpData}
+                    fantasias={fantasias}
+                    loadingProfile={loadingProfile}
+                    setLoadingProfile={setLoadingProfile}
+                    setSelectedProfileFunc={setSelectedProfileFunc}
+                    handleResponder={handleResponder}
+                    handleEfetivar={handleEfetivar}
+                    respondendo={respondendo}
+                    handleUpdateTlpValue={handleUpdateTlpValue}
+                    updatingTlp={updatingTlp}
+                  />
+                ))
               )}
             </TabsContent>
 
@@ -934,15 +615,57 @@ export function VacancyManagement() {
               {pendentesEf.length === 0 ? (
                 <EmptyState icon={AlertCircle} title="Sem pendências de efetivação" description="Vagas marcadas como 'Pendente efetivação' aparecerão aqui." />
               ) : (
-                pendentesEf.map((vaga) => <VagaCard key={vaga.id_evento} vaga={vaga} />)
+                pendentesEf.map((vaga) => (
+                  <VagaCard
+                    key={vaga.id_evento}
+                    vaga={vaga}
+                    expandedId={expandedId}
+                    setExpandedId={setExpandedId}
+                    abaSelecionada={abaSelecionada}
+                    respostas={respostas}
+                    formData={formData}
+                    updateFormDataMap={updateFormDataMap}
+                    tlpData={tlpData}
+                    fantasias={fantasias}
+                    loadingProfile={loadingProfile}
+                    setLoadingProfile={setLoadingProfile}
+                    setSelectedProfileFunc={setSelectedProfileFunc}
+                    handleResponder={handleResponder}
+                    handleEfetivar={handleEfetivar}
+                    respondendo={respondendo}
+                    handleUpdateTlpValue={handleUpdateTlpValue}
+                    updatingTlp={updatingTlp}
+                  />
+                ))
               )}
             </TabsContent>
 
             <TabsContent value="respondidas" className="space-y-3 mt-0 focusVisible:outline-none">
-              {respondidas.length === 0 ? (
-                <EmptyState icon={TrendingUp} title="Nenhuma resposta registrada" description="Eventos já respondidos serão listados aqui para histórico." />
+              {vagasEmAberto.length === 0 ? (
+                <EmptyState icon={TrendingUp} title="Nenhuma vaga em aberto" description="Eventos que geraram vagas e ainda não foram preenchidas aparecerão aqui." />
               ) : (
-                respondidas.map((vaga) => <VagaCard key={vaga.id_evento} vaga={vaga} />)
+                vagasEmAberto.map((vaga) => (
+                  <VagaCard
+                    key={vaga.id_evento}
+                    vaga={vaga}
+                    expandedId={expandedId}
+                    setExpandedId={setExpandedId}
+                    abaSelecionada={abaSelecionada}
+                    respostas={respostas}
+                    formData={formData}
+                    updateFormDataMap={updateFormDataMap}
+                    tlpData={tlpData}
+                    fantasias={fantasias}
+                    loadingProfile={loadingProfile}
+                    setLoadingProfile={setLoadingProfile}
+                    setSelectedProfileFunc={setSelectedProfileFunc}
+                    handleResponder={handleResponder}
+                    handleEfetivar={handleEfetivar}
+                    respondendo={respondendo}
+                    handleUpdateTlpValue={handleUpdateTlpValue}
+                    updatingTlp={updatingTlp}
+                  />
+                ))
               )}
             </TabsContent>
 
@@ -950,7 +673,29 @@ export function VacancyManagement() {
               {vagasFechadas.length === 0 ? (
                 <EmptyState icon={CheckCircle} title="Nenhuma vaga fechada" description="Vagas que foram preenchidas aparecerão aqui." />
               ) : (
-                vagasFechadas.map((vaga) => <VagaCard key={vaga.id_evento} vaga={vaga} mostrarSubstituto={true} />)
+                vagasFechadas.map((vaga) => (
+                  <VagaCard
+                    key={vaga.id_evento}
+                    vaga={vaga}
+                    mostrarSubstituto={true}
+                    expandedId={expandedId}
+                    setExpandedId={setExpandedId}
+                    abaSelecionada={abaSelecionada}
+                    respostas={respostas}
+                    formData={formData}
+                    updateFormDataMap={updateFormDataMap}
+                    tlpData={tlpData}
+                    fantasias={fantasias}
+                    loadingProfile={loadingProfile}
+                    setLoadingProfile={setLoadingProfile}
+                    setSelectedProfileFunc={setSelectedProfileFunc}
+                    handleResponder={handleResponder}
+                    handleEfetivar={handleEfetivar}
+                    respondendo={respondendo}
+                    handleUpdateTlpValue={handleUpdateTlpValue}
+                    updatingTlp={updatingTlp}
+                  />
+                ))
               )}
             </TabsContent>
           </Tabs>
@@ -982,6 +727,225 @@ function EmptyState({ icon: Icon, title, description }: { icon: any, title: stri
   );
 }
 
+
+function FuncionarioCombobox({
+  value,
+  onChange,
+  cargoAlvo,
+  lotacaoAlvo,
+  nomeFantasiaAlvo,
+  cnpjAlvo
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  cargoAlvo?: string;
+  lotacaoAlvo?: string;
+  nomeFantasiaAlvo?: string;
+  cnpjAlvo?: string;
+}) {
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [isOpen, setIsOpen] = useState(true); // Sempre aberto por padrão
+  const [loading, setLoading] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (isOpen) {
+        setLoading(true);
+        const results = await buscarSugestoesSubstitutos(value || '', nomeFantasiaAlvo);
+        setSuggestions(results);
+        setLoading(false);
+      } else {
+        setSuggestions([]);
+      }
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [value, isOpen, nomeFantasiaAlvo]);
+
+  return (
+    <div ref={wrapperRef} className="relative w-full space-y-3">
+      {/* Campo de Busca Principal */}
+      <div className="relative">
+        <Input
+          type="text"
+          value={value}
+          onChange={(e) => {
+            onChange(e.target.value);
+            setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          className="pr-10"
+          placeholder="Nome do novo funcionário..."
+        />
+        <div className="absolute right-3 top-2.5 h-4 w-4 opacity-50 pointer-events-none flex items-center justify-center">
+          <ChevronsUpDown className="h-4 w-4" />
+        </div>
+      </div>
+
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md shadow-lg max-h-60 overflow-y-auto">
+          {loading ? (
+            <div className="p-2 text-sm text-slate-500 text-center flex items-center justify-center gap-2">
+              <Loader2 className="h-3 w-3 animate-spin" /> Buscando...
+            </div>
+          ) : suggestions.length === 0 ? (
+            <div className="p-2 text-sm text-slate-500 text-center">Nenhum funcionário encontrado.</div>
+          ) : (
+            <div className="py-1">
+              {suggestions.slice().sort((a, b) => {
+                // Scoring system conforme especificação:
+                // Cargo + Lotação + Contrato = 10.000 (máxima)
+                // Cargo + Contrato = 5.000
+                // Cargo + Lotação = 3.000 (alterado de 8000 pra ficar conforme tabela, mas mantém alta prioridade visualmente)
+                // Apenas Cargo = 1.000
+                // Apenas Contrato (sem cargo) = +100
+                // Apenas Lotação (sem cargo) = +50
+                const removerQualificadores = (cargo: string) => {
+                  return cargo
+                    .toLowerCase()
+                    .trim()
+                    .replace(/\s+(lider|substituto|interino|coordenador|gerente|supervisor|chefe|assistente|auxiliar|tecnico|aux\.|técnico)\b/gi, '')
+                    .trim();
+                };
+
+                const getScore = (item: any) => {
+                  let score = 0;
+                  const cargoAlvoClean = removerQualificadores(cargoAlvo || '');
+                  const itemCargoClean = removerQualificadores(item.cargo || '');
+                  const cargoMatch = cargoAlvoClean && itemCargoClean && cargoAlvoClean === itemCargoClean;
+
+                  const lotacaoLower = lotacaoAlvo?.toLowerCase().trim() || '';
+                  const itemCentroLower = item.centro_custo ? item.centro_custo.toLowerCase().trim() : '';
+                  const itemLocalTrabalhoLower = item.local_de_trabalho ? item.local_de_trabalho.toLowerCase().trim() : '';
+                  const lotacaoMatch = lotacaoLower && (itemCentroLower === lotacaoLower || itemLocalTrabalhoLower === lotacaoLower);
+
+                  // Comparação por CNPJ (Contrato)
+                  const cnpjAlvoClean = cnpjAlvo?.replace(/\D/g, '') || '';
+                  const itemCnpjClean = (item.cnpj_empresa || item.cnpj)?.replace(/\D/g, '') || '';
+                  const cnpjMatch = cnpjAlvoClean && itemCnpjClean && cnpjAlvoClean === itemCnpjClean;
+
+                  // Fallback para nome fantasia se CNPJ falhar ou não existir
+                  const fantasiaAlvoLower = nomeFantasiaAlvo?.toLowerCase().trim() || '';
+                  const itemFantasiaLower = item.nome_fantasia ? item.nome_fantasia.toLowerCase().trim() : '';
+                  const fantasiaMatch = fantasiaAlvoLower && itemFantasiaLower === fantasiaAlvoLower;
+
+                  const contratoMatch = cnpjMatch || fantasiaMatch;
+
+                  // Aplicar scoring conforme tabela
+                  if (cargoMatch) {
+                    if (lotacaoMatch && contratoMatch) {
+                      score = 10000; // Perfeito: cargo + lotação + contrato
+                    } else if (lotacaoMatch) {
+                      score = 8000; // PRIORIDADE: Cargo + Lotação (mesmo cargo e local)
+                    } else if (contratoMatch) {
+                      score = 5000; // Cargo + Contrato
+                    } else {
+                      score = 1000; // Apenas cargo
+                    }
+                  } else {
+                    // Se cargo não bate
+                    if (contratoMatch) score += 100;
+                    if (lotacaoMatch) score += 50;
+                  }
+
+                  // Debug: Log para verificar scoring
+                  if (score >= 3000) {
+                    console.log(`[SCORE ${score}] ${item.nome}`, {
+                      cargo: `"${itemCargoClean}" vs "${cargoAlvoClean}" = ${cargoMatch}`,
+                      lotacao: `"${itemLocalTrabalhoLower || itemCentroLower}" vs "${lotacaoLower}" = ${lotacaoMatch}`,
+                      cnpj: `"${itemCnpjClean}" vs "${cnpjAlvoClean}" = ${cnpjMatch}`,
+                      fantasia: `"${itemFantasiaLower}" vs "${fantasiaAlvoLower}" = ${fantasiaMatch}`,
+                      contratoMatch
+                    });
+                  }
+
+                  return score;
+                };
+                return getScore(b) - getScore(a);
+              }).slice(0, 50).map((s) => {
+                const removerQualificadoresDisplay = (cargo: string) => {
+                  return cargo
+                    .toLowerCase()
+                    .trim()
+                    .replace(/\s+(lider|substituto|interino|coordenador|gerente|supervisor|chefe|assistente|auxiliar|tecnico|aux\.|técnico)\b/gi, '')
+                    .trim();
+                };
+                const cargoMatch = cargoAlvo && s.cargo && removerQualificadoresDisplay(cargoAlvo) === removerQualificadoresDisplay(s.cargo);
+
+                const lotacaoMatch = lotacaoAlvo && (
+                  (s.centro_custo && s.centro_custo.toLowerCase().trim() === lotacaoAlvo.toLowerCase().trim()) ||
+                  (s.local_de_trabalho && s.local_de_trabalho.toLowerCase().trim() === lotacaoAlvo.toLowerCase().trim())
+                );
+
+                const cnpjAlvoClean = cnpjAlvo?.replace(/\D/g, '') || '';
+                const itemCnpjClean = (s.cnpj_empresa || s.cnpj)?.replace(/\D/g, '') || '';
+                const cnpjMatch = cnpjAlvoClean && itemCnpjClean && cnpjAlvoClean === itemCnpjClean;
+                const fantasiaMatch = nomeFantasiaAlvo && s.nome_fantasia && nomeFantasiaAlvo.toLowerCase().trim() === s.nome_fantasia.toLowerCase().trim();
+                const contratoMatch = cnpjMatch || fantasiaMatch;
+
+                // Recomendado se Cargo bate + (Lotação OU Contrato)
+                const isRecommended = cargoMatch && (lotacaoMatch || contratoMatch);
+
+                return (
+                  <div
+                    key={s.id}
+                    className={`px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer flex flex-col gap-0.5 ${isRecommended ? 'bg-slate-50 dark:bg-slate-900/50' : ''}`}
+                    onClick={() => {
+                      onChange(s.nome);
+                      setIsOpen(false);
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{s.nome}</span>
+                      {isRecommended && (
+                        <Badge variant="outline" className="text-[10px] h-4 bg-green-50 text-green-700 border-green-200 flex gap-1 items-center">
+                          <Check className="h-2 w-2" /> Recomendado
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-xs text-slate-500 flex flex-wrap gap-x-2 items-center">
+                      <span className={cargoMatch ? "font-semibold text-slate-700 dark:text-slate-300" : ""}>{s.cargo}</span>
+                      <span className="text-slate-300">•</span>
+                      <span className={lotacaoMatch ? "font-semibold text-slate-700 dark:text-slate-300" : ""}>{s.local_de_trabalho || s.centro_custo || 'Sem lotação'}</span>
+                      {(s.nome_fantasia || contratoMatch) && (
+                        <>
+                          <span className="text-slate-300">•</span>
+                          <span className={`uppercase text-[10px] px-1.5 rounded ${contratoMatch ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-semibold' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
+                            {s.nome_fantasia || 'Contrato'}
+                          </span>
+                        </>
+                      )}
+                      {s.dt_admissao && (
+                        <>
+                          <span className="text-slate-300">•</span>
+                          <span className="text-slate-500">
+                            Admissão: {new Date(s.dt_admissao).toLocaleDateString('pt-BR')}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function calculateDaysOpen(dataEvento: string): number {
   if (!dataEvento) return 0;
   try {
@@ -998,4 +962,469 @@ function calculateDaysOpen(dataEvento: string): number {
     console.error("Error calculating days open:", e);
     return 0;
   }
+}
+function getSlaStatus(dias: number) {
+  if (dias > 30) return { icon: AlertTriangle, color: 'text-red-600', label: 'Crítico' };
+  if (dias > 15) return { icon: Clock, color: 'text-amber-600', label: 'Atenção' };
+  return { icon: CheckCircle, color: 'text-green-600', label: 'Normal' };
+}
+
+function VagaCard({
+  vaga,
+  mostrarSubstituto = false,
+  mostrarSituacao = false,
+  expandedId,
+  setExpandedId,
+  abaSelecionada,
+  respostas,
+  formData,
+  updateFormDataMap,
+  tlpData,
+  fantasias,
+  loadingProfile,
+  setLoadingProfile,
+  setSelectedProfileFunc,
+  handleResponder,
+  handleEfetivar,
+  respondendo,
+  handleUpdateTlpValue,
+  updatingTlp
+}: {
+  vaga: any;
+  mostrarSubstituto?: boolean;
+  mostrarSituacao?: boolean;
+  expandedId: number | null;
+  setExpandedId: (id: number | null) => void;
+  abaSelecionada: string;
+  respostas: any;
+  formData: any;
+  updateFormDataMap: (idEvento: number, updates: any) => void;
+  tlpData: any[] | null;
+  fantasias: any[] | null;
+  loadingProfile: boolean;
+  setLoadingProfile: (loading: boolean) => void;
+  setSelectedProfileFunc: (func: any) => void;
+  handleResponder: (idEvento: number, tipoOrigem: 'DEMISSAO' | 'AFASTAMENTO') => Promise<void>;
+  handleEfetivar: (idEvento: number, tipo: 'DEMISSAO' | 'AFASTAMENTO') => Promise<void>;
+  respondendo: { [key: number]: boolean };
+  handleUpdateTlpValue: (cargo: string, lotacao: string, id: number | undefined, newValue: number) => Promise<void>;
+  updatingTlp: string | null;
+}) {
+  if (!vaga || !vaga.id_evento) return null;
+  const displayDiasEmAberto = vaga.dias_em_aberto > 0 ? vaga.dias_em_aberto : calculateDaysOpen(vaga.data_evento);
+  const isExpanded = expandedId === vaga.id_evento;
+  const sla = getSlaStatus(displayDiasEmAberto || 0);
+  const SlaIcon = sla.icon;
+  const tipoOrigem = vaga.situacao_origem === '99-Demitido' ? 'DEMISSAO' : 'AFASTAMENTO';
+  const isPendenteEf = abaSelecionada === 'pendentes_ef';
+
+  const currentResp = respostas[vaga.id_evento] || {};
+  const currentForm = formData[vaga.id_evento] || {};
+
+  // Fun helper to get value with priority: formData > respostas > default
+  // Typed as any to allow flexibility with keys
+  const getVal = (key: string, defaultVal: any = null) => {
+    if (currentForm[key] !== undefined && currentForm[key] !== null) return currentForm[key];
+    if (currentResp[key] !== undefined && currentResp[key] !== null) return currentResp[key];
+    return defaultVal;
+  };
+
+  const abriuVaga = getVal('abriu_vaga');
+  const naoPertenceUnidade = getVal('nao_pertence_unidade') === true;
+  const dataAbertura = getVal('data_abertura_vaga', '');
+  const dataFechamento = getVal('data_fechamento_vaga', '');
+  const vagaPreenchida = getVal('vaga_preenchida', 'NAO'); // Default 'NAO' for Select
+  // Check both keys for candidate name just in case
+  // Campo de busca usa apenas o que foi digitado agora (currentForm), não carrega valor anterior
+  const nomeCandidato = currentForm.nome_candidato || '';
+  const observacao = getVal('observacao', '');
+  const pendenteEfetivacao = getVal('pendente_efetivacao', false);
+
+  const nomeSubstitutoDisplay = currentResp.nome_candidato || currentForm.nome_candidato || currentForm.nome_substituto || '';
+
+  // Encontrar dados TLP correspondentes e Nome do Contrato
+  const tlpEntry = useMemo(() => {
+    if (!tlpData) return null;
+    return tlpData.find(t =>
+      t.cargo.toLowerCase().trim() === vaga.cargo?.toLowerCase().trim() &&
+      (t.centro_custo.toLowerCase().trim() === vaga.lotacao?.toLowerCase().trim() ||
+        t.unidade.toLowerCase().trim() === vaga.lotacao?.toLowerCase().trim())
+    );
+  }, [vaga.cargo, vaga.lotacao, tlpData]);
+
+  const nomeContrato = useMemo(() => {
+    // Prioridade 1: Unidade vinda da TLP (que é o nome do contrato)
+    if (tlpEntry?.unidade) return tlpEntry.unidade;
+
+    // Prioridade 2: Buscar na lista de fantasias pelo CNPJ do evento
+    if (vaga.cnpj && fantasias) {
+      const f = (fantasias as any[]).find(item => item.cnpj === vaga.cnpj);
+      if (f) return f.display_name || f.nome_fantasia;
+    }
+
+    return null;
+  }, [tlpEntry, vaga.cnpj, fantasias]);
+
+  const handleVerPerfilClicado = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    setLoadingProfile(true);
+    try {
+      let func = null;
+
+      // Tenta por CPF se existir
+      if ((vaga as any).cpf) {
+        func = await buscarFuncionarioPorCpf((vaga as any).cpf);
+      }
+
+      // Fallback por Nome (mais comum nesta view)
+      if (!func && vaga.nome) {
+        func = await buscarFuncionarioPorNome(vaga.nome);
+      }
+
+      if (func) {
+        setSelectedProfileFunc(func);
+      } else {
+        alert('Colaborador não encontrado na base de dados do Oris.');
+      }
+    } catch (err) {
+      console.error('Erro ao buscar perfil:', err);
+      alert('Erro ao carregar perfil do colaborador.');
+    } finally {
+      setLoadingProfile(false);
+    }
+  };
+
+
+
+  return (
+    <Card key={vaga.id_evento} className={`mb-3 overflow-hidden border-slate-200 dark:border-slate-800 transition-all hover:shadow-md ${isPendenteEf ? 'border-l-4 border-l-amber-500' : ''}`}>
+      <div
+        className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-between"
+        onClick={() => setExpandedId(isExpanded ? null : vaga.id_evento)}
+      >
+        <div className="flex items-start gap-3">
+          <div className={`mt-1 p-2 rounded-lg ${tipoOrigem === 'DEMISSAO' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
+            <Users size={18} />
+          </div>
+          <div onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="font-semibold text-slate-900 dark:text-slate-100">{vaga.cargo || 'Cargo não informado'}</h3>
+              <Badge variant="outline" className="text-[10px] h-5 uppercase">
+                {vaga.lotacao || 'Unidade'}
+              </Badge>
+              {nomeContrato && (
+                <Badge variant="secondary" className="text-[10px] h-5 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-none uppercase">
+                  {nomeContrato}
+                </Badge>
+              )}
+              <SlaIcon className={`w-4 h-4 ${sla.color}`} />
+            </div>
+            {mostrarSubstituto ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+                  <UserX className="w-4 h-4" />
+                  {vaga.nome || 'Sem nome'}
+                </div>
+                {nomeSubstitutoDisplay && (
+                  <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                    <UserCheck className="w-4 h-4" />
+                    {nomeSubstitutoDisplay}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="text-sm text-blue-600 dark:text-blue-400 font-medium hover:underline cursor-pointer transition-colors flex items-center gap-1 text-left"
+                  onClick={handleVerPerfilClicado}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleVerPerfilClicado(e as any);
+                    }
+                  }}
+                >
+                  {vaga.nome || 'Sem nome'}
+                  {loadingProfile && <Loader2 className="w-3 h-3 animate-spin inline ml-1" />}
+                </span>
+                {mostrarSituacao && vaga.situacao_origem && (
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    {vaga.situacao_origem}
+                  </div>
+                )}
+                {tipoOrigem === 'DEMISSAO' && vaga.tipo_rescisao && (
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    {vaga.tipo_rescisao}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
+              <span className="flex items-center gap-1"><Calendar size={12} /> {formatarData(vaga.data_evento)}</span>
+              <span className="flex items-center gap-1"><Clock size={12} /> {displayDiasEmAberto} dias</span>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+        </div>
+      </div>
+
+      {isExpanded && (
+        <CardContent className="border-t border-slate-200 dark:border-slate-700 pt-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Informações */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-bold uppercase text-slate-400 flex items-center gap-2">
+                <AlertCircle size={14} /> Detalhes do Evento
+              </h4>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Situação</span>
+                  <span className={`font-medium ${vaga.situacao_origem === '99-Demitido' ? 'text-red-600' : ''}`}>{vaga.situacao_origem}</span>
+                </div>
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Dias em aberto</span>
+                  <span className={`font-medium ${sla.color}`}>{displayDiasEmAberto} dias</span>
+                </div>
+              </div>
+
+              {/* TLP Info */}
+              <div className="pt-2">
+                <h4 className="text-xs font-bold uppercase text-slate-400 flex items-center gap-2 mb-3">
+                  <TrendingUp size={14} /> Quadro Necessário (TLP)
+                </h4>
+                {tlpEntry ? (
+                  <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 space-y-3 border border-slate-100 dark:border-slate-700">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-500 uppercase font-bold">Status do Quadro</span>
+                      <StatusBadge status={tlpEntry.status} />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Ideal</p>
+                        <div className="flex items-center justify-center gap-1">
+                          <input
+                            type="number"
+                            className={`w-12 text-center text-lg font-bold border-b border-dashed border-slate-300 hover:border-blue-500 focus:border-blue-600 focus:outline-none bg-transparent text-slate-900 dark:text-slate-100 ${updatingTlp === `${vaga.cargo}-${vaga.lotacao}` ? 'opacity-50' : ''}`}
+                            defaultValue={tlpEntry.tlp}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.currentTarget.blur();
+                            }}
+                            onBlur={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              if (!isNaN(val) && val !== tlpEntry.tlp) {
+                                handleUpdateTlpValue(vaga.cargo, vaga.lotacao, tlpEntry.id, val);
+                              } else {
+                                e.currentTarget.value = tlpEntry.tlp.toString();
+                              }
+                            }}
+                            disabled={updatingTlp === `${vaga.cargo}-${vaga.lotacao}`}
+                          />
+                          {updatingTlp === `${vaga.cargo}-${vaga.lotacao}` && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Real</p>
+                        <p className="text-lg font-bold text-green-600 dark:text-green-400">{tlpEntry.ativos}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Saldo</p>
+                        <p className={`text-lg font-bold ${tlpEntry.saldo < 0 ? 'text-red-600' : 'text-amber-600'}`}>
+                          {tlpEntry.saldo > 0 ? '+' : ''}{tlpEntry.saldo}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 italic text-center">
+                      * Real considera ativos + afastados
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-center border border-dashed border-slate-200 dark:border-slate-700">
+                    <p className="text-xs text-slate-500 italic">Dados TLP não mapeados para esta unidade.</p>
+                  </div>
+                )}
+              </div>
+
+              {isPendenteEf && (
+                <div className="mt-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-lg">
+                  <p className="text-xs text-amber-800 dark:text-amber-300 font-medium leading-relaxed">
+                    Esta vaga foi marcada como "Pendente de Efetivação". Confirme quando o novo funcionário já estiver trabalhando.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Formulário de resposta */}
+            <div className="space-y-4">
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-sm font-medium mb-2 block">Abriu vaga para substituição?</Label>
+                  <RadioGroup
+                    value={naoPertenceUnidade ? 'pertence' : (abriuVaga === true ? 'sim' : 'nao')}
+                    onValueChange={(value) => {
+                      let updates: any = {};
+                      if (value === 'sim') {
+                        updates = { abriu_vaga: true, nao_pertence_unidade: false };
+                      } else if (value === 'nao') {
+                        updates = { abriu_vaga: false, nao_pertence_unidade: false };
+                      } else if (value === 'pertence') {
+                        updates = { abriu_vaga: false, nao_pertence_unidade: true };
+                      }
+                      updateFormDataMap(vaga.id_evento, updates);
+                    }}
+                  >
+                    <div className="flex items-center space-x-2 mb-2">
+                      <RadioGroupItem value="sim" id={`sim-${vaga.id_evento}`} />
+                      <Label htmlFor={`sim-${vaga.id_evento}`} className="cursor-pointer">
+                        SIM
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2 mb-2">
+                      <RadioGroupItem value="nao" id={`nao-${vaga.id_evento}`} />
+                      <Label htmlFor={`nao-${vaga.id_evento}`} className="cursor-pointer">
+                        NÃO
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="pertence" id={`pertence-${vaga.id_evento}`} />
+                      <Label htmlFor={`pertence-${vaga.id_evento}`} className="cursor-pointer">
+                        Não pertence à unidade
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor={`data-${vaga.id_evento}`} className="text-sm">
+                      Data Abertura
+                    </Label>
+                    <Input
+                      type="date"
+                      id={`data-${vaga.id_evento}`}
+                      className="mt-1"
+                      value={dataAbertura}
+                      onChange={(e) => updateFormDataMap(vaga.id_evento, { data_abertura_vaga: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`preench-${vaga.id_evento}`} className="text-sm">
+                      Vaga Preenchida?
+                    </Label>
+                    <Select
+                      value={vagaPreenchida}
+                      onValueChange={(value) =>
+                        updateFormDataMap(vaga.id_evento, { vaga_preenchida: value as 'SIM' | 'NAO' })
+                      }
+                    >
+                      <SelectTrigger id={`preench-${vaga.id_evento}`} className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="SIM">SIM</SelectItem>
+                        <SelectItem value="NAO">NÃO</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {vagaPreenchida === 'SIM' && (
+                  <div className="space-y-3">
+                    <div>
+                      <Label htmlFor={`fechamento-${vaga.id_evento}`} className="text-sm">
+                        Data Fechamento
+                      </Label>
+                      <Input
+                        type="date"
+                        id={`fechamento-${vaga.id_evento}`}
+                        className="mt-1"
+                        value={dataFechamento}
+                        onChange={(e) => updateFormDataMap(vaga.id_evento, { data_fechamento_vaga: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor={`substituto-${vaga.id_evento}`} className="text-sm">
+                        Nome do Substituto
+                      </Label>
+                      <FuncionarioCombobox
+                        value={nomeCandidato}
+                        onChange={(val) => updateFormDataMap(vaga.id_evento, { nome_candidato: val })}
+                        cargoAlvo={vaga.cargo}
+                        lotacaoAlvo={vaga.lotacao}
+                        nomeFantasiaAlvo={nomeContrato || undefined}
+                        cnpjAlvo={vaga.cnpj}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <Label htmlFor={`obs-${vaga.id_evento}`} className="text-sm">
+                    Observações
+                  </Label>
+                  <textarea
+                    id={`obs-${vaga.id_evento}`}
+                    className="w-full mt-1 p-2 text-sm border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 dark:text-slate-200"
+                    rows={2}
+                    placeholder="Adicione observações..."
+                    value={observacao}
+                    onChange={(e) => updateFormDataMap(vaga.id_evento, { observacao: e.target.value })}
+                  />
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`efetiv-${vaga.id_evento}`}
+                    checked={pendenteEfetivacao === true}
+                    onCheckedChange={(checked) =>
+                      updateFormDataMap(vaga.id_evento, { pendente_efetivacao: checked === true })
+                    }
+                  />
+                  <Label htmlFor={`efetiv-${vaga.id_evento}`} className="text-sm cursor-pointer">
+                    Pendente efetivação
+                  </Label>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                {isPendenteEf ? (
+                  <button
+                    onClick={() => handleEfetivar(vaga.id_evento, tipoOrigem)}
+                    disabled={respondendo[vaga.id_evento]}
+                    className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded font-medium text-sm flex items-center justify-center gap-2 shadow-sm transition-colors"
+                  >
+                    {respondendo[vaga.id_evento] && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {respondendo[vaga.id_evento] ? 'Confirmando...' : 'Confirmar Contratação'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleResponder(vaga.id_evento, tipoOrigem)}
+                    disabled={respondendo[vaga.id_evento]}
+                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded font-medium text-sm flex items-center justify-center gap-2 shadow-sm transition-colors"
+                  >
+                    {respondendo[vaga.id_evento] && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {respondendo[vaga.id_evento] ? 'Salvando...' : 'Salvar Resposta'}
+                  </button>
+                )}
+
+                {abaSelecionada === 'respondidas' && (
+                  <button
+                    onClick={() => handleResponder(vaga.id_evento, tipoOrigem)}
+                    disabled={respondendo[vaga.id_evento]}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded font-medium text-sm transition-colors"
+                  >
+                    Atualizar
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
 }
