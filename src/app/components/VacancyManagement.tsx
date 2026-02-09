@@ -238,6 +238,7 @@ export function VacancyManagement() {
   const respondidas = useMemo(() => applyDateFilter(ordenarVagas(filtrarVagas(demissoesRespondidas, tlpData, fantasias))), [filtrarVagas, ordenarVagas, demissoesRespondidas, tlpData, fantasias, applyDateFilter]);
   const pendentesEf = useMemo(() => applyDateFilter(ordenarVagas(filtrarVagas(vagasPendentesEfetivacao, tlpData, fantasias))), [filtrarVagas, ordenarVagas, vagasPendentesEfetivacao, tlpData, fantasias, applyDateFilter]);
   const afastamentos = useMemo(() => applyDateFilter(ordenarVagas(filtrarVagas(afastamentosPendentes, tlpData, fantasias))), [filtrarVagas, ordenarVagas, afastamentosPendentes, tlpData, fantasias, applyDateFilter]);
+
   const vagasEmAberto = useMemo(() => {
     return respondidas.filter((vaga) => {
       const resp = respostas[vaga.id_evento];
@@ -250,6 +251,15 @@ export function VacancyManagement() {
     const fechadas = respondidas.filter((vaga) => respostas[vaga.id_evento]?.vaga_preenchida === 'SIM');
     return fechadas;
   }, [respondidas, respostas]);
+
+  // Verificar se há busca ativa
+  const temBuscaAtiva = busca.trim().length > 0;
+
+  // Agregar todos os resultados quando há busca
+  const todosResultadosBusca = useMemo(() => {
+    if (!temBuscaAtiva) return [];
+    return [...pendentes, ...afastamentos, ...pendentesEf, ...vagasEmAberto, ...vagasFechadas];
+  }, [temBuscaAtiva, pendentes, afastamentos, pendentesEf, vagasEmAberto, vagasFechadas]);
 
 
 
@@ -400,15 +410,17 @@ export function VacancyManagement() {
 
             {/* Busca */}
             <div className="md:col-span-1 lg:col-span-1">
-              <Label className="text-xs font-bold uppercase text-slate-500 mb-2 block">Buscar Funcionário</Label>
+              <Label className="text-xs font-bold uppercase text-slate-500 mb-2 block flex items-center gap-1">
+                <Search className="w-3 h-3" /> Buscar Funcionário
+              </Label>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-blue-500" />
                 <Input
                   type="text"
-                  placeholder="Nome, cargo ou lotação..."
+                  placeholder="Ex: João Silva, Médico, UTI..."
                   value={busca}
                   onChange={(e) => setBusca(e.target.value)}
-                  className="pl-10 h-10 border-slate-200 dark:border-slate-700"
+                  className="pl-10 h-10 border-slate-200 dark:border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 />
               </div>
             </div>
@@ -519,6 +531,14 @@ export function VacancyManagement() {
           {/* Abas */}
           <Tabs value={abaSelecionada} onValueChange={setAbaSelecionada} className="w-full">
             <TabsList className="flex w-full overflow-x-auto justify-start border-b border-slate-200 dark:border-slate-800 bg-transparent rounded-none h-auto p-0 gap-6 mb-8">
+              {temBuscaAtiva && (
+                <TabsTrigger
+                  value="busca"
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-purple-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-1 pb-4 text-sm font-semibold"
+                >
+                  🔍 Resultados ({todosResultadosBusca.length})
+                </TabsTrigger>
+              )}
               <TabsTrigger
                 value="pendentes"
                 className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-1 pb-4 text-sm font-semibold"
@@ -639,6 +659,174 @@ export function VacancyManagement() {
                 ))
               )}
             </TabsContent>
+
+            {temBuscaAtiva && (
+              <TabsContent value="busca" className="space-y-3 mt-0 focusVisible:outline-none">
+                {todosResultadosBusca.length === 0 ? (
+                  <EmptyState icon={Search} title="Nenhum resultado encontrado" description={`Nenhuma vaga contém "${busca}" em nome, cargo ou lotação.`} />
+                ) : (
+                  <div className="space-y-4">
+                    {/* Agrupar resultados por status */}
+                    {pendentes.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 px-2">
+                          <span className="w-3 h-3 rounded-full bg-red-500"></span>
+                          Demissões Pendentes ({pendentes.length})
+                        </h4>
+                        {pendentes.map((vaga) => (
+                          <VagaCard
+                            key={vaga.id_evento}
+                            vaga={vaga}
+                            expandedId={expandedId}
+                            setExpandedId={setExpandedId}
+                            abaSelecionada="pendentes"
+                            respostas={respostas}
+                            formData={formData}
+                            updateFormDataMap={updateFormDataMap}
+                            tlpData={tlpData}
+                            fantasias={fantasias}
+                            loadingProfile={loadingProfile}
+                            setLoadingProfile={setLoadingProfile}
+                            setSelectedProfileFunc={setSelectedProfileFunc}
+                            handleResponder={handleResponder}
+                            handleEfetivar={handleEfetivar}
+                            respondendo={respondendo}
+                            handleUpdateTlpValue={handleUpdateTlpValue}
+                            updatingTlp={updatingTlp}
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                    {afastamentos.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 px-2">
+                          <span className="w-3 h-3 rounded-full bg-indigo-500"></span>
+                          Afastamentos ({afastamentos.length})
+                        </h4>
+                        {afastamentos.map((vaga) => (
+                          <VagaCard
+                            key={vaga.id_evento}
+                            vaga={vaga}
+                            mostrarSituacao={true}
+                            expandedId={expandedId}
+                            setExpandedId={setExpandedId}
+                            abaSelecionada="afastamentos"
+                            respostas={respostas}
+                            formData={formData}
+                            updateFormDataMap={updateFormDataMap}
+                            tlpData={tlpData}
+                            fantasias={fantasias}
+                            loadingProfile={loadingProfile}
+                            setLoadingProfile={setLoadingProfile}
+                            setSelectedProfileFunc={setSelectedProfileFunc}
+                            handleResponder={handleResponder}
+                            handleEfetivar={handleEfetivar}
+                            respondendo={respondendo}
+                            handleUpdateTlpValue={handleUpdateTlpValue}
+                            updatingTlp={updatingTlp}
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                    {pendentesEf.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 px-2">
+                          <span className="w-3 h-3 rounded-full bg-amber-500"></span>
+                          Efetivação Pendente ({pendentesEf.length})
+                        </h4>
+                        {pendentesEf.map((vaga) => (
+                          <VagaCard
+                            key={vaga.id_evento}
+                            vaga={vaga}
+                            expandedId={expandedId}
+                            setExpandedId={setExpandedId}
+                            abaSelecionada="pendentes_ef"
+                            respostas={respostas}
+                            formData={formData}
+                            updateFormDataMap={updateFormDataMap}
+                            tlpData={tlpData}
+                            fantasias={fantasias}
+                            loadingProfile={loadingProfile}
+                            setLoadingProfile={setLoadingProfile}
+                            setSelectedProfileFunc={setSelectedProfileFunc}
+                            handleResponder={handleResponder}
+                            handleEfetivar={handleEfetivar}
+                            respondendo={respondendo}
+                            handleUpdateTlpValue={handleUpdateTlpValue}
+                            updatingTlp={updatingTlp}
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                    {vagasEmAberto.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 px-2">
+                          <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+                          Vagas em Aberto ({vagasEmAberto.length})
+                        </h4>
+                        {vagasEmAberto.map((vaga) => (
+                          <VagaCard
+                            key={vaga.id_evento}
+                            vaga={vaga}
+                            expandedId={expandedId}
+                            setExpandedId={setExpandedId}
+                            abaSelecionada="respondidas"
+                            respostas={respostas}
+                            formData={formData}
+                            updateFormDataMap={updateFormDataMap}
+                            tlpData={tlpData}
+                            fantasias={fantasias}
+                            loadingProfile={loadingProfile}
+                            setLoadingProfile={setLoadingProfile}
+                            setSelectedProfileFunc={setSelectedProfileFunc}
+                            handleResponder={handleResponder}
+                            handleEfetivar={handleEfetivar}
+                            respondendo={respondendo}
+                            handleUpdateTlpValue={handleUpdateTlpValue}
+                            updatingTlp={updatingTlp}
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                    {vagasFechadas.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 px-2">
+                          <span className="w-3 h-3 rounded-full bg-green-500"></span>
+                          Vagas Fechadas ({vagasFechadas.length})
+                        </h4>
+                        {vagasFechadas.map((vaga) => (
+                          <VagaCard
+                            key={vaga.id_evento}
+                            vaga={vaga}
+                            mostrarSubstituto={true}
+                            expandedId={expandedId}
+                            setExpandedId={setExpandedId}
+                            abaSelecionada="fechadas"
+                            respostas={respostas}
+                            formData={formData}
+                            updateFormDataMap={updateFormDataMap}
+                            tlpData={tlpData}
+                            fantasias={fantasias}
+                            loadingProfile={loadingProfile}
+                            setLoadingProfile={setLoadingProfile}
+                            setSelectedProfileFunc={setSelectedProfileFunc}
+                            handleResponder={handleResponder}
+                            handleEfetivar={handleEfetivar}
+                            respondendo={respondendo}
+                            handleUpdateTlpValue={handleUpdateTlpValue}
+                            updatingTlp={updatingTlp}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </TabsContent>
+            )}
 
             <TabsContent value="respondidas" className="space-y-3 mt-0 focusVisible:outline-none">
               {vagasEmAberto.length === 0 ? (
@@ -1042,6 +1230,38 @@ function VagaCard({
 
   const nomeSubstitutoDisplay = currentResp.nome_candidato || currentForm.nome_candidato || currentForm.nome_substituto || '';
 
+  // Determinar status da vaga
+  const getStatusBadge = () => {
+    if (abaSelecionada === 'pendentes_ef') {
+      return {
+        label: 'Efetivação Pendente',
+        color: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+      };
+    }
+    if (abaSelecionada === 'fechadas') {
+      return {
+        label: 'Vaga Fechada',
+        color: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+      };
+    }
+    if (abaSelecionada === 'respondidas') {
+      return {
+        label: 'Em Aberto',
+        color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+      };
+    }
+    if (abaSelecionada === 'afastamentos') {
+      return {
+        label: 'Afastamento',
+        color: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
+      };
+    }
+    return {
+      label: 'Demissão Pendente',
+      color: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+    };
+  };
+
   // Encontrar dados TLP correspondentes e Nome do Contrato
   const tlpEntry = useMemo(() => {
     if (!tlpData) return null;
@@ -1108,7 +1328,7 @@ function VagaCard({
             <Users size={18} />
           </div>
           <div onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <h3 className="font-semibold text-slate-900 dark:text-slate-100">{vaga.cargo || 'Cargo não informado'}</h3>
               <Badge variant="outline" className="text-[10px] h-5 uppercase">
                 {vaga.lotacao || 'Unidade'}
@@ -1118,6 +1338,9 @@ function VagaCard({
                   {nomeContrato}
                 </Badge>
               )}
+              <Badge className={`text-[10px] h-5 uppercase font-semibold border-none ${getStatusBadge().color}`}>
+                {getStatusBadge().label}
+              </Badge>
               <SlaIcon className={`w-4 h-4 ${sla.color}`} />
             </div>
             {mostrarSubstituto ? (

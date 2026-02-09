@@ -42,7 +42,7 @@ function AppContent() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/tlp" element={<TlpPanel />} />
-            <Route path="/vacancies" element={<VacancyManagement />} />
+            <Route path="/gestao-vagas" element={<VacancyManagement />} />
             <Route path="/requisitions" element={<Requisitions />} />
             <Route path="/database" element={<DatabaseDemo />} />
             <Route path="/oris" element={<Oris />} />

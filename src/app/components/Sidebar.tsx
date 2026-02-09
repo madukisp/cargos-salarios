@@ -8,7 +8,7 @@ export function Sidebar() {
 
   const menuItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { path: '/vacancies', label: 'Gestão de Vagas', icon: Briefcase },
+    { path: '/gestao-vagas', label: 'Gestão de Vagas', icon: Briefcase },
     { path: '/tlp', label: 'TLP vs Ativos', icon: Users },
     { path: '/requisitions', label: 'Requisições', icon: FileText },
     { path: '/oris', label: 'Oris', icon: Table },
