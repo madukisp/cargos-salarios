@@ -12,6 +12,8 @@ import { Login } from './components/Login';
 import { ThemeProvider } from './components/ThemeProvider';
 import { SidebarProvider, useSidebar } from './components/SidebarContext';
 import { useAuth } from './hooks/useAuth';
+import { Settings } from './components/Settings';
+import { AgendaAnalistas } from './components/AgendaAnalistas';
 
 function AppContent() {
   const { isAuthenticated, loading } = useAuth();
@@ -45,10 +47,12 @@ function AppContent() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/tlp" element={<TlpPanel />} />
             <Route path="/gestao-vagas" element={<VacancyManagement />} />
+            <Route path="/agenda-analistas" element={<AgendaAnalistas />} />
             <Route path="/requisitions" element={<Requisitions />} />
             <Route path="/database" element={<DatabaseDemo />} />
             <Route path="/oris" element={<Oris />} />
             <Route path="/consulta-funcionarios" element={<EmployeeSearch />} />
+            <Route path="/configuracoes" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

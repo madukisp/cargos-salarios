@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Briefcase, FileText, Settings, Building2, ChevronLeft, ChevronRight, Table } from 'lucide-react';
+import { LayoutDashboard, Users, Briefcase, FileText, Settings, Building2, ChevronLeft, ChevronRight, Table, Calendar } from 'lucide-react';
 import { useSidebar } from './SidebarContext';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -8,10 +8,11 @@ export function Sidebar() {
 
   const menuItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-    
+
     { path: '/gestao-vagas', label: 'Gestão de Vagas', icon: Briefcase },
+    { path: '/agenda-analistas', label: 'Agenda Analistas', icon: Calendar },
     { path: '/tlp', label: 'TLP vs Ativos', icon: Users },
-    
+
     { path: '/consulta-funcionarios', label: 'Pesquisa', icon: Users },
     { path: '/oris', label: 'Oris', icon: Table },
     { path: '/requisitions', label: 'Requisições', icon: FileText },
@@ -49,8 +50,8 @@ export function Sidebar() {
               key={item.path}
               to={item.path}
               className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-colors ${isActive
-                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                 }`}
               title={isCollapsed ? item.label : undefined}
             >
@@ -63,13 +64,14 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="p-4 border-t border-slate-200 dark:border-slate-700 space-y-2">
-        <button
+        <Link
+          to="/configuracoes"
           className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-3 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors`}
           title={isCollapsed ? 'Configurações' : undefined}
         >
           <Settings className={`w-5 h-5 ${isCollapsed ? '' : 'mr-3'}`} />
           {!isCollapsed && 'Configurações'}
-        </button>
+        </Link>
 
         {/* Toggle Button */}
         <button
