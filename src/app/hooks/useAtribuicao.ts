@@ -47,8 +47,8 @@ export function useAtribuirVaga() {
                 // 2. Buscar dados da vaga
                 console.log('[EMAIL DEBUG] Buscando dados da vaga...');
                 const { data: vaga, error: vagaError } = await supabase
-                    .from('vw_vagas_em_aberto_admin')
-                    .select('*')
+                    .from('eventos_gestao_vagas_public')
+                    .select('nome, cargo, dias_em_aberto, data_evento')
                     .eq('id_evento', variables.id_evento)
                     .single();
 
@@ -67,9 +67,9 @@ export function useAtribuirVaga() {
                         analista_email: analista.email,
                         analista_nome: analista.nome,
                         analista_cargo: analista.cargo,
-                        funcionario_saiu: vaga.quem_saiu || '-',
-                        cargo_saiu: vaga.cargo_saiu || '-',
-                        data_abertura_vaga: vaga.data_abertura_vaga || new Date().toISOString(),
+                        funcionario_saiu: vaga.nome || '-',
+                        cargo_saiu: vaga.cargo || '-',
+                        data_abertura_vaga: vaga.data_evento || new Date().toISOString(),
                         dias_em_aberto: vaga.dias_em_aberto || 0,
                         app_url: `${urlApp}/minhas-vagas`
                     });
