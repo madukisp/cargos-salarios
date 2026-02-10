@@ -188,12 +188,19 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
                       )}
                     </div>
                   </div>
+                ) : detalhes.resposta?.vaga_preenchida === 'SIM' ? (
+                  <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg">
+                    <h3 className="text-sm font-semibold text-amber-700 dark:text-amber-400 uppercase mb-3">
+                      ⚠️ Preenchida Sem Registro
+                    </h3>
+                    <p className="text-sm text-amber-800 dark:text-amber-300">A vaga foi marcada como preenchida, mas os dados do substituto não foram registrados no sistema.</p>
+                  </div>
                 ) : (
                   <div className="p-4 bg-slate-100 dark:bg-slate-700/50 border border-slate-300 dark:border-slate-600 rounded-lg">
                     <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-400 uppercase mb-3">
                       ℹ️ Substituto
                     </h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400">Nenhum substituto atribuído ainda</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">Nenhum substituto atribuído ou vaga não preenchida</p>
                   </div>
                 )}
               </div>
