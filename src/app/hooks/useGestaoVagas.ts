@@ -56,6 +56,8 @@ export function useGestaoVagas() {
       const mapaRespostas = await carregarRespostasLote(idsFull);
       setRespostas(mapaRespostas);
 
+      const lotacoesData = await carregarLotacoes();
+
       // Categorização unificada
       const demPend: EventoDemissao[] = [];
       const demResp: EventoDemissao[] = [];
