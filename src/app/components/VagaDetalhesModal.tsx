@@ -62,21 +62,24 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
           console.warn('Erro ao buscar resposta:', respostaError);
         }
 
-        // Buscar dados do funcionário atual
-        const { data: funcData, error: funcError } = await supabase
-          .from('oris_funcionarios')
-          .select('*')
-          .eq('id', vaga.id_evento)
-          .single();
+        // Buscar dados do substituto se houver
+        let substitutoData = null;
+        if (respostaData?.id_substituto) {
+          const { data: subData, error: subError } = await supabase
+            .from('oris_funcionarios')
+            .select('id, nome, cargo, email, telefone')
+            .eq('id', respostaData.id_substituto)
+            .single();
 
-        if (funcError && funcError.code !== 'PGRST116') {
-          console.warn('Erro ao buscar funcionário:', funcError);
+          if (!subError) {
+            substitutoData = subData;
+          }
         }
 
         setDetalhes({
           evento: eventoData,
           resposta: respostaData,
-          funcionarioAtual: funcData,
+          funcionarioAtual: substitutoData,
           error: null,
           loading: false,
         });
@@ -102,7 +105,7 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
         <div className="sticky top-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 p-6 flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-              Detalhes da Vaga
+              {vaga.nomeAnalista}
             </h2>
             <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
               ID do Evento: {vaga.id_evento}
@@ -133,58 +136,76 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
 
           {!detalhes.loading && (
             <>
-              {/* Resumo Principal */}
+              {/* Resumo Principal - Saiu vs Entrou */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Funcionário Saído */}
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-400 uppercase mb-3">
-                    Funcionário que Saiu
+                <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg">
+                  <h3 className="text-sm font-semibold text-red-700 dark:text-red-400 uppercase mb-3">
+                    ❌ Saiu
                   </h3>
                   <div className="space-y-2">
                     <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-500">Nome</p>
+                      <p className="text-xs text-red-600 dark:text-red-500 font-medium">Nome</p>
                       <p className="font-medium text-slate-900 dark:text-slate-100">{vaga.nome_funcionario}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-500">Cargo</p>
+                      <p className="text-xs text-red-600 dark:text-red-500 font-medium">Cargo</p>
                       <p className="font-medium text-slate-900 dark:text-slate-100">{vaga.cargo_vaga}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-500">Situação</p>
+                      <p className="text-xs text-red-600 dark:text-red-500 font-medium">Situação</p>
                       <p className="font-medium text-slate-900 dark:text-slate-100">{vaga.situacao_origem}</p>
                     </div>
                   </div>
                 </div>
 
-                {/* Analista Responsável */}
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-400 uppercase mb-3">
-                    Analista Responsável
-                  </h3>
-                  <div className="space-y-2">
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-500">Nome</p>
-                      <p className="font-medium text-slate-900 dark:text-slate-100">{vaga.nomeAnalista}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-500">Cargo</p>
-                      <p className="font-medium text-slate-900 dark:text-slate-100">{vaga.cargoAnalista}</p>
+                {/* Substituto */}
+                {detalhes.funcionarioAtual ? (
+                  <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg">
+                    <h3 className="text-sm font-semibold text-green-700 dark:text-green-400 uppercase mb-3">
+                      ✓ Entrou no Lugar
+                    </h3>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-xs text-green-600 dark:text-green-500 font-medium">Nome</p>
+                        <p className="font-medium text-slate-900 dark:text-slate-100">{detalhes.funcionarioAtual.nome}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-green-600 dark:text-green-500 font-medium">Cargo</p>
+                        <p className="font-medium text-slate-900 dark:text-slate-100">{detalhes.funcionarioAtual.cargo}</p>
+                      </div>
+                      {detalhes.funcionarioAtual.email && (
+                        <div>
+                          <p className="text-xs text-green-600 dark:text-green-500 font-medium">Email</p>
+                          <p className="font-medium text-slate-900 dark:text-slate-100 break-all">{detalhes.funcionarioAtual.email}</p>
+                        </div>
+                      )}
+                      {detalhes.funcionarioAtual.telefone && (
+                        <div>
+                          <p className="text-xs text-green-600 dark:text-green-500 font-medium">Telefone</p>
+                          <p className="font-medium text-slate-900 dark:text-slate-100">{detalhes.funcionarioAtual.telefone}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="p-4 bg-slate-100 dark:bg-slate-700/50 border border-slate-300 dark:border-slate-600 rounded-lg">
+                    <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-400 uppercase mb-3">
+                      ℹ️ Substituto
+                    </h3>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">Nenhum substituto atribuído ainda</p>
+                  </div>
+                )}
               </div>
 
               {/* Status e Timing */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
                   <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mb-2">Status</p>
                   <Badge className={`${statusBadge.bg} ${statusBadge.text} border-0`}>
                     {statusBadge.label}
                   </Badge>
-                </div>
-                <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
-                  <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mb-2">Dias em Aberto</p>
-                  <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{vaga.dias_em_aberto}</p>
+                  <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">{vaga.dias_em_aberto} dias</p>
                 </div>
                 <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
                   <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mb-2">Data do Evento</p>
