@@ -1497,6 +1497,14 @@ function VagaCard({
                   <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Dias em aberto</span>
                   <span className={`font-medium ${sla.color}`}>{displayDiasEmAberto} dias</span>
                 </div>
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Carga Horária</span>
+                  <span className="font-medium">{vaga.carga_horaria_semanal ? `${vaga.carga_horaria_semanal}h/semana` : '-'}</span>
+                </div>
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Escala</span>
+                  <span className="font-medium">{vaga.escala || '-'}</span>
+                </div>
               </div>
 
               {/* TLP Info */}
