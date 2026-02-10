@@ -72,7 +72,7 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
           // Tentar buscar por ID na tabela oris_funcionarios
           const { data: subData, error: subError } = await supabase
             .from('oris_funcionarios')
-            .select('id, nome, cargo, email')
+            .select('id, nome, cargo, dt_admissao')
             .eq('id', respostaData.id_substituto);
 
           if (subError) {
@@ -111,7 +111,18 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
     carregarDetalhes();
   }, [vaga.id_evento]);
 
-  const statusBadge = getStatusBadge(vaga.dias_em_aberto);
+  // Calcular dias reais: se a vaga foi fechada, contar até a data de fechamento; senão, usar dias_em_aberto
+  const calcularDiasReais = (): number => {
+    if (detalhes.resposta?.data_fechamento_vaga && detalhes.resposta?.data_abertura_vaga) {
+      const abertura = new Date(detalhes.resposta.data_abertura_vaga);
+      const fechamento = new Date(detalhes.resposta.data_fechamento_vaga);
+      return Math.floor((fechamento.getTime() - abertura.getTime()) / (1000 * 60 * 60 * 24));
+    }
+    return vaga.dias_em_aberto;
+  };
+
+  const diasReais = calcularDiasReais();
+  const statusBadge = getStatusBadge(diasReais);
 
   return (
     <div className="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50 p-4">
@@ -189,10 +200,10 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
                         <p className="text-xs text-green-600 dark:text-green-500 font-medium">Cargo</p>
                         <p className="font-medium text-slate-900 dark:text-slate-100">{detalhes.funcionarioAtual.cargo}</p>
                       </div>
-                      {detalhes.funcionarioAtual.email && (
+                      {detalhes.funcionarioAtual.dt_admissao && (
                         <div>
-                          <p className="text-xs text-green-600 dark:text-green-500 font-medium">Email</p>
-                          <p className="font-medium text-slate-900 dark:text-slate-100 break-all">{detalhes.funcionarioAtual.email}</p>
+                          <p className="text-xs text-green-600 dark:text-green-500 font-medium">dt_admissao</p>
+                          <p className="font-medium text-slate-900 dark:text-slate-100 break-all">{detalhes.funcionarioAtual.dt_admissao}</p>
                         </div>
                       )}
                     </div>
@@ -221,7 +232,7 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
                   <Badge className={`${statusBadge.bg} ${statusBadge.text} border-0`}>
                     {statusBadge.label}
                   </Badge>
-                  <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">{vaga.dias_em_aberto} dias</p>
+                  <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">{diasReais} dias</p>
                 </div>
                 <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
                   <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mb-2">Data do Evento</p>
