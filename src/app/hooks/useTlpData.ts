@@ -13,7 +13,9 @@ export interface TlpData {
     saldo: number;
     status: 'deficit' | 'excedente' | 'completo';
     anotacoes?: string | null;
-    funcionarios?: { nome: string; dataAdmissao: string; situacao?: string }[];
+    carga_horaria_semanal?: string | number | null;
+    arquivado?: boolean;
+    funcionarios?: { nome: string; dataAdmissao: string; situacao?: string; carga_horaria_semanal?: string | number | null }[];
 }
 
 export function useTlpData() {
@@ -59,7 +61,7 @@ export function useTlpData() {
 
                 // 2. Fetch Active Employees (Active + On Leave)
                 const employees = await fetchAll('oris_funcionarios',
-                    'nome, cargo, centro_custo, nome_fantasia, dt_admissao, situacao',
+                    'nome, cargo, centro_custo, nome_fantasia, dt_admissao, situacao, carga_horaria_semanal',
                     (q) => q.neq('situacao', '99-Demitido')
                 );
 
@@ -71,23 +73,70 @@ export function useTlpData() {
                     console.warn("No TLP targets found.");
                 }
 
-                // Group employees by Unit + Role
-                const employeeMap = new Map<string, typeof employees>();
+                // 3. Helper to normalize hours
+                const normalizeHours = (h: string | number | null | undefined): string => {
+                    if (!h) return 'N/A';
+                    const s = String(h).replace(',', '.');
+                    const n = parseFloat(s);
+                    if (isNaN(n)) return 'N/A';
+                    // Return integer string if whole number
+                    return Number.isInteger(n) ? String(n) : String(n);
+                };
+
+                // 4. Group Employees by Unit + Role + Hours
+                // Key: `${centro_custo}|${cargo}|${normalized_hours}`
+                const employeeGroups = new Map<string, typeof employees>();
 
                 employees?.forEach(emp => {
-                    const key = `${emp.centro_custo?.trim()}|${emp.cargo?.trim()}`;
-                    if (!employeeMap.has(key)) {
-                        employeeMap.set(key, []);
+                    const h = normalizeHours(emp.carga_horaria_semanal);
+                    const key = `${emp.centro_custo?.trim()}|${emp.cargo?.trim()}|${h}`;
+
+                    if (!employeeGroups.has(key)) {
+                        employeeGroups.set(key, []);
                     }
-                    employeeMap.get(key)?.push(emp);
+                    employeeGroups.get(key)?.push(emp);
                 });
 
-                // Create TlpData entries from TLP targets
+                // 5. Process TLP Targets and Match with Employees
+                // (processedData array was already declared above)
                 const excludedUnits = ['SBCD - HMI', 'SBCD - PROJETO POA'];
+                const matchedEmployeeKeys = new Set<string>();
 
                 tlpTargets?.forEach((target: any) => {
-                    const key = `${target.centro_custo?.trim()}|${target.cargo?.trim()}`;
-                    const groupEmployees = employeeMap.get(key) || [];
+                    const targetHours = normalizeHours(target.carga_horaria_semanal);
+
+                    let bestMatchKey: string | null = null;
+                    let groupEmployees: any[] = [];
+
+                    // Try detailed match first
+                    const exactKey = `${target.centro_custo?.trim()}|${target.cargo?.trim()}|${targetHours}`;
+
+                    if (targetHours !== 'N/A' && employeeGroups.has(exactKey)) {
+                        bestMatchKey = exactKey;
+                    } else if (targetHours === 'N/A') {
+                        // TLP has no hours, try to fuzzy match with employees of same Role+CC
+                        // We look for any key starting with `${centro_custo}|${cargo}|`
+                        const prefix = `${target.centro_custo?.trim()}|${target.cargo?.trim()}|`;
+                        const candidates = Array.from(employeeGroups.keys()).filter(k => k.startsWith(prefix));
+
+                        if (candidates.length === 1) {
+                            // Perfect ambiguity resolution: only one type of hours exists for this role
+                            bestMatchKey = candidates[0];
+                        } else if (candidates.length > 1) {
+                            // Multiple hours exist (e.g. 36h and 40h).
+                            // We can't auto-assign TLP (null) to one of them uniquely without splitting TLP.
+                            // For now, take the one with most employees? Or just leave unconnected?
+                            // Let's take the first one to avoid "Surplus" appearing for valid employees.
+                            // Better: Sort by employee count desc
+                            candidates.sort((a, b) => (employeeGroups.get(b)?.length || 0) - (employeeGroups.get(a)?.length || 0));
+                            bestMatchKey = candidates[0];
+                        }
+                    }
+
+                    if (bestMatchKey) {
+                        groupEmployees = employeeGroups.get(bestMatchKey) || [];
+                        matchedEmployeeKeys.add(bestMatchKey);
+                    }
 
                     const activeEmployees = groupEmployees.filter((e: any) => e.situacao && e.situacao.toUpperCase().includes('ATIVO'));
                     const afastadoEmployees = groupEmployees.filter((e: any) => !e.situacao || !e.situacao.toUpperCase().includes('ATIVO'));
@@ -102,16 +151,17 @@ export function useTlpData() {
                     if (saldo < 0) status = 'deficit';
                     if (saldo > 0) status = 'excedente';
 
-                    // Infer unit from employees if possible, otherwise it's unknown/empty
-                    // Since TLP table doesn't have unidade, we rely on employees to provide it,
-                    // or we might need another join. For now, empty or from existing employees.
                     const unidadeName = groupEmployees[0]?.nome_fantasia || 'N/A';
 
-                    // Filter out excluded units
                     if (excludedUnits.includes(unidadeName)) {
-                        // Mark these employees as processed so they don't show up in the surplus loop either
-                        employeeMap.delete(key);
+                        if (bestMatchKey) matchedEmployeeKeys.add(bestMatchKey); // Ensure we mark as processed
                         return;
+                    }
+
+                    // Determine display hours: Use matched employees' hours if TLP is N/A
+                    let displayHours = targetHours;
+                    if (displayHours === 'N/A' && groupEmployees.length > 0) {
+                        displayHours = normalizeHours(groupEmployees[0].carga_horaria_semanal);
                     }
 
                     processedData.push({
@@ -125,20 +175,22 @@ export function useTlpData() {
                         saldo: saldo,
                         status: status,
                         anotacoes: target.anotacoes,
+                        carga_horaria_semanal: displayHours === 'N/A' ? null : displayHours,
+                        arquivado: target.arquivado,
                         funcionarios: groupEmployees.map(e => ({
                             nome: e.nome,
                             dataAdmissao: formatarData(e.dt_admissao),
-                            situacao: e.situacao
+                            situacao: e.situacao,
+                            carga_horaria_semanal: e.carga_horaria_semanal
                         }))
                     });
-
-                    // Mark these employees as processed if we want to find "Employees without TLP target"
-                    employeeMap.delete(key);
                 });
 
                 // Add employees that didn't match any TLP target
-                employeeMap.forEach((emps, key) => {
-                    const [centro_custo_key, cargo_key] = key.split('|');
+                employeeGroups.forEach((emps, key) => {
+                    if (matchedEmployeeKeys.has(key)) return;
+
+                    const [centro_custo_key, cargo_key, hours_key] = key.split('|');
 
                     const activeEmployees = emps.filter((e: any) => e.situacao && e.situacao.toUpperCase().includes('ATIVO'));
                     const afastadoEmployees = emps.filter((e: any) => !e.situacao || !e.situacao.toUpperCase().includes('ATIVO'));
@@ -146,17 +198,14 @@ export function useTlpData() {
                     const activeCount = activeEmployees.length;
                     const afastadosCount = afastadoEmployees.length;
 
-                    const tlpCount = 0; // No target defined
-                    const saldo = activeCount + afastadosCount; // Total occupants
+                    const tlpCount = 0;
+                    const saldo = activeCount + afastadosCount;
 
-                    // Try to find the Unit name from the employees in this group
                     const unidadeName = emps[0]?.nome_fantasia || 'Sem Unidade';
 
-                    // Filter out excluded units
                     if (excludedUnits.includes(unidadeName)) return;
 
                     processedData.push({
-                        // No ID for these as they don't exist in TLP table yet
                         cargo: cargo_key || 'Sem Cargo',
                         unidade: unidadeName,
                         centro_custo: centro_custo_key?.trim() || 'Sem Centro de Custo',
@@ -166,10 +215,12 @@ export function useTlpData() {
                         saldo: saldo,
                         status: 'excedente',
                         anotacoes: null,
+                        carga_horaria_semanal: hours_key === 'N/A' ? null : hours_key,
                         funcionarios: emps.map(e => ({
                             nome: e.nome,
                             dataAdmissao: formatarData(e.dt_admissao),
-                            situacao: e.situacao
+                            situacao: e.situacao,
+                            carga_horaria_semanal: e.carga_horaria_semanal
                         }))
                     });
                 });
@@ -262,5 +313,61 @@ export function useTlpData() {
         }
     };
 
-    return { data, loading, error, updateTlp };
+    const archiveTlp = async (item: TlpData) => {
+        // Optimistic update: Mark as archived in UI instead of removing
+        const originalData = [...data];
+        setData(prev => prev.map(i => i === item ? { ...i, arquivado: true } : i));
+
+        try {
+            if (item.id) {
+                // Update existing record
+                const { error } = await supabase
+                    .from('tlp_quadro_necessario')
+                    .update({ arquivado: true })
+                    .eq('id', item.id);
+
+                if (error) throw error;
+            } else {
+                // Create new archived record for this grouping
+                // We need to save the specific hours to ensure it matches this group next time
+                const { error } = await supabase
+                    .from('tlp_quadro_necessario')
+                    .insert({
+                        cargo: item.cargo,
+                        centro_custo: item.centro_custo,
+                        quantidade_necessaria_ativos: 0,
+                        carga_horaria_semanal: item.carga_horaria_semanal,
+                        arquivado: true
+                    });
+
+                if (error) throw error;
+            }
+        } catch (err) {
+            console.error('Error archiving TLP:', err);
+            setData(originalData); // Revert on error
+            // Optionally set error state here
+        }
+    };
+
+    const unarchiveTlp = async (item: TlpData) => {
+        // Optimistic update: Remove from filtered UI (handled by component), but in data array we set arquivado to false
+        const originalData = [...data];
+        setData(prev => prev.map(i => i === item ? { ...i, arquivado: false } : i));
+
+        try {
+            if (item.id) {
+                const { error } = await supabase
+                    .from('tlp_quadro_necessario')
+                    .update({ arquivado: false })
+                    .eq('id', item.id);
+
+                if (error) throw error;
+            }
+        } catch (err) {
+            console.error('Error unarchiving TLP:', err);
+            setData(originalData);
+        }
+    };
+
+    return { data, loading, error, updateTlp, archiveTlp, unarchiveTlp };
 }

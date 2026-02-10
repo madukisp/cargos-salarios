@@ -128,11 +128,17 @@ export async function carregarAfastamentos(
     }
 
     // Filtrar apenas afastamentos (NÃO demissões e NÃO atestados)
+    // Excluir demissões e qualquer tipo de atestado médico/odontológico
     const afastamentos = ((data || []) as any[]).filter(
-      (d) =>
-        d.situacao_origem !== '99-Demitido' &&
-        d.situacao_origem !== '18-Atestado Médico' &&
-        d.situacao_origem !== '19-Atestado Odont'
+      (d) => {
+        const situacao = (d.situacao_origem || '').toUpperCase();
+        // Excluir demissões
+        if (situacao === '99-DEMITIDO') return false;
+        // Excluir qualquer tipo de atestado (case-insensitive)
+        if (situacao.includes('ATESTADO')) return false;
+        // Manter apenas auxílios (licenças, afastamentos, etc.)
+        return true;
+      }
     );
 
     // Buscar tipo_rescisao na tabela oris_funcionarios

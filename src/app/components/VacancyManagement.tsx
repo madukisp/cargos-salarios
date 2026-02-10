@@ -37,7 +37,6 @@ interface FiltrosSalvos {
   lotacao?: string;
   ordenacao?: string;
   busca?: string;
-  mostrarMedicos?: boolean;
   apenasContratosSP?: boolean;
 }
 
@@ -97,9 +96,6 @@ export function VacancyManagement() {
     filtrosSalvos?.ordenacao ?? 'data_evento.desc'
   );
   const [busca, setBusca] = useState<string>(filtrosSalvos?.busca ?? '');
-  const [mostrarMedicos, setMostrarMedicos] = useState<boolean>(
-    filtrosSalvos?.mostrarMedicos ?? true
-  );
   const [apenasContratosSP, setApenasContratosSP] = useState<boolean>(
     filtrosSalvos?.apenasContratosSP ?? false
   );
@@ -161,10 +157,9 @@ export function VacancyManagement() {
       lotacao,
       ordenacao,
       busca,
-      mostrarMedicos,
       apenasContratosSP,
     });
-  }, [abaSelecionada, lotacao, ordenacao, busca, mostrarMedicos, apenasContratosSP]);
+  }, [abaSelecionada, lotacao, ordenacao, busca, apenasContratosSP]);
 
   // Usar lotações do hook quando carregarem
   const lotacoes = lotacoesFromHook;
@@ -199,7 +194,6 @@ export function VacancyManagement() {
         const matchBusca =
           (vaga.cargo?.toLowerCase() || '').includes(busca.toLowerCase()) ||
           (vaga.nome?.toLowerCase() || '').includes(busca.toLowerCase());
-        const matchMedicos = mostrarMedicos || !(vaga.cargo?.toLowerCase() || '').includes('médico');
 
         // Filtrar por contrato selecionado
         const matchContrato = selectedFantasia === 'todos' || vaga.cnpj === selectedFantasia;
@@ -223,10 +217,10 @@ export function VacancyManagement() {
           ? (nomeContratoAtual && CONTRATOS_SP.includes(nomeContratoAtual)) || false
           : true;
 
-        return matchLotacao && matchBusca && matchMedicos && matchContrato && matchContratosSP;
+        return matchLotacao && matchBusca && matchContrato && matchContratosSP;
       });
     },
-    [lotacao, busca, mostrarMedicos, apenasContratosSP, selectedFantasia, CONTRATOS_SP, tlpData, fantasias]
+    [lotacao, busca, apenasContratosSP, selectedFantasia, CONTRATOS_SP, tlpData, fantasias]
   );
 
   // Ordenação genérica
@@ -514,19 +508,7 @@ export function VacancyManagement() {
             </div>
           </div>
 
-          {/* Checkbox Médicos */}
           <div className="flex items-center space-x-2 pt-2 border-t border-slate-100 dark:border-slate-700 mt-4">
-            <Checkbox
-              id="medicos"
-              checked={mostrarMedicos}
-              onCheckedChange={(checked) => setMostrarMedicos(checked as boolean)}
-            />
-            <Label htmlFor="medicos" className="text-sm cursor-pointer font-medium text-slate-600 dark:text-slate-300">
-              Mostrar vagas de Médicos
-            </Label>
-          </div>
-
-          <div className="flex items-center space-x-2 pt-2 border-t border-slate-100 dark:border-slate-700 mt-2">
             <Checkbox
               id="contratos-sp"
               checked={apenasContratosSP}

@@ -1,10 +1,10 @@
-import { Filter, ChevronDown, ChevronUp, Users, AlertCircle, RefreshCw, ArrowUpDown } from 'lucide-react';
+import { Filter, ChevronDown, ChevronUp, Users, AlertCircle, RefreshCw, ArrowUpDown, Archive, ArchiveRestore } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import { useState, useMemo } from 'react'; // ensure useMemo is imported
 import { useTlpData } from '@/app/hooks/useTlpData';
 
 export function TlpPanel() {
-  const { data: tlpData, loading, error, updateTlp } = useTlpData();
+  const { data: tlpData, loading, error, updateTlp, archiveTlp, unarchiveTlp } = useTlpData();
   const [selectedUnit, setSelectedUnit] = useState('todas');
   const [selectedCostCenter, setSelectedCostCenter] = useState('todos');
   const [selectedRole, setSelectedRole] = useState('todos');
@@ -12,6 +12,7 @@ export function TlpPanel() {
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   // Gerar lista de unidades
   const units = useMemo(() => {
@@ -74,6 +75,13 @@ export function TlpPanel() {
 
   const sortedData = useMemo(() => {
     let data = tlpData.filter(item => {
+      // Filter by archive status
+      if (showArchived) {
+        if (!item.arquivado) return false;
+      } else {
+        if (item.arquivado) return false;
+      }
+
       if (selectedUnit !== 'todas' && item.unidade !== selectedUnit) return false;
       if (selectedCostCenter !== 'todos' && item.centro_custo !== selectedCostCenter) return false;
       if (selectedRole !== 'todos' && item.cargo !== selectedRole) return false;
@@ -95,7 +103,7 @@ export function TlpPanel() {
       });
     }
     return data;
-  }, [tlpData, selectedUnit, selectedCostCenter, selectedRole, selectedStatus, sortConfig]);
+  }, [tlpData, selectedUnit, selectedCostCenter, selectedRole, selectedStatus, sortConfig, showArchived]);
 
   if (loading) {
     return (
@@ -163,8 +171,32 @@ export function TlpPanel() {
     <div className="space-y-6">
       {/* Header & Filters */}
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">TLP vs Funcionários Ativos</h1>
+        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+          {showArchived ? 'ITENS ARQUIVADOS - TLP' : 'TLP vs Funcionários Ativos'}
+        </h1>
         <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Comparação entre quadro necessário e quadro real</p>
+
+        {showArchived && (
+          <div className="mt-4 p-4 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg flex items-center gap-3">
+            <Archive className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+            <p className="text-sm text-amber-800 dark:text-amber-300">
+              Você está visualizando os itens <strong>arquivados</strong>. Estes itens não aparecem na listagem principal e não contam para os cálculos de déficit/superávit geral.
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          onClick={() => setShowArchived(!showArchived)}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors border ${showArchived
+            ? 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800'
+            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 dark:hover:bg-slate-700'
+            }`}
+        >
+          {showArchived ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
+          {showArchived ? 'Voltar para Ativos' : 'Ver Arquivados'}
+        </button>
       </div>
 
       {/* Filters */}
@@ -340,6 +372,7 @@ export function TlpPanel() {
                 {renderHeader('Cargo', 'cargo')}
                 {renderHeader('Unidade', 'unidade')}
                 {renderHeader('Centro de Custo', 'centro_custo')}
+                {renderHeader('CH Semanal', 'carga_horaria_semanal', 'center')}
                 {renderHeader('TLP', 'tlp', 'center')}
                 {renderHeader('Ativos', 'ativos', 'center')}
                 {renderHeader('Afastados', 'afastados', 'center')}
@@ -360,6 +393,9 @@ export function TlpPanel() {
                     <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-slate-100">{item.cargo}</td>
                     <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300">{item.unidade}</td>
                     <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300">{item.centro_custo}</td>
+                    <td className="px-6 py-4 text-sm text-center text-slate-700 dark:text-slate-300">
+                      {item.carga_horaria_semanal ? `${String(item.carga_horaria_semanal).replace('.', ',')}h` : '-'}
+                    </td>
                     <td className="px-6 py-4 text-sm text-center font-medium text-slate-900 dark:text-slate-100">
                       <div className="flex items-center justify-center gap-2">
                         <input
@@ -439,27 +475,54 @@ export function TlpPanel() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-center">
-                      <button
-                        onClick={() => setExpandedRow(expandedRow === index ? null : index)}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
-                      >
-                        {expandedRow === index ? (
-                          <>
-                            <ChevronUp className="w-4 h-4" />
-                            Ocultar
-                          </>
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => setExpandedRow(expandedRow === index ? null : index)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                        >
+                          {expandedRow === index ? (
+                            <>
+                              <ChevronUp className="w-4 h-4" />
+                              Ocultar
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown className="w-4 h-4" />
+                              Ver
+                            </>
+                          )}
+                        </button>
+                        {showArchived ? (
+                          <button
+                            onClick={() => {
+                              if (confirm('Tem certeza que deseja desarquivar esta linha?')) {
+                                unarchiveTlp(item);
+                              }
+                            }}
+                            title="Desarquivar linha"
+                            className="inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
+                          >
+                            <ArchiveRestore className="w-4 h-4" />
+                          </button>
                         ) : (
-                          <>
-                            <ChevronDown className="w-4 h-4" />
-                            Ver
-                          </>
+                          <button
+                            onClick={() => {
+                              if (confirm('Tem certeza que deseja arquivar esta linha?')) {
+                                archiveTlp(item);
+                              }
+                            }}
+                            title="Arquivar linha"
+                            className="inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                          >
+                            <Archive className="w-4 h-4" />
+                          </button>
                         )}
-                      </button>
+                      </div>
                     </td>
                   </tr>,
                   expandedRow === index && item.funcionarios ? (
                     <tr key={`${rowKey}-expanded`}>
-                      <td colSpan={10} className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50">
+                      <td colSpan={11} className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50">
                         <div className="space-y-6">
                           {/* Active Employees */}
                           {item.funcionarios.filter(f => f.situacao && f.situacao.toUpperCase().includes('ATIVO')).length > 0 && (
@@ -475,7 +538,14 @@ export function TlpPanel() {
                                     <div key={idx} className="bg-white dark:bg-slate-800 border border-green-200 dark:border-green-800/30 rounded-lg p-3 shadow-sm">
                                       <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate" title={func.nome}>{func.nome}</p>
                                       <div className="flex flex-col gap-1 mt-2">
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">Admissão: {func.dataAdmissao}</p>
+                                        <div className="flex justify-between items-center text-xs text-slate-500 dark:text-slate-400">
+                                          <span>Admissão: {func.dataAdmissao}</span>
+                                          {func.carga_horaria_semanal && (
+                                            <span className="font-medium text-slate-600 dark:text-slate-300">
+                                              {String(func.carga_horaria_semanal).replace('.', ',')}h
+                                            </span>
+                                          )}
+                                        </div>
                                         <span className="inline-flex px-2 py-0.5 text-[10px] font-medium rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 w-fit">
                                           {func.situacao}
                                         </span>
@@ -500,7 +570,14 @@ export function TlpPanel() {
                                     <div key={idx} className="bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800/30 rounded-lg p-3 shadow-sm">
                                       <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate" title={func.nome}>{func.nome}</p>
                                       <div className="flex flex-col gap-1 mt-2">
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">Admissão: {func.dataAdmissao}</p>
+                                        <div className="flex justify-between items-center text-xs text-slate-500 dark:text-slate-400">
+                                          <span>Admissão: {func.dataAdmissao}</span>
+                                          {func.carga_horaria_semanal && (
+                                            <span className="font-medium text-slate-600 dark:text-slate-300">
+                                              {String(func.carga_horaria_semanal).replace('.', ',')}h
+                                            </span>
+                                          )}
+                                        </div>
                                         <span className="inline-flex px-2 py-0.5 text-[10px] font-medium rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 w-fit">
                                           {func.situacao || 'Situação Desconhecida'}
                                         </span>
@@ -532,7 +609,7 @@ export function TlpPanel() {
             </tbody>
           </table>
         </div>
-      </div >
-    </div >
+      </div>
+    </div>
   );
 }
