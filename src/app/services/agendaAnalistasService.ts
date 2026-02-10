@@ -6,6 +6,7 @@ export interface VagaAtribuida {
   cargo_vaga: string;
   data_evento: string;
   dias_em_aberto: number;
+  dias_reais: number;
   situacao_origem: string;
   lotacao: string;
   cnpj: string;
@@ -23,6 +24,22 @@ export interface AnalistaComVagas {
   vagasEmAberto: number;
   vagasCriticas: number;
 }
+
+/**
+ * Calcular dias reais da vaga baseado em datas de abertura e fechamento
+ */
+const calcularDiasReais = (
+  data_abertura_vaga: string | null | undefined,
+  data_fechamento_vaga: string | null | undefined,
+  dias_em_aberto: number
+): number => {
+  if (data_abertura_vaga && data_fechamento_vaga) {
+    const abertura = new Date(data_abertura_vaga);
+    const fechamento = new Date(data_fechamento_vaga);
+    return Math.floor((fechamento.getTime() - abertura.getTime()) / (1000 * 60 * 60 * 24));
+  }
+  return dias_em_aberto;
+};
 
 /**
  * Buscar todos os analistas com suas vagas atribuídas
@@ -119,12 +136,20 @@ export const carregarAgendaAnalistas = async (): Promise<AnalistaComVagas[]> => 
 
           if (!evento) return null;
 
+          const dias_em_aberto = evento.dias_em_aberto || 0;
+          const dias_reais = calcularDiasReais(
+            resposta?.data_abertura_vaga,
+            resposta?.data_fechamento_vaga,
+            dias_em_aberto
+          );
+
           return {
             id_evento: vaga.id_evento,
             nome_funcionario: evento.nome || '-',
             cargo_vaga: evento.cargo || '-',
             data_evento: evento.data_evento || '-',
-            dias_em_aberto: evento.dias_em_aberto || 0,
+            dias_em_aberto,
+            dias_reais,
             situacao_origem: evento.situacao_origem || '-',
             lotacao: evento.lotacao || '-',
             cnpj: vaga.cnpj || '-',
@@ -134,12 +159,12 @@ export const carregarAgendaAnalistas = async (): Promise<AnalistaComVagas[]> => 
           };
         })
         .filter((v): v is VagaAtribuida => v !== null)
-        .sort((a, b) => b.dias_em_aberto - a.dias_em_aberto);
+        .sort((a, b) => b.dias_reais - a.dias_reais);
 
-      // Calcular métricas
+      // Calcular métricas usando dias reais
       const totalVagas = vagasComDetalhes.length;
-      const vagasEmAberto = vagasComDetalhes.filter(v => v.dias_em_aberto > 0).length;
-      const vagasCriticas = vagasComDetalhes.filter(v => v.dias_em_aberto > 30).length;
+      const vagasEmAberto = vagasComDetalhes.filter(v => v.dias_reais > 0).length;
+      const vagasCriticas = vagasComDetalhes.filter(v => v.dias_reais > 30).length;
 
       return {
         id: analista.id,

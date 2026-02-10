@@ -120,12 +120,12 @@ export function AgendaAnalistas() {
       );
     }
 
-    // Filtro por status das vagas
+    // Filtro por status das vagas (usando dias_reais)
     if (statusFiltro !== 'todos') {
       result = result.map(a => ({
         ...a,
         vagas: a.vagas.filter(v => {
-          const statusVaga = getStatusBadge(v.dias_em_aberto).valor;
+          const statusVaga = getStatusBadge(v.dias_reais).valor;
           return statusVaga === statusFiltro;
         }),
       }));
@@ -379,7 +379,7 @@ export function AgendaAnalistas() {
                     </p>
                   ) : (
                     analista.vagas.map((vaga) => {
-                      const statusBadge = getStatusBadge(vaga.dias_em_aberto);
+                      const statusBadge = getStatusBadge(vaga.dias_reais);
                       const key = `${analista.id}-${vaga.id_evento}`;
                       const isRemoving = removendo === key;
 
@@ -407,7 +407,7 @@ export function AgendaAnalistas() {
                                       variant="outline"
                                       className={`text-xs ${statusBadge.bg} ${statusBadge.text} border-0`}
                                     >
-                                      {statusBadge.label} • {vaga.dias_em_aberto}d
+                                      {statusBadge.label} • {vaga.dias_reais}d
                                     </Badge>
                                     {vaga.vaga_preenchida && (
                                       <Badge variant="outline" className="text-xs bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-700">
