@@ -229,6 +229,40 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
                 </div>
               </div>
 
+              {/* Timeline de Abertura e Fechamento */}
+              {detalhes.resposta && (
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg space-y-3">
+                  <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100">📅 Timeline da Vaga</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {detalhes.resposta.data_abertura_vaga && (
+                      <div>
+                        <p className="text-xs text-blue-700 dark:text-blue-400 font-medium mb-1">Data de Abertura</p>
+                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">{formatarData(detalhes.resposta.data_abertura_vaga)}</p>
+                      </div>
+                    )}
+                    {detalhes.resposta.data_fechamento_vaga && (
+                      <div>
+                        <p className="text-xs text-blue-700 dark:text-blue-400 font-medium mb-1">Data de Fechamento</p>
+                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">{formatarData(detalhes.resposta.data_fechamento_vaga)}</p>
+                      </div>
+                    )}
+                    {detalhes.resposta.data_abertura_vaga && detalhes.resposta.data_fechamento_vaga && (
+                      <div>
+                        <p className="text-xs text-blue-700 dark:text-blue-400 font-medium mb-1">Dias Aberta</p>
+                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                          {Math.floor(
+                            (new Date(detalhes.resposta.data_fechamento_vaga).getTime() -
+                              new Date(detalhes.resposta.data_abertura_vaga).getTime()) /
+                              (1000 * 60 * 60 * 24)
+                          )}{' '}
+                          dias
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Informações de Lotação e Contrato */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
                 <div>
