@@ -25,9 +25,10 @@ function AppContent() {
     );
   }
 
-  if (!isAuthenticated) {
-    return <Login onLoginSuccess={() => window.location.href = '/'} />;
-  }
+  // TODO: Obrigatoriedade de login removida temporariamente
+  // if (!isAuthenticated) {
+  //   return <Login onLoginSuccess={() => window.location.href = '/'} />;
+  // }
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950">
