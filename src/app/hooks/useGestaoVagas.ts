@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   carregarDemissoes,
   carregarAfastamentos,
-  carregarRespostas,
   carregarRespostasLote,
   salvarResposta,
   confirmarEfetivacao,
   carregarLotacoes,
+  carregarVagasArquivadas,
+  arquivarVaga,
   EventoDemissao,
   RespostaGestor,
 } from '@/app/services/demissoesService';
@@ -16,7 +17,7 @@ export function useGestaoVagas() {
   const [demissoesRespondidas, setDemissoesRespondidas] = useState<EventoDemissao[]>([]);
   const [vagasPendentesEfetivacao, setVagasPendentesEfetivacao] = useState<EventoDemissao[]>([]);
   const [afastamentosPendentes, setAfastamentosPendentes] = useState<EventoDemissao[]>([]);
-  const [afastamentosRespondidos, setAfastamentosRespondidos] = useState<EventoDemissao[]>([]);
+  const [vagasArquivadas, setVagasArquivadas] = useState<EventoDemissao[]>([]);
   const [respostas, setRespostas] = useState<Record<number, RespostaGestor>>({});
   const [lotacoes, setLotacoes] = useState<string[]>(['TODAS']);
   const [loading, setLoading] = useState(false);
@@ -35,51 +36,70 @@ export function useGestaoVagas() {
       const demRespRaw = await carregarDemissoes(lotacao, 'RESPONDIDO', cnpj);
       console.log('Fetching afastamentos...');
       const afastPendRaw = await carregarAfastamentos(lotacao, cnpj);
-      console.log('Fetching lotacoes...');
-      const lotacoesData = await carregarLotacoes();
-      
-      const afastRespRaw: any[] = []; // Not used, keep empty for now
+      console.log('Fetching archived vacancies...');
+      const arquivadasRaw = await carregarVagasArquivadas(lotacao, cnpj);
 
+      // Combinar e desduplicar eventos
+      const todosEventosRaw = [...demPendRaw, ...demRespRaw, ...afastPendRaw, ...arquivadasRaw];
+      const seenIds = new Set<number>();
+      const todosEventos: EventoDemissao[] = [];
 
-      // Corrigindo a separação: Afastamentos no service hoje filtram por situacao_origem !== '99-Demitido'
-      // Já o carregarDemissoes filtra por === '99-Demitido'.
-      // Então demPendRaw são demissões pendentes, afastPendRaw são afastamentos pendentes.
+      todosEventosRaw.forEach(e => {
+        if (!seenIds.has(e.id_evento)) {
+          seenIds.add(e.id_evento);
+          todosEventos.push(e);
+        }
+      });
 
-      const todosEventos = [...demPendRaw, ...demRespRaw, ...afastPendRaw];
       const idsFull = todosEventos.map(e => e.id_evento);
 
       const mapaRespostas = await carregarRespostasLote(idsFull);
       setRespostas(mapaRespostas);
 
-      // Categorização robusta para Demissões
+      // Categorização unificada
       const demPend: EventoDemissao[] = [];
       const demResp: EventoDemissao[] = [];
       const demPendEf: EventoDemissao[] = [];
+      const afastPend: EventoDemissao[] = [];
+      const arquivadas: EventoDemissao[] = [];
 
-      // Demissões Pendentes (status PENDENTE no banco)
-      demPendRaw.forEach(d => {
-        const resp = mapaRespostas[d.id_evento];
-        if (resp?.pendente_efetivacao) {
-          demPendEf.push(d);
-        } else {
-          demPend.push(d);
-        }
-      });
+      // Helper para checar se está arquivado
+      const isArquivado = (id: number) => mapaRespostas[id]?.arquivado === true;
 
-      // Demissões Respondidas (status RESPONDIDO no banco)
-      demRespRaw.forEach(d => {
-        const resp = mapaRespostas[d.id_evento];
-        if (resp?.pendente_efetivacao) {
-          demPendEf.push(d);
+      todosEventos.forEach(ev => {
+        if (isArquivado(ev.id_evento)) {
+          arquivadas.push(ev);
         } else {
-          demResp.push(d);
+          const resp = mapaRespostas[ev.id_evento];
+          const pendenteEf = resp?.pendente_efetivacao === true;
+
+          if (pendenteEf) {
+            demPendEf.push(ev);
+          } else {
+            // Demissão (situacao_origem == '99-Demitido') ou Afastamento
+            if (ev.situacao_origem === '99-Demitido') {
+              if (ev.status_evento === 'PENDENTE') {
+                demPend.push(ev);
+              } else {
+                demResp.push(ev);
+              }
+            } else {
+              // Afastamentos
+              // Se veio parar aqui e não é demissão, assumimos afastamento.
+              // Normalmente filtramos apenas PENDENTE para afastamentos, mas se tiver algum respondido não-arquivado, onde colocamos?
+              // A lógica original separa por 'fetch'.
+              // Vamos manter simples: se não é demissão, é afastamento.
+              afastPend.push(ev);
+            }
+          }
         }
       });
 
       setDemissoesPendentes(demPend);
       setDemissoesRespondidas(demResp);
       setVagasPendentesEfetivacao(demPendEf);
-      setAfastamentosPendentes(afastPendRaw || []);
+      setAfastamentosPendentes(afastPend);
+      setVagasArquivadas(arquivadas);
       setLotacoes(lotacoesData || ['TODAS']);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao carregar dados';
@@ -90,9 +110,6 @@ export function useGestaoVagas() {
     }
   }, []);
 
-  // Removemos o useEffect interno para evitar duplicidade de chamadas e race conditions
-  // O componente VacancyManagement já chama carregarDados no useEffect dele.
-
   const responder = useCallback(async (
     id_evento: number,
     tipo_origem: 'DEMISSAO' | 'AFASTAMENTO',
@@ -100,7 +117,6 @@ export function useGestaoVagas() {
   ) => {
     try {
       await salvarResposta(id_evento, tipo_origem, dados);
-      // Recarregar mantendo a lotação atual
       await carregarDados(lotacaoAtual);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao salvar resposta';
@@ -120,11 +136,27 @@ export function useGestaoVagas() {
     }
   }, [carregarDados, lotacaoAtual]);
 
+  const arquivar = useCallback(async (
+    id_evento: number,
+    tipo: 'DEMISSAO' | 'AFASTAMENTO',
+    arquivarStatus: boolean
+  ) => {
+    try {
+      await arquivarVaga(id_evento, tipo, arquivarStatus);
+      await carregarDados(lotacaoAtual);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao arquivar vaga';
+      setError(msg);
+      throw err;
+    }
+  }, [carregarDados, lotacaoAtual]);
+
   return {
     demissoesPendentes,
     demissoesRespondidas,
     vagasPendentesEfetivacao,
     afastamentosPendentes,
+    vagasArquivadas,
     respostas,
     lotacoes,
     loading,
@@ -132,5 +164,6 @@ export function useGestaoVagas() {
     carregarDados,
     responder,
     efetivar,
+    arquivar,
   };
 }

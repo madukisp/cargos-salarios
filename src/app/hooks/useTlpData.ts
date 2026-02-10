@@ -12,6 +12,7 @@ export interface TlpData {
     afastados: number;
     saldo: number;
     status: 'deficit' | 'excedente' | 'completo';
+    anotacoes?: string | null;
     funcionarios?: { nome: string; dataAdmissao: string; situacao?: string }[];
 }
 
@@ -53,8 +54,8 @@ export function useTlpData() {
                     return allData;
                 };
 
-                // 1. Fetch TLP targets
-                const tlpTargets = await fetchAll('tlp', '*');
+                // 1. Fetch TLP targets (quadro necessário)
+                const tlpTargets = await fetchAll('tlp_quadro_necessario', '*');
 
                 // 2. Fetch Active Employees (Active + On Leave)
                 const employees = await fetchAll('oris_funcionarios',
@@ -82,6 +83,8 @@ export function useTlpData() {
                 });
 
                 // Create TlpData entries from TLP targets
+                const excludedUnits = ['SBCD - HMI', 'SBCD - PROJETO POA'];
+
                 tlpTargets?.forEach((target: any) => {
                     const key = `${target.centro_custo?.trim()}|${target.cargo?.trim()}`;
                     const groupEmployees = employeeMap.get(key) || [];
@@ -104,6 +107,13 @@ export function useTlpData() {
                     // or we might need another join. For now, empty or from existing employees.
                     const unidadeName = groupEmployees[0]?.nome_fantasia || 'N/A';
 
+                    // Filter out excluded units
+                    if (excludedUnits.includes(unidadeName)) {
+                        // Mark these employees as processed so they don't show up in the surplus loop either
+                        employeeMap.delete(key);
+                        return;
+                    }
+
                     processedData.push({
                         id: target.id,
                         cargo: target.cargo,
@@ -114,6 +124,7 @@ export function useTlpData() {
                         afastados: afastadosCount,
                         saldo: saldo,
                         status: status,
+                        anotacoes: target.anotacoes,
                         funcionarios: groupEmployees.map(e => ({
                             nome: e.nome,
                             dataAdmissao: formatarData(e.dt_admissao),
@@ -141,6 +152,9 @@ export function useTlpData() {
                     // Try to find the Unit name from the employees in this group
                     const unidadeName = emps[0]?.nome_fantasia || 'Sem Unidade';
 
+                    // Filter out excluded units
+                    if (excludedUnits.includes(unidadeName)) return;
+
                     processedData.push({
                         // No ID for these as they don't exist in TLP table yet
                         cargo: cargo_key || 'Sem Cargo',
@@ -151,6 +165,7 @@ export function useTlpData() {
                         afastados: afastadosCount,
                         saldo: saldo,
                         status: 'excedente',
+                        anotacoes: null,
                         funcionarios: emps.map(e => ({
                             nome: e.nome,
                             dataAdmissao: formatarData(e.dt_admissao),
@@ -203,7 +218,7 @@ export function useTlpData() {
             if (id) {
                 // Update existing record by ID
                 const { error } = await supabase
-                    .from('tlp')
+                    .from('tlp_quadro_necessario')
                     .update({ quantidade_necessaria_ativos: novaQuantidade })
                     .eq('id', id);
 
@@ -211,7 +226,7 @@ export function useTlpData() {
             } else {
                 // If no ID, check if a record with this cargo/centro_custo already exists
                 const { data: existing, error: selectError } = await supabase
-                    .from('tlp')
+                    .from('tlp_quadro_necessario')
                     .select('id')
                     .eq('cargo', trimmedCargo)
                     .eq('centro_custo', trimmedCentroCusto)
@@ -222,14 +237,14 @@ export function useTlpData() {
                 if (existing) {
                     // If it exists, update it
                     const { error: updateError } = await supabase
-                        .from('tlp')
+                        .from('tlp_quadro_necessario')
                         .update({ quantidade_necessaria_ativos: novaQuantidade })
                         .eq('id', existing.id);
                     if (updateError) throw updateError;
                 } else {
                     // If it doesn't exist, insert a new one
                     const { error: insertError } = await supabase
-                        .from('tlp')
+                        .from('tlp_quadro_necessario')
                         .insert({
                             cargo: trimmedCargo,
                             centro_custo: trimmedCentroCusto,

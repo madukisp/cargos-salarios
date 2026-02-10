@@ -1,4 +1,4 @@
-import { Search, ChevronDown, ChevronUp, CheckCircle, Clock, AlertTriangle, Loader2, Users, Calendar, AlertCircle, TrendingUp, UserX, UserCheck, ChevronsUpDown, Check } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, CheckCircle, Clock, AlertTriangle, Loader2, Users, Calendar, AlertCircle, TrendingUp, UserX, UserCheck, ChevronsUpDown, Check, UserPlus, Archive, ArchiveRestore } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Card, CardContent } from './ui/card';
@@ -21,6 +21,7 @@ import { FuncionarioProfile } from './FuncionarioProfile';
 import { useTlpData } from '@/app/hooks/useTlpData';
 import { StatusBadge } from './StatusBadge';
 import { formatarData } from '@/lib/column-formatters';
+import { AtribuirVagaModal } from './AtribuirVagaModal';
 
 const FILTROS_STORAGE_KEY = 'vacancy_management_filtros';
 
@@ -71,6 +72,8 @@ export function VacancyManagement() {
     carregarDados,
     responder,
     efetivar,
+    vagasArquivadas,
+    arquivar,
   } = useGestaoVagas();
 
   const { data: tlpData, updateTlp } = useTlpData();
@@ -107,6 +110,13 @@ export function VacancyManagement() {
   // Perfil do Colaborador
   const [selectedProfileFunc, setSelectedProfileFunc] = useState<any | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
+
+  // Atribuição de Vaga
+  const [selectedVagaForAtribuicao, setSelectedVagaForAtribuicao] = useState<any | null>(null);
+
+  const handleAtribuirVaga = (vaga: any) => {
+    setSelectedVagaForAtribuicao(vaga);
+  };
 
   // Filtros de tempo
   const currentYear = new Date().getFullYear();
@@ -258,8 +268,8 @@ export function VacancyManagement() {
   // Agregar todos os resultados quando há busca
   const todosResultadosBusca = useMemo(() => {
     if (!temBuscaAtiva) return [];
-    return [...pendentes, ...afastamentos, ...pendentesEf, ...vagasEmAberto, ...vagasFechadas];
-  }, [temBuscaAtiva, pendentes, afastamentos, pendentesEf, vagasEmAberto, vagasFechadas]);
+    return [...pendentes, ...afastamentos, ...pendentesEf, ...vagasEmAberto, ...vagasFechadas, ...vagasArquivadas];
+  }, [temBuscaAtiva, pendentes, afastamentos, pendentesEf, vagasEmAberto, vagasFechadas, vagasArquivadas]);
 
 
 
@@ -298,6 +308,15 @@ export function VacancyManagement() {
       alert('Erro ao atualizar o quadro necessário no banco.');
     } finally {
       setUpdatingTlp(null);
+    }
+  };
+
+  const handleArquivar = async (idEvento: number, tipo: 'DEMISSAO' | 'AFASTAMENTO', status: boolean) => {
+    try {
+      await arquivar(idEvento, tipo, status);
+      setExpandedId(null);
+    } catch (err) {
+      console.error('Erro ao arquivar:', err);
     }
   };
 
@@ -569,6 +588,12 @@ export function VacancyManagement() {
               >
                 Vagas Fechadas ({vagasFechadas.length})
               </TabsTrigger>
+              <TabsTrigger
+                value="arquivadas"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-slate-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-1 pb-4 text-sm font-semibold flex items-center gap-2"
+              >
+                <Archive size={14} /> Arquivadas ({vagasArquivadas.length})
+              </TabsTrigger>
 
             </TabsList>
 
@@ -596,6 +621,8 @@ export function VacancyManagement() {
                     respondendo={respondendo}
                     handleUpdateTlpValue={handleUpdateTlpValue}
                     updatingTlp={updatingTlp}
+                    onAtribuir={handleAtribuirVaga}
+                    onArquivar={handleArquivar}
                   />
                 ))
               )}
@@ -626,6 +653,8 @@ export function VacancyManagement() {
                     respondendo={respondendo}
                     handleUpdateTlpValue={handleUpdateTlpValue}
                     updatingTlp={updatingTlp}
+                    onAtribuir={handleAtribuirVaga}
+                    onArquivar={handleArquivar}
                   />
                 ))
               )}
@@ -655,6 +684,8 @@ export function VacancyManagement() {
                     respondendo={respondendo}
                     handleUpdateTlpValue={handleUpdateTlpValue}
                     updatingTlp={updatingTlp}
+                    onAtribuir={handleAtribuirVaga}
+                    onArquivar={handleArquivar}
                   />
                 ))
               )}
@@ -693,6 +724,8 @@ export function VacancyManagement() {
                             respondendo={respondendo}
                             handleUpdateTlpValue={handleUpdateTlpValue}
                             updatingTlp={updatingTlp}
+                            onAtribuir={handleAtribuirVaga}
+                            onArquivar={handleArquivar}
                           />
                         ))}
                       </div>
@@ -725,6 +758,8 @@ export function VacancyManagement() {
                             respondendo={respondendo}
                             handleUpdateTlpValue={handleUpdateTlpValue}
                             updatingTlp={updatingTlp}
+                            onAtribuir={handleAtribuirVaga}
+                            onArquivar={handleArquivar}
                           />
                         ))}
                       </div>
@@ -756,6 +791,8 @@ export function VacancyManagement() {
                             respondendo={respondendo}
                             handleUpdateTlpValue={handleUpdateTlpValue}
                             updatingTlp={updatingTlp}
+                            onAtribuir={handleAtribuirVaga}
+                            onArquivar={handleArquivar}
                           />
                         ))}
                       </div>
@@ -787,6 +824,8 @@ export function VacancyManagement() {
                             respondendo={respondendo}
                             handleUpdateTlpValue={handleUpdateTlpValue}
                             updatingTlp={updatingTlp}
+                            onAtribuir={handleAtribuirVaga}
+                            onArquivar={handleArquivar}
                           />
                         ))}
                       </div>
@@ -819,6 +858,8 @@ export function VacancyManagement() {
                             respondendo={respondendo}
                             handleUpdateTlpValue={handleUpdateTlpValue}
                             updatingTlp={updatingTlp}
+                            onAtribuir={handleAtribuirVaga}
+                            onArquivar={handleArquivar}
                           />
                         ))}
                       </div>
@@ -852,6 +893,8 @@ export function VacancyManagement() {
                     respondendo={respondendo}
                     handleUpdateTlpValue={handleUpdateTlpValue}
                     updatingTlp={updatingTlp}
+                    onAtribuir={handleAtribuirVaga}
+                    onArquivar={handleArquivar}
                   />
                 ))
               )}
@@ -882,6 +925,40 @@ export function VacancyManagement() {
                     respondendo={respondendo}
                     handleUpdateTlpValue={handleUpdateTlpValue}
                     updatingTlp={updatingTlp}
+                    onAtribuir={handleAtribuirVaga}
+                    onArquivar={handleArquivar}
+                  />
+                ))
+              )}
+            </TabsContent>
+
+            <TabsContent value="arquivadas" className="space-y-3 mt-0 focusVisible:outline-none">
+              {vagasArquivadas.length === 0 ? (
+                <EmptyState icon={Archive} title="Nenhuma vaga arquivada" description="Vagas arquivadas aparecerão aqui." />
+              ) : (
+                vagasArquivadas.map((vaga) => (
+                  <VagaCard
+                    key={vaga.id_evento}
+                    vaga={vaga}
+                    expandedId={expandedId}
+                    setExpandedId={setExpandedId}
+                    abaSelecionada={abaSelecionada}
+                    respostas={respostas}
+                    formData={formData}
+                    updateFormDataMap={updateFormDataMap}
+                    tlpData={tlpData}
+                    fantasias={fantasias}
+                    loadingProfile={loadingProfile}
+                    setLoadingProfile={setLoadingProfile}
+                    setSelectedProfileFunc={setSelectedProfileFunc}
+                    handleResponder={handleResponder}
+                    handleEfetivar={handleEfetivar}
+                    respondendo={respondendo}
+                    handleUpdateTlpValue={handleUpdateTlpValue}
+                    updatingTlp={updatingTlp}
+                    onAtribuir={handleAtribuirVaga}
+                    onArquivar={handleArquivar}
+                    isArquivada={true}
                   />
                 ))
               )}
@@ -897,6 +974,19 @@ export function VacancyManagement() {
           onClose={() => setSelectedProfileFunc(null)}
         />
       )}
+
+      {/* Modal de Atribuição */}
+      <AtribuirVagaModal
+        open={!!selectedVagaForAtribuicao}
+        onOpenChange={(open) => !open && setSelectedVagaForAtribuicao(null)}
+        vaga={selectedVagaForAtribuicao ? {
+          id_evento: selectedVagaForAtribuicao.id_evento,
+          quem_saiu: selectedVagaForAtribuicao.nome,
+          cargo_saiu: selectedVagaForAtribuicao.cargo,
+          dias_em_aberto: selectedVagaForAtribuicao.dias_em_aberto || 0,
+          cnpj: selectedVagaForAtribuicao.cnpj
+        } : null}
+      />
     </div>
   );
 }
@@ -1118,7 +1208,7 @@ function FuncionarioCombobox({
                         <>
                           <span className="text-slate-300">•</span>
                           <span className="text-slate-500">
-                            Admissão: {new Date(s.dt_admissao).toLocaleDateString('pt-BR')}
+                            Admissão: {formatarData(s.dt_admissao)}
                           </span>
                         </>
                       )}
@@ -1176,7 +1266,10 @@ function VagaCard({
   handleEfetivar,
   respondendo,
   handleUpdateTlpValue,
-  updatingTlp
+  updatingTlp,
+  onAtribuir,
+  onArquivar,
+  isArquivada
 }: {
   vaga: any;
   mostrarSubstituto?: boolean;
@@ -1197,6 +1290,9 @@ function VagaCard({
   respondendo: { [key: number]: boolean };
   handleUpdateTlpValue: (cargo: string, lotacao: string, id: number | undefined, newValue: number) => Promise<void>;
   updatingTlp: string | null;
+  onAtribuir?: (vaga: any) => void;
+  onArquivar?: (id: number, tipo: 'DEMISSAO' | 'AFASTAMENTO', status: boolean) => Promise<void>;
+  isArquivada?: boolean;
 }) {
   if (!vaga || !vaga.id_evento) return null;
   const displayDiasEmAberto = vaga.dias_em_aberto > 0 ? vaga.dias_em_aberto : calculateDaysOpen(vaga.data_evento);
@@ -1254,6 +1350,12 @@ function VagaCard({
       return {
         label: 'Afastamento',
         color: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
+      };
+    }
+    if (abaSelecionada === 'arquivadas') {
+      return {
+        label: 'Arquivada',
+        color: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
       };
     }
     return {
@@ -1641,6 +1743,28 @@ function VagaCard({
                     className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded font-medium text-sm transition-colors"
                   >
                     Atualizar
+                  </button>
+                )}
+
+                {onAtribuir && (
+                  <button
+                    onClick={() => onAtribuir(vaga.id_evento)}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-sm transition-colors flex items-center gap-2 shadow-sm"
+                    title="Atribuir Vaga a Analista"
+                  >
+                    <UserPlus size={16} />
+                    Atribuir
+                  </button>
+                )}
+
+                {onArquivar && (
+                  <button
+                    onClick={() => onArquivar(vaga.id_evento, tipoOrigem, !isArquivada)}
+                    className={`px-4 py-2 ${isArquivada ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-600 hover:bg-slate-700'} text-white rounded font-medium text-sm transition-colors flex items-center gap-2 shadow-sm ml-auto`}
+                    title={isArquivada ? "Desarquivar Vaga" : "Arquivar Vaga"}
+                  >
+                    {isArquivada ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+                    {isArquivada ? 'Desarquivar' : 'Arquivar'}
                   </button>
                 )}
               </div>

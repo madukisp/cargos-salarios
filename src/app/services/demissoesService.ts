@@ -27,6 +27,7 @@ export interface RespostaGestor {
   nome_candidato?: string | null;
   nao_pertence_unidade?: boolean | null;
   data_fechamento_vaga?: string | null;
+  arquivado?: boolean | null;
 }
 
 export async function carregarDemissoes(
@@ -270,6 +271,117 @@ export async function confirmarEfetivacao(
   } catch (error) {
     console.error('Erro ao confirmar efetivação:', error);
     throw error;
+  }
+}
+
+export async function arquivarVaga(
+  id_evento: number,
+  tipo_origem: 'DEMISSAO' | 'AFASTAMENTO',
+  arquivar: boolean
+): Promise<void> {
+  try {
+    // Primeiro verificamos se ja existe uma resposta para fazer update, senao criamos
+    const { data: existing, error: fetchError } = await supabase
+      .from('respostas_gestor')
+      .select('id_resposta')
+      .eq('id_evento', id_evento)
+      .eq('tipo_origem', tipo_origem)
+      .maybeSingle();
+
+    if (fetchError) throw fetchError;
+
+    if (existing) {
+      const { error } = await supabase
+        .from('respostas_gestor')
+        .update({ arquivado: arquivar })
+        .eq('id_resposta', existing.id_resposta);
+      if (error) throw error;
+    } else {
+      // Cria uma resposta vazia apenas com o status arquivado
+      const { error } = await supabase
+        .from('respostas_gestor')
+        .insert({
+          id_evento: id_evento,
+          tipo_origem: tipo_origem,
+          arquivado: arquivar,
+          data_resposta: new Date().toISOString().split('T')[0]
+        });
+      if (error) throw error;
+    }
+
+  } catch (error) {
+    console.error('Erro ao arquivar vaga:', error);
+    throw error;
+  }
+}
+
+export async function carregarVagasArquivadas(
+  lotacao?: string,
+  cnpj?: string
+): Promise<EventoDemissao[]> {
+  try {
+    // 1. Get IDs of archived responses
+    const { data: respostas, error: respError } = await supabase
+      .from('respostas_gestor')
+      .select('id_evento')
+      .eq('arquivado', true);
+
+    if (respError) {
+      console.error('Erro ao buscar vagas arquivadas:', respError);
+      return [];
+    }
+
+    if (!respostas || respostas.length === 0) return [];
+
+    const ids = respostas.map(r => r.id_evento);
+
+    // 2. Fetch events for these IDs, applying filters
+    let query = supabase
+      .from('eventos_gestao_vagas_public')
+      .select('id_evento,nome,cargo,cnpj,data_evento,status_evento,dias_em_aberto,situacao_origem,lotacao')
+      .in('id_evento', ids)
+      .order('data_evento', { ascending: false });
+
+    if (lotacao && lotacao !== 'TODAS') {
+      query = query.eq('lotacao', lotacao);
+    }
+    if (cnpj && cnpj !== 'todos') {
+      query = query.eq('cnpj', cnpj);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Erro ao carregar detalhes das vagas arquivadas:', error);
+      return [];
+    }
+
+    // 3. Buscar nomes para mapear tipo_rescisao (mesma lógica das outras funções)
+    const eventos = (data || []) as any[];
+    const nomes = eventos.map((d: any) => d.nome).filter(Boolean);
+    let mapaRescisao: Record<string, string> = {};
+
+    if (nomes.length > 0) {
+      const { data: orisData } = await supabase
+        .from('oris_funcionarios')
+        .select('nome, tipo_rescisao')
+        .in('nome', nomes);
+
+      (orisData || []).forEach((oris: any) => {
+        mapaRescisao[oris.nome] = oris.tipo_rescisao;
+      });
+    }
+
+    // Adicionar tipo_rescisao aos resultados
+    const eventosComRescisao = eventos.map((d: any) => ({
+      ...d,
+      tipo_rescisao: mapaRescisao[d.nome] || null,
+    })) as EventoDemissao[];
+
+    return eventosComRescisao;
+  } catch (error) {
+    console.error('Erro ao carregar vagas arquivadas:', error);
+    return [];
   }
 }
 

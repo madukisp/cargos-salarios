@@ -8,10 +8,13 @@ export function Sidebar() {
 
   const menuItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+    
     { path: '/gestao-vagas', label: 'Gestão de Vagas', icon: Briefcase },
     { path: '/tlp', label: 'TLP vs Ativos', icon: Users },
-    { path: '/requisitions', label: 'Requisições', icon: FileText },
+    
+    { path: '/consulta-funcionarios', label: 'Pesquisa', icon: Users },
     { path: '/oris', label: 'Oris', icon: Table },
+    { path: '/requisitions', label: 'Requisições', icon: FileText },
   ];
 
   return (

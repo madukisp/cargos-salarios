@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Download, Search, Settings, X, GripVertical, Eye, EyeOff, ArrowUp, ArrowDown, Filter, ChevronDown } from 'lucide-react';
-import { useOrisFuncionarios } from '../hooks/useOrisFuncionarios';
+import { useOrisFuncionarios, useOrisFantasias } from '../hooks/useOrisFuncionarios';
 import { getVisibleColumnFields, getColumnLabels, getOrderedColumns } from '@/lib/columns.config';
 import { getFormattedValue } from '@/lib/column-formatters';
 import { FuncionarioProfile } from './FuncionarioProfile';
@@ -9,33 +9,33 @@ const COLUMNS_STORAGE_KEY = 'oris_columns_order';
 const VISIBLE_COLUMNS_STORAGE_KEY = 'oris_visible_columns';
 
 export function Oris() {
-  const { data, columns: initialColumns, loading, error, totalCount } = useOrisFuncionarios();
   const [searchNome, setSearchNome] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'todos' | 'ativos' | 'demitidos'>('todos');
+  const [selectedFantasias, setSelectedFantasias] = useState<Set<string>>(new Set());
+
+  // Passar filtros para o hook
+  const { data, columns: initialColumns, loading, error, totalCount } = useOrisFuncionarios({
+    searchNome,
+    searchTerm,
+    statusFilter,
+    fantasias: Array.from(selectedFantasias)
+  });
+
   const [columns, setColumns] = useState<string[]>([]);
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set());
   const [showColumnModal, setShowColumnModal] = useState(false);
   const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [selectedFantasias, setSelectedFantasias] = useState<Set<string>>(new Set());
   const [showFantasiaFilter, setShowFantasiaFilter] = useState(false);
   const [selectedFuncionario, setSelectedFuncionario] = useState<any | null>(null);
-  const [statusFilter, setStatusFilter] = useState<'todos' | 'ativos' | 'demitidos'>('todos');
 
   // Obter colunas configuradas (memoizado para evitar infinite loop)
   const configuredFields = useMemo(() => getVisibleColumnFields(), []);
 
-  // Obter lista única de fantasias dos dados
-  const uniqueFantasias = useMemo(() => {
-    const fantasias = new Set<string>();
-    data.forEach(row => {
-      if (row.nome_fantasia && row.nome_fantasia.trim()) {
-        fantasias.add(row.nome_fantasia);
-      }
-    });
-    return Array.from(fantasias).sort();
-  }, [data]);
+  // Obter lista única de fantasias usando o novo hook
+  const uniqueFantasias = useOrisFantasias();
 
   // Carregar preferências do localStorage e configuração de colunas
   useEffect(() => {
@@ -69,56 +69,32 @@ export function Oris() {
     }
   }, [initialColumns, configuredFields]);
 
-  // Filtrar dados baseado em searchNome, searchTerm, fantasias selecionadas e status
-  const filteredData = data.filter((row) => {
-    // Filtro por nome
-    if (searchNome && !String(row.nome || '').toLowerCase().includes(searchNome.toLowerCase())) {
-      return false;
-    }
-
-    // Filtro por status (demitido)
-    if (statusFilter === 'ativos' && row.demitido === true) {
-      return false;
-    }
-    if (statusFilter === 'demitidos' && row.demitido !== true) {
-      return false;
-    }
-
-    // Filtro por fantasias selecionadas
-    if (selectedFantasias.size > 0 && !selectedFantasias.has(row.nome_fantasia)) {
-      return false;
-    }
-
-    // Filtro de busca geral em todos os campos
-    if (!searchTerm) return true;
-    return Object.values(row).some((value) =>
-      String(value).toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  });
+  // Os dados já vêm filtrados do servidor
+  const filteredData = data;
 
   // Ordenar dados baseado em sortColumn e sortDirection
   const sortedData = sortColumn
     ? [...filteredData].sort((a, b) => {
-        const aVal = a[sortColumn];
-        const bVal = b[sortColumn];
+      const aVal = a[sortColumn];
+      const bVal = b[sortColumn];
 
-        // Comparar valores
-        let comparison = 0;
-        if (aVal == null && bVal == null) {
-          comparison = 0;
-        } else if (aVal == null) {
-          comparison = 1;
-        } else if (bVal == null) {
-          comparison = -1;
-        } else if (typeof aVal === 'number' && typeof bVal === 'number') {
-          comparison = aVal - bVal;
-        } else {
-          // String comparison
-          comparison = String(aVal).localeCompare(String(bVal), 'pt-BR');
-        }
+      // Comparar valores
+      let comparison = 0;
+      if (aVal == null && bVal == null) {
+        comparison = 0;
+      } else if (aVal == null) {
+        comparison = 1;
+      } else if (bVal == null) {
+        comparison = -1;
+      } else if (typeof aVal === 'number' && typeof bVal === 'number') {
+        comparison = aVal - bVal;
+      } else {
+        // String comparison
+        comparison = String(aVal).localeCompare(String(bVal), 'pt-BR');
+      }
 
-        return sortDirection === 'asc' ? comparison : -comparison;
-      })
+      return sortDirection === 'asc' ? comparison : -comparison;
+    })
     : filteredData;
 
   // Handle sort column click
@@ -261,31 +237,28 @@ export function Oris() {
         <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => setStatusFilter('todos')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              statusFilter === 'todos'
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${statusFilter === 'todos'
                 ? 'bg-blue-600 dark:bg-blue-700 text-white'
                 : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-            }`}
+              }`}
           >
             Todos
           </button>
           <button
             onClick={() => setStatusFilter('ativos')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              statusFilter === 'ativos'
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${statusFilter === 'ativos'
                 ? 'bg-green-600 dark:bg-green-700 text-white'
                 : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-            }`}
+              }`}
           >
             ✅ Ativos
           </button>
           <button
             onClick={() => setStatusFilter('demitidos')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              statusFilter === 'demitidos'
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${statusFilter === 'demitidos'
                 ? 'bg-red-600 dark:bg-red-700 text-white'
                 : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-            }`}
+              }`}
           >
             ❌ Demitidos
           </button>
@@ -314,11 +287,10 @@ export function Oris() {
                   <button
                     key={fantasia}
                     onClick={() => toggleFantasia(fantasia)}
-                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-                      selectedFantasias.has(fantasia)
+                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${selectedFantasias.has(fantasia)
                         ? 'bg-blue-600 dark:bg-blue-700 text-white'
                         : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:border-blue-500 dark:hover:border-blue-500'
-                    }`}
+                      }`}
                   >
                     {fantasia}
                   </button>
@@ -394,11 +366,10 @@ export function Oris() {
                         onDragOver={handleDragOver}
                         onDrop={() => handleDrop(col)}
                         onClick={() => handleSort(col)}
-                        className={`px-4 py-3 text-left font-medium uppercase tracking-wider border border-slate-200 dark:border-slate-700 whitespace-nowrap select-none transition-colors ${
-                          isSorted
+                        className={`px-4 py-3 text-left font-medium uppercase tracking-wider border border-slate-200 dark:border-slate-700 whitespace-nowrap select-none transition-colors ${isSorted
                             ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                             : 'bg-slate-50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer'
-                        }`}
+                          }`}
                         title="Clique para ordenar, arraste para reordenar"
                       >
                         <div className="flex items-center gap-2">

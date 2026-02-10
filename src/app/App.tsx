@@ -7,6 +7,7 @@ import { VacancyManagement } from './components/VacancyManagement';
 import { Requisitions } from './components/Requisitions';
 import { DatabaseDemo } from './components/DatabaseDemo';
 import { Oris } from './components/Oris';
+import { EmployeeSearch } from './components/EmployeeSearch';
 import { Login } from './components/Login';
 import { ThemeProvider } from './components/ThemeProvider';
 import { SidebarProvider, useSidebar } from './components/SidebarContext';
@@ -46,6 +47,7 @@ function AppContent() {
             <Route path="/requisitions" element={<Requisitions />} />
             <Route path="/database" element={<DatabaseDemo />} />
             <Route path="/oris" element={<Oris />} />
+            <Route path="/consulta-funcionarios" element={<EmployeeSearch />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
@@ -54,14 +56,22 @@ function AppContent() {
   );
 }
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from './components/ui/sonner';
+
+const queryClient = new QueryClient();
+
 export default function App() {
   return (
-    <ThemeProvider>
-      <SidebarProvider>
-        <BrowserRouter>
-          <AppContent />
-        </BrowserRouter>
-      </SidebarProvider>
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <SidebarProvider>
+          <BrowserRouter>
+            <AppContent />
+            <Toaster />
+          </BrowserRouter>
+        </SidebarProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 }
