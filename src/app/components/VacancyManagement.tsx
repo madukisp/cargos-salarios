@@ -1698,6 +1698,19 @@ function VagaCard({
               </div>
 
               <div className="flex gap-3">
+                {/* Botão Arquivar/Desarquivar */}
+                {onArquivar && (
+                  <button
+                    onClick={() => onArquivar(vaga.id_evento, tipoOrigem, !isArquivada)}
+                    className={`px-4 py-2 ${isArquivada ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-600 hover:bg-slate-700'} text-white rounded font-medium text-sm transition-colors flex items-center gap-2 shadow-sm`}
+                    title={isArquivada ? "Desarquivar Vaga" : "Arquivar Vaga"}
+                  >
+                    {isArquivada ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+                    {isArquivada ? 'Desarquivar' : 'Arquivar'}
+                  </button>
+                )}
+
+                {/* Botão Salvar Resposta (MAIOR) */}
                 {isPendenteEf ? (
                   <button
                     onClick={() => handleEfetivar(vaga.id_evento, tipoOrigem)}
@@ -1728,25 +1741,15 @@ function VagaCard({
                   </button>
                 )}
 
+                {/* Botão Atribuir */}
                 {onAtribuir && (
                   <button
-                    onClick={() => onAtribuir(vaga.id_evento)}
+                    onClick={() => onAtribuir(vaga)}
                     className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-sm transition-colors flex items-center gap-2 shadow-sm"
                     title="Atribuir Vaga a Analista"
                   >
                     <UserPlus size={16} />
                     Atribuir
-                  </button>
-                )}
-
-                {onArquivar && (
-                  <button
-                    onClick={() => onArquivar(vaga.id_evento, tipoOrigem, !isArquivada)}
-                    className={`px-4 py-2 ${isArquivada ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-600 hover:bg-slate-700'} text-white rounded font-medium text-sm transition-colors flex items-center gap-2 shadow-sm ml-auto`}
-                    title={isArquivada ? "Desarquivar Vaga" : "Arquivar Vaga"}
-                  >
-                    {isArquivada ? <ArchiveRestore size={16} /> : <Archive size={16} />}
-                    {isArquivada ? 'Desarquivar' : 'Arquivar'}
                   </button>
                 )}
               </div>
