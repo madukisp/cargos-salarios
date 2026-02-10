@@ -62,18 +62,33 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
           console.warn('Erro ao buscar resposta:', respostaError);
         }
 
+        console.log('Resposta do gestor para evento', vaga.id_evento, ':', respostaData);
+
         // Buscar dados do substituto se houver
         let substitutoData = null;
         if (respostaData?.id_substituto) {
+          console.log('Buscando substituto com ID:', respostaData.id_substituto);
+
+          // Tentar buscar por ID na tabela oris_funcionarios
           const { data: subData, error: subError } = await supabase
             .from('oris_funcionarios')
-            .select('id, nome, cargo, email, telefone')
-            .eq('id', respostaData.id_substituto)
-            .single();
+            .select('id, nome, cargo, email')
+            .eq('id', respostaData.id_substituto);
 
-          if (!subError) {
-            substitutoData = subData;
+          if (subError) {
+            console.warn('Erro ao buscar substituto em oris_funcionarios:', subError);
+            console.log('ID do substituto que causou erro:', respostaData.id_substituto);
+          } else if (subData && subData.length > 0) {
+            console.log('Substituto encontrado:', subData[0]);
+            substitutoData = subData[0];
+          } else {
+            console.warn('Nenhum funcionário encontrado com ID:', respostaData.id_substituto);
+            // Tentar buscar em vagas_analista ou outros campos
+            console.log('Verificando estrutura da resposta:', JSON.stringify(respostaData));
           }
+        } else if (respostaData) {
+          console.log('Nenhum id_substituto encontrado. Campos disponíveis:', Object.keys(respostaData));
+          console.log('Dados completos da resposta:', JSON.stringify(respostaData));
         }
 
         setDetalhes({
@@ -178,12 +193,6 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
                         <div>
                           <p className="text-xs text-green-600 dark:text-green-500 font-medium">Email</p>
                           <p className="font-medium text-slate-900 dark:text-slate-100 break-all">{detalhes.funcionarioAtual.email}</p>
-                        </div>
-                      )}
-                      {detalhes.funcionarioAtual.telefone && (
-                        <div>
-                          <p className="text-xs text-green-600 dark:text-green-500 font-medium">Telefone</p>
-                          <p className="font-medium text-slate-900 dark:text-slate-100">{detalhes.funcionarioAtual.telefone}</p>
                         </div>
                       )}
                     </div>
