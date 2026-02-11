@@ -14,6 +14,7 @@ import { SidebarProvider, useSidebar } from './components/SidebarContext';
 import { useAuth } from './hooks/useAuth';
 import { Settings } from './components/Settings';
 import { AgendaAnalistas } from './components/AgendaAnalistas';
+import { NotificationProvider } from './contexts/NotificationContext';
 
 function AppContent() {
   const { isAuthenticated, loading } = useAuth();
@@ -70,12 +71,14 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <SidebarProvider>
-          <BrowserRouter>
-            <AppContent />
-            <Toaster />
-          </BrowserRouter>
-        </SidebarProvider>
+        <NotificationProvider>
+          <SidebarProvider>
+            <BrowserRouter>
+              <AppContent />
+              <Toaster />
+            </BrowserRouter>
+          </SidebarProvider>
+        </NotificationProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

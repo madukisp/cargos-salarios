@@ -11,6 +11,8 @@ export interface EventoDemissao {
   situacao_origem: string;
   lotacao: string;
   tipo_rescisao?: string;
+  carga_horaria_semanal?: string;
+  escala?: string;
 }
 
 export interface RespostaGestor {
@@ -67,25 +69,27 @@ export async function carregarDemissoes(
       (d) => d.situacao_origem === '99-Demitido'
     );
 
-    // Buscar tipo_rescisao na tabela oris_funcionarios
+    // Buscar tipo_rescisao, carga_horaria_semanal e escala na tabela oris_funcionarios
     const nomes = demissoes.map((d: any) => d.nome).filter(Boolean);
-    let mapaRescisao: Record<string, string> = {};
+    let mapaDetalhes: Record<string, any> = {};
 
     if (nomes.length > 0) {
       const { data: orisData } = await supabase
         .from('oris_funcionarios')
-        .select('nome, tipo_rescisao')
+        .select('nome, tipo_rescisao, carga_horaria_semanal, escala')
         .in('nome', nomes);
 
       (orisData || []).forEach((oris: any) => {
-        mapaRescisao[oris.nome] = oris.tipo_rescisao;
+        mapaDetalhes[oris.nome] = oris;
       });
     }
 
-    // Adicionar tipo_rescisao aos resultados
+    // Adicionar detalhes aos resultados
     const demissoesComRescisao = demissoes.map((d: any) => ({
       ...d,
-      tipo_rescisao: mapaRescisao[d.nome] || null,
+      tipo_rescisao: mapaDetalhes[d.nome]?.tipo_rescisao || null,
+      carga_horaria_semanal: mapaDetalhes[d.nome]?.carga_horaria_semanal || null,
+      escala: mapaDetalhes[d.nome]?.escala || null,
     })) as EventoDemissao[];
 
     console.log('[carregarDemissoes] Retornando', demissoesComRescisao.length, 'demissões');
@@ -128,7 +132,6 @@ export async function carregarAfastamentos(
     }
 
     // Filtrar apenas afastamentos (NÃO demissões e NÃO atestados)
-    // Excluir demissões e qualquer tipo de atestado médico/odontológico
     const afastamentos = ((data || []) as any[]).filter(
       (d) => {
         const situacao = (d.situacao_origem || '').toUpperCase();
@@ -141,29 +144,40 @@ export async function carregarAfastamentos(
       }
     );
 
-    // Buscar tipo_rescisao na tabela oris_funcionarios
+    // Buscar situação, carga_horaria_semanal e escala na tabela oris_funcionarios para validar
     const nomes = afastamentos.map((d: any) => d.nome).filter(Boolean);
-    let mapaRescisao: Record<string, string> = {};
+    let mapaDetalhes: Record<string, any> = {};
 
     if (nomes.length > 0) {
       const { data: orisData } = await supabase
         .from('oris_funcionarios')
-        .select('nome, tipo_rescisao')
+        .select('nome, situacao, carga_horaria_semanal, escala')
         .in('nome', nomes);
 
       (orisData || []).forEach((oris: any) => {
-        mapaRescisao[oris.nome] = oris.tipo_rescisao;
+        mapaDetalhes[oris.nome] = oris;
       });
     }
 
-    // Adicionar tipo_rescisao aos resultados
-    const afastamentosComRescisao = afastamentos.map((d: any) => ({
-      ...d,
-      tipo_rescisao: mapaRescisao[d.nome] || null,
-    })) as EventoDemissao[];
+    // Filtrar: manter apenas afastamentos de funcionários que NÃO estão ativos
+    const afastamentosValidos = afastamentos
+      .filter((d: any) => {
+        const situacaoAtual = mapaDetalhes[d.nome]?.situacao;
+        // Se a situação atual é 01-ATIVO, excluir do afastamento
+        if (situacaoAtual === '01-ATIVO') {
+          console.log(`[carregarAfastamentos] Excluindo ${d.nome} - está com situacao 01-ATIVO`);
+          return false;
+        }
+        return true;
+      })
+      .map((d: any) => ({
+        ...d,
+        carga_horaria_semanal: mapaDetalhes[d.nome]?.carga_horaria_semanal || null,
+        escala: mapaDetalhes[d.nome]?.escala || null,
+      }));
 
-    console.log('[carregarAfastamentos] Retornando', afastamentosComRescisao.length, 'afastamentos');
-    return afastamentosComRescisao;
+    console.log('[carregarAfastamentos] Retornando', afastamentosValidos.length, 'afastamentos');
+    return afastamentosValidos as EventoDemissao[];
   } catch (error) {
     console.error('[carregarAfastamentos] Exception:', error);
     return [];
@@ -362,29 +376,31 @@ export async function carregarVagasArquivadas(
       return [];
     }
 
-    // 3. Buscar nomes para mapear tipo_rescisao (mesma lógica das outras funções)
+    // 3. Buscar detalhes (tipo_rescisao, carga_horaria_semanal, escala) - mesma lógica das outras funções
     const eventos = (data || []) as any[];
     const nomes = eventos.map((d: any) => d.nome).filter(Boolean);
-    let mapaRescisao: Record<string, string> = {};
+    let mapaDetalhes: Record<string, any> = {};
 
     if (nomes.length > 0) {
       const { data: orisData } = await supabase
         .from('oris_funcionarios')
-        .select('nome, tipo_rescisao')
+        .select('nome, tipo_rescisao, carga_horaria_semanal, escala')
         .in('nome', nomes);
 
       (orisData || []).forEach((oris: any) => {
-        mapaRescisao[oris.nome] = oris.tipo_rescisao;
+        mapaDetalhes[oris.nome] = oris;
       });
     }
 
-    // Adicionar tipo_rescisao aos resultados
-    const eventosComRescisao = eventos.map((d: any) => ({
+    // Adicionar detalhes aos resultados
+    const eventosComDetalhes = eventos.map((d: any) => ({
       ...d,
-      tipo_rescisao: mapaRescisao[d.nome] || null,
+      tipo_rescisao: mapaDetalhes[d.nome]?.tipo_rescisao || null,
+      carga_horaria_semanal: mapaDetalhes[d.nome]?.carga_horaria_semanal || null,
+      escala: mapaDetalhes[d.nome]?.escala || null,
     })) as EventoDemissao[];
 
-    return eventosComRescisao;
+    return eventosComDetalhes;
   } catch (error) {
     console.error('Erro ao carregar vagas arquivadas:', error);
     return [];

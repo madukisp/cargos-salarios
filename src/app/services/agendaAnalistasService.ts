@@ -106,8 +106,61 @@ export const carregarAgendaAnalistas = async (): Promise<AnalistaComVagas[]> => 
     // Buscar respostas do gestor para informações adicionais
     const { data: respostasData, error: respostasError } = await supabase
       .from('respostas_gestor')
-      .select('id_evento, vaga_preenchida, pendente_efetivacao')
+      .select('*')
       .in('id_evento', idEventosUnicos);
+
+    // Debug: mostrar campos disponíveis e resumo de substitutos
+    if (respostasData && respostasData.length > 0) {
+      console.log('[DEBUG] Campos disponíveis em respostas_gestor:', Object.keys(respostasData[0]));
+
+      // Mostrar resumo de vagas com/sem substituto
+      const vagasComSubstituto = respostasData.filter(r => r.id_substituto !== null && r.id_substituto !== undefined);
+      const vagasSemSubstituto = respostasData.filter(r => !r.id_substituto);
+
+      console.log(`[DEBUG RESUMO] Total de vagas: ${respostasData.length}`);
+      console.log(`[DEBUG RESUMO] Vagas COM substituto (${vagasComSubstituto.length}):`,
+        vagasComSubstituto.map(r => ({ id_evento: r.id_evento, id_substituto: r.id_substituto }))
+      );
+      console.log(`[DEBUG RESUMO] Vagas SEM substituto (${vagasSemSubstituto.length}):`,
+        vagasSemSubstituto.map(r => r.id_evento)
+      );
+
+      const gracielle = respostasData.find(r => r.id_evento === 1597);
+      if (gracielle) {
+        console.log('[DEBUG GRACIELLE RESPOSTA] Campos completos:', gracielle);
+      }
+
+      const vaga9439 = respostasData.find(r => r.id_evento === 9439);
+      if (vaga9439) {
+        console.log('[DEBUG VAGA 9439] Dados:', {
+          id_evento: vaga9439.id_evento,
+          id_substituto: vaga9439.id_substituto,
+          nome_candidato: vaga9439.nome_candidato,
+          vaga_preenchida: vaga9439.vaga_preenchida
+        });
+      }
+
+      // Debug para YVE OLIVEIRA DOS SANTOS
+      const eventos = eventosData || [];
+      const yveEventos = eventos.filter(e => e.nome && e.nome.includes('YVE OLIVEIRA'));
+      if (yveEventos.length > 0) {
+        console.log(`%c[DEBUG YVE] Encontrados ${yveEventos.length} evento(s) para YVE OLIVEIRA DOS SANTOS:`, 'color: blue; font-weight: bold');
+        yveEventos.forEach((evt, idx) => {
+          const resposta = respostasData.find(r => r.id_evento === evt.id_evento);
+          const temSubstituto = resposta?.id_substituto ? 'SIM ✅' : 'NÃO ❌';
+          console.table({
+            'Evento': evt.id_evento,
+            'Cargo': evt.cargo,
+            'Tem Substituto': temSubstituto,
+            'ID Substituto': resposta?.id_substituto || '-',
+            'Nome Candidato': resposta?.nome_candidato || '-',
+            'Vaga Preenchida': resposta?.vaga_preenchida || 'false'
+          });
+        });
+      } else {
+        console.log('[DEBUG YVE] Nenhum evento encontrado para YVE OLIVEIRA DOS SANTOS');
+      }
+    }
 
     if (respostasError) {
       console.warn('Erro ao buscar respostas do gestor:', respostasError);
@@ -143,6 +196,19 @@ export const carregarAgendaAnalistas = async (): Promise<AnalistaComVagas[]> => 
             dias_em_aberto
           );
 
+          // Debug para GRACIELLE
+          if (evento.nome?.includes('GRACIELLE')) {
+            console.log(`[DEBUG GRACIELLE] Evento ${vaga.id_evento}:`, {
+              nome: evento.nome,
+              cargo: evento.cargo,
+              dias_em_aberto,
+              data_abertura_vaga: resposta?.data_abertura_vaga,
+              data_fechamento_vaga: resposta?.data_fechamento_vaga,
+              dias_reais,
+              vaga_preenchida: resposta?.vaga_preenchida,
+            });
+          }
+
           return {
             id_evento: vaga.id_evento,
             nome_funcionario: evento.nome || '-',
@@ -159,12 +225,20 @@ export const carregarAgendaAnalistas = async (): Promise<AnalistaComVagas[]> => 
           };
         })
         .filter((v): v is VagaAtribuida => v !== null)
-        .sort((a, b) => b.dias_reais - a.dias_reais);
+        .sort((a, b) => {
+          // Prioridade 1: Vagas abertas em cima (não preenchidas)
+          const aAberta = a.vaga_preenchida !== 'SIM' ? 0 : 1;
+          const bAberta = b.vaga_preenchida !== 'SIM' ? 0 : 1;
+          if (aAberta !== bAberta) return aAberta - bAberta;
+
+          // Prioridade 2: Dentro do mesmo grupo, ordenar por dias_reais (descendente)
+          return b.dias_reais - a.dias_reais;
+        });
 
       // Calcular métricas usando dias reais
       const totalVagas = vagasComDetalhes.length;
-      const vagasEmAberto = vagasComDetalhes.filter(v => v.dias_reais > 0).length;
-      const vagasCriticas = vagasComDetalhes.filter(v => v.dias_reais > 30).length;
+      const vagasEmAberto = vagasComDetalhes.filter(v => v.vaga_preenchida !== 'SIM').length;
+      const vagasCriticas = vagasComDetalhes.filter(v => v.dias_reais >= 45).length;
 
       return {
         id: analista.id,

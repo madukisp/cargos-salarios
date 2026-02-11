@@ -1277,6 +1277,7 @@ function VagaCard({
   isArquivada?: boolean;
 }) {
   if (!vaga || !vaga.id_evento) return null;
+
   const displayDiasEmAberto = vaga.dias_em_aberto > 0 ? vaga.dias_em_aberto : calculateDaysOpen(vaga.data_evento);
   const isExpanded = expandedId === vaga.id_evento;
   const sla = getSlaStatus(displayDiasEmAberto || 0);
@@ -1498,8 +1499,8 @@ function VagaCard({
                   <span className={`font-medium ${sla.color}`}>{displayDiasEmAberto} dias</span>
                 </div>
                 <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                  <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Carga Horária</span>
-                  <span className="font-medium">{vaga.carga_horaria_semanal ? `${vaga.carga_horaria_semanal}h/semana` : '-'}</span>
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Carga Horária Semanal</span>
+                  <span className="font-medium">{vaga.carga_horaria_semanal ? `${vaga.carga_horaria_semanal} hs` : '-'}</span>
                 </div>
                 <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                   <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Escala</span>

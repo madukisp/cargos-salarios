@@ -117,31 +117,14 @@ export function useAuth() {
         throw new Error('Senha atual inválida');
       }
 
-      // Tentar usar RPC change_password_analista se existir
-      try {
-        const { error: changeError } = await supabase.rpc('change_password_analista', {
-          p_email: authState.user.email,
-          p_senha_atual: currentPassword,
-          p_senha_nova: newPassword,
-        });
+      const { error: changeError } = await supabase.rpc('change_password_analista', {
+        p_email: authState.user.email,
+        p_senha_atual: currentPassword,
+        p_senha_nova: newPassword,
+      });
 
-        if (changeError) {
-          throw new Error(changeError.message);
-        }
-      } catch (rpcError: any) {
-        // Se a RPC não existir, tentar atualizar diretamente (pode falhar se houver RLS)
-        console.warn('RPC change_password_analista não disponível, tentando update direto...');
-        const { error: updateError } = await supabase
-          .from('analistas_cargos_salarios')
-          .update({ senha: newPassword })
-          .eq('email', authState.user.email);
-
-        if (updateError) {
-          throw new Error(
-            'Não foi possível alterar a senha. A RPC "change_password_analista" não existe. ' +
-            'Entre em contato com o administrador do banco de dados.'
-          );
-        }
+      if (changeError) {
+        throw new Error(changeError.message);
       }
 
       setAuthState(prev => ({

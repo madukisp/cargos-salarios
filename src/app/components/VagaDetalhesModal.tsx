@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Loader2, AlertCircle } from 'lucide-react';
+import { X, Loader2, AlertCircle, Search } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { formatarData } from '@/lib/column-formatters';
 import { VagaAtribuida } from '@/app/services/agendaAnalistasService';
@@ -18,8 +18,14 @@ interface DetalhesCompletos {
   loading: boolean;
 }
 
+interface SugestaoFuncionario {
+  id: number;
+  nome: string;
+  cargo: string;
+}
+
 function getStatusBadge(diasEmAberto: number) {
-  if (diasEmAberto > 30) {
+  if (diasEmAberto >= 45) {
     return { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-400', label: '🔴 Crítico', cor: 'vermelho' };
   } else if (diasEmAberto >= 15) {
     return { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-700 dark:text-amber-400', label: '🟡 Atenção', cor: 'âmbar' };
@@ -36,6 +42,11 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
     error: null,
     loading: true,
   });
+  const [mostrarFormularioSubstituto, setMostrarFormularioSubstituto] = useState(false);
+  const [searchSubstituto, setSearchSubstituto] = useState('');
+  const [sugestoesSubstituto, setSugestoesSubstituto] = useState<SugestaoFuncionario[]>([]);
+  const [substitutoSelecionado, setSubstitutoSelecionado] = useState<SugestaoFuncionario | null>(null);
+  const [salvandoSubstituto, setSalvandoSubstituto] = useState(false);
 
   useEffect(() => {
     const carregarDetalhes = async () => {
@@ -66,29 +77,59 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
 
         // Buscar dados do substituto se houver
         let substitutoData = null;
-        if (respostaData?.id_substituto) {
-          console.log('Buscando substituto com ID:', respostaData.id_substituto);
+        console.log('[DEBUG] Resposta completa para ID', vaga.id_evento, ':', respostaData);
 
-          // Tentar buscar por ID na tabela oris_funcionarios
-          const { data: subData, error: subError } = await supabase
-            .from('oris_funcionarios')
-            .select('id, nome, cargo, dt_admissao')
-            .eq('id', respostaData.id_substituto);
+        if (respostaData) {
+          // Tentar diferentes estratégias para encontrar o substituto
 
-          if (subError) {
-            console.warn('Erro ao buscar substituto em oris_funcionarios:', subError);
-            console.log('ID do substituto que causou erro:', respostaData.id_substituto);
-          } else if (subData && subData.length > 0) {
-            console.log('Substituto encontrado:', subData[0]);
-            substitutoData = subData[0];
-          } else {
-            console.warn('Nenhum funcionário encontrado com ID:', respostaData.id_substituto);
-            // Tentar buscar em vagas_analista ou outros campos
-            console.log('Verificando estrutura da resposta:', JSON.stringify(respostaData));
+          // Estratégia 1: Buscar por id_substituto
+          if (respostaData?.id_substituto) {
+            console.log('Estratégia 1: Buscando substituto com ID:', respostaData.id_substituto);
+            const { data: subData, error: subError } = await supabase
+              .from('oris_funcionarios')
+              .select('id, nome, cargo, dt_admissao, centro_custo')
+              .eq('id', respostaData.id_substituto);
+
+            if (subError) {
+              console.error('Erro ao buscar por ID:', subError);
+            } else if (subData && subData.length > 0) {
+              console.log('Substituto encontrado por ID:', subData[0]);
+              substitutoData = subData[0];
+            } else {
+              console.warn('Nenhum substituto encontrado com ID:', respostaData.id_substituto);
+            }
           }
-        } else if (respostaData) {
-          console.log('Nenhum id_substituto encontrado. Campos disponíveis:', Object.keys(respostaData));
-          console.log('Dados completos da resposta:', JSON.stringify(respostaData));
+
+          // Estratégia 2: Buscar por nome_candidato se não encontrou por ID
+          if (!substitutoData && respostaData?.nome_candidato) {
+            console.log('Estratégia 2: Buscando substituto por nome:', respostaData.nome_candidato);
+            const { data: subData, error: subError } = await supabase
+              .from('oris_funcionarios')
+              .select('id, nome, cargo, dt_admissao, centro_custo')
+              .ilike('nome', `%${respostaData.nome_candidato}%`)
+              .limit(1);
+
+            if (subError) {
+              console.error('Erro ao buscar por nome:', subError);
+            } else if (subData && subData.length > 0) {
+              console.log('Substituto encontrado por nome:', subData[0]);
+              substitutoData = subData[0];
+            } else {
+              console.warn('Nenhum substituto encontrado com nome:', respostaData.nome_candidato);
+            }
+          }
+
+          // Debug: mostrar todos os campos da resposta
+          if (!substitutoData) {
+            console.log('[DEBUG] Campos em respostaData para evento', vaga.id_evento, ':', Object.keys(respostaData));
+            console.log('[DEBUG] Valores completos:', {
+              id_substituto: respostaData.id_substituto,
+              nome_candidato: respostaData.nome_candidato,
+              vaga_preenchida: respostaData.vaga_preenchida,
+            });
+          } else {
+            console.log('[SUCCESS] Substituto carregado para evento', vaga.id_evento, ':', substitutoData.nome);
+          }
         }
 
         setDetalhes({
@@ -111,6 +152,31 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
     carregarDetalhes();
   }, [vaga.id_evento]);
 
+  // Buscar sugestões de funcionários para substituto
+  useEffect(() => {
+    const buscarSugestoes = async () => {
+      if (searchSubstituto.trim().length < 2) {
+        setSugestoesSubstituto([]);
+        return;
+      }
+
+      try {
+        const { data } = await supabase
+          .from('oris_funcionarios')
+          .select('id, nome, cargo')
+          .ilike('nome', `%${searchSubstituto}%`)
+          .limit(10);
+
+        setSugestoesSubstituto(data || []);
+      } catch (err) {
+        console.error('Erro ao buscar sugestões:', err);
+      }
+    };
+
+    const timer = setTimeout(buscarSugestoes, 300);
+    return () => clearTimeout(timer);
+  }, [searchSubstituto]);
+
   // Calcular dias reais: se a vaga foi fechada, contar até a data de fechamento; senão, usar dias_em_aberto
   const calcularDiasReais = (): number => {
     if (detalhes.resposta?.data_fechamento_vaga && detalhes.resposta?.data_abertura_vaga) {
@@ -123,6 +189,55 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
 
   const diasReais = calcularDiasReais();
   const statusBadge = getStatusBadge(diasReais);
+
+  const salvarSubstituto = async () => {
+    if (!substitutoSelecionado) return;
+
+    setSalvandoSubstituto(true);
+    try {
+      // Buscar dados completos do substituto
+      const { data: funcionario } = await supabase
+        .from('oris_funcionarios')
+        .select('id, nome, cargo, dt_admissao, centro_custo')
+        .eq('id', substitutoSelecionado.id)
+        .single();
+
+      if (!funcionario) throw new Error('Funcionário não encontrado');
+
+      // Atualizar a resposta com o substituto
+      const { error } = await supabase
+        .from('respostas_gestor')
+        .update({
+          id_substituto: substitutoSelecionado.id,
+          nome_candidato: substitutoSelecionado.nome,
+          vaga_preenchida: 'SIM',
+        })
+        .eq('id_evento', vaga.id_evento);
+
+      if (error) throw error;
+
+      // Atualizar o estado local
+      setDetalhes(prev => ({
+        ...prev,
+        funcionarioAtual: funcionario,
+        resposta: {
+          ...prev.resposta,
+          id_substituto: substitutoSelecionado.id,
+          nome_candidato: substitutoSelecionado.nome,
+          vaga_preenchida: 'SIM',
+        },
+      }));
+
+      setMostrarFormularioSubstituto(false);
+      setSearchSubstituto('');
+      setSubstitutoSelecionado(null);
+    } catch (err) {
+      console.error('Erro ao salvar substituto:', err);
+      alert('Erro ao salvar substituto: ' + (err instanceof Error ? err.message : 'Erro desconhecido'));
+    } finally {
+      setSalvandoSubstituto(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50 p-4">
@@ -200,10 +315,16 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
                         <p className="text-xs text-green-600 dark:text-green-500 font-medium">Cargo</p>
                         <p className="font-medium text-slate-900 dark:text-slate-100">{detalhes.funcionarioAtual.cargo}</p>
                       </div>
+                      {detalhes.funcionarioAtual.centro_custo && (
+                        <div>
+                          <p className="text-xs text-green-600 dark:text-green-500 font-medium">Centro de Custo</p>
+                          <p className="font-medium text-slate-900 dark:text-slate-100">{detalhes.funcionarioAtual.centro_custo}</p>
+                        </div>
+                      )}
                       {detalhes.funcionarioAtual.dt_admissao && (
                         <div>
-                          <p className="text-xs text-green-600 dark:text-green-500 font-medium">dt_admissao</p>
-                          <p className="font-medium text-slate-900 dark:text-slate-100 break-all">{detalhes.funcionarioAtual.dt_admissao}</p>
+                          <p className="text-xs text-green-600 dark:text-green-500 font-medium">Data de Admissão</p>
+                          <p className="font-medium text-slate-900 dark:text-slate-100 break-all">{formatarData(detalhes.funcionarioAtual.dt_admissao)}</p>
                         </div>
                       )}
                     </div>
@@ -213,7 +334,13 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
                     <h3 className="text-sm font-semibold text-amber-700 dark:text-amber-400 uppercase mb-3">
                       ⚠️ Preenchida Sem Registro
                     </h3>
-                    <p className="text-sm text-amber-800 dark:text-amber-300">A vaga foi marcada como preenchida, mas os dados do substituto não foram registrados no sistema.</p>
+                    <p className="text-sm text-amber-800 dark:text-amber-300 mb-3">A vaga foi marcada como preenchida, mas os dados do substituto não foram registrados no sistema.</p>
+                    <button
+                      onClick={() => setMostrarFormularioSubstituto(true)}
+                      className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm rounded transition-colors"
+                    >
+                      Registrar Substituto
+                    </button>
                   </div>
                 ) : (
                   <div className="p-4 bg-slate-100 dark:bg-slate-700/50 border border-slate-300 dark:border-slate-600 rounded-lg">
@@ -264,7 +391,7 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
                           {Math.floor(
                             (new Date(detalhes.resposta.data_fechamento_vaga).getTime() -
                               new Date(detalhes.resposta.data_abertura_vaga).getTime()) /
-                              (1000 * 60 * 60 * 24)
+                            (1000 * 60 * 60 * 24)
                           )}{' '}
                           dias
                         </p>
@@ -345,7 +472,7 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
                               {chave.replace(/_/g, ' ').toUpperCase()}
                             </p>
                             <p className="text-sm text-slate-900 dark:text-slate-100 break-words">
-                              {typeof valor === 'string' && valor.includes('-') && valor.length === 10
+                              {typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}/.test(valor)
                                 ? formatarData(valor)
                                 : String(valor)}
                             </p>
@@ -360,6 +487,111 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
           )}
         </div>
       </div>
+
+      {/* Modal Registrar Substituto */}
+      {mostrarFormularioSubstituto && (
+        <div className="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                Buscar e Registrar Substituto
+              </h3>
+              <button
+                onClick={() => {
+                  setMostrarFormularioSubstituto(false);
+                  setSearchSubstituto('');
+                  setSugestoesSubstituto([]);
+                  setSubstitutoSelecionado(null);
+                }}
+                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Campo de Busca */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Buscar Funcionário
+              </label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Digite o nome do funcionário..."
+                  value={searchSubstituto}
+                  onChange={(e) => setSearchSubstituto(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Sugestões */}
+            {sugestoesSubstituto.length > 0 && (
+              <div className="mb-4 max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg">
+                {sugestoesSubstituto.map(func => (
+                  <button
+                    key={func.id}
+                    onClick={() => setSubstitutoSelecionado(func)}
+                    className={`w-full text-left p-3 border-b border-slate-200 dark:border-slate-700 last:border-b-0 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors ${
+                      substitutoSelecionado?.id === func.id
+                        ? 'bg-blue-100 dark:bg-blue-900/40'
+                        : ''
+                    }`}
+                  >
+                    <p className="font-medium text-slate-900 dark:text-slate-100">{func.nome}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{func.cargo}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Substituto Selecionado */}
+            {substitutoSelecionado && (
+              <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg">
+                <p className="text-sm font-medium text-green-900 dark:text-green-100">
+                  ✓ Selecionado:
+                </p>
+                <p className="font-semibold text-slate-900 dark:text-slate-100">
+                  {substitutoSelecionado.nome}
+                </p>
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  {substitutoSelecionado.cargo}
+                </p>
+              </div>
+            )}
+
+            {/* Botões */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setMostrarFormularioSubstituto(false);
+                  setSearchSubstituto('');
+                  setSugestoesSubstituto([]);
+                  setSubstitutoSelecionado(null);
+                }}
+                className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarSubstituto}
+                disabled={!substitutoSelecionado || salvandoSubstituto}
+                className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                {salvandoSubstituto ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  'Registrar'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

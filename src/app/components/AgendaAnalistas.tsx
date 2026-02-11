@@ -52,7 +52,7 @@ const salvarFiltros = (filtros: FiltrosSalvos) => {
 };
 
 function getStatusBadge(diasEmAberto: number) {
-  if (diasEmAberto > 30) {
+  if (diasEmAberto >= 45) {
     return { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-400', label: '🔴 Crítico', valor: 'critico' };
   } else if (diasEmAberto >= 15) {
     return { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-700 dark:text-amber-400', label: '🟡 Atenção', valor: 'atencao' };
@@ -409,8 +409,8 @@ export function AgendaAnalistas() {
                                     >
                                       {statusBadge.label} • {vaga.dias_reais}d
                                     </Badge>
-                                    {vaga.vaga_preenchida && (
-                                      <Badge variant="outline" className="text-xs bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-700">
+                                    {vaga.vaga_preenchida === 'SIM' && (
+                                      <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700">
                                         ✓ Preenchida
                                       </Badge>
                                     )}

@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Briefcase, FileText, Settings, Building2, ChevronLeft, ChevronRight, Table, Calendar } from 'lucide-react';
+import { LayoutDashboard, Users, Briefcase, FileText, Settings, Building2, ChevronLeft, ChevronRight, Table, Calendar, Edit } from 'lucide-react';
 import { useSidebar } from './SidebarContext';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -11,10 +11,10 @@ export function Sidebar() {
 
     { path: '/gestao-vagas', label: 'Gestão de Vagas', icon: Briefcase },
     { path: '/agenda-analistas', label: 'Agenda Analistas', icon: Calendar },
-    { path: '/tlp', label: 'TLP vs Ativos', icon: Users },
+    { path: '/tlp', label: 'TLP', icon: Edit },
 
     { path: '/consulta-funcionarios', label: 'Pesquisa', icon: Users },
-    { path: '/oris', label: 'Oris', icon: Table },
+    { path: '/oris', label: 'Planilha Oris', icon: Table },
     { path: '/requisitions', label: 'Requisições', icon: FileText },
   ];
 

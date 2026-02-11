@@ -1,16 +1,35 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Bell, User, ChevronDown, Moon, Sun, LogOut, Lock } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
 import { useSidebar } from './SidebarContext';
 import { useAuth } from '../hooks/useAuth';
+import { useNotifications } from '../contexts/NotificationContext';
 import { ChangePasswordModal } from './ChangePasswordModal';
+import { NotificationPanel } from './NotificationPanel';
+import { inicializarCache, iniciarMonitoramento } from '../services/notificationService';
 
 export function Header() {
   const { theme, toggleTheme } = useTheme();
   const { isCollapsed } = useSidebar();
   const { user, logout } = useAuth();
+  const { totalNaoLidas, adicionarNotificacao } = useNotifications();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // Inicializar cache e monitoramento ao montar o componente
+  useEffect(() => {
+    const setup = async () => {
+      await inicializarCache();
+      const parar = iniciarMonitoramento(adicionarNotificacao);
+      return () => parar();
+    };
+
+    const cleanup = setup();
+    return () => {
+      cleanup.then(fn => fn?.());
+    };
+  }, [adicionarNotificacao]);
 
   return (
     <header className={`fixed top-0 right-0 h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 z-10 transition-all duration-300 ${
@@ -41,9 +60,15 @@ export function Header() {
           </button>
 
           {/* Notifications */}
-          <button className="relative p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+          <button
+            onClick={() => setShowNotifications(!showNotifications)}
+            className="relative p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+            title="Notificações"
+          >
             <Bell className="w-5 h-5" />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+            {totalNaoLidas > 0 && (
+              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+            )}
           </button>
 
           {/* User menu */}
@@ -100,6 +125,12 @@ export function Header() {
           onClose={() => setShowChangePasswordModal(false)}
         />
       )}
+
+      {/* Notification Panel */}
+      <NotificationPanel
+        isOpen={showNotifications}
+        onClose={() => setShowNotifications(false)}
+      />
     </header>
   );
 }
