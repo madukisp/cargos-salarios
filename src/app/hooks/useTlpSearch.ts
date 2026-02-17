@@ -16,6 +16,16 @@ export interface TlpSearchResult {
 /**
  * Hook para buscar dados da TLP por cargo e unidade
  */
+/**
+ * Normaliza string removendo acentos e diacríticos
+ */
+function normalizeText(str: string): string {
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
+}
+
 export function useTlpSearch(cargo: string, unidade: string) {
   const [data, setData] = useState<TlpSearchResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -30,6 +40,9 @@ export function useTlpSearch(cargo: string, unidade: string) {
     const searchTlp = async () => {
       try {
         setLoading(true);
+
+        const normalizedCargo = normalizeText(cargo);
+        const normalizedUnidade = normalizeText(unidade);
 
         // 1. Buscar TLP target pela tabela tlp_quadro_necessario
         // Precisamos fazer um join com oris_funcionarios para pegar o nome da unidade
@@ -63,12 +76,20 @@ export function useTlpSearch(cargo: string, unidade: string) {
         let fallbackMatch: TlpSearchResult | null = null;
 
         for (const tlp of tlpTargets) {
-          // Filtrar funcionários que correspondem a este TLP
-          const matchingEmployees = employees?.filter(emp =>
-            emp.cargo?.trim() === tlp.cargo?.trim() &&
-            emp.centro_custo?.trim() === tlp.centro_custo?.trim() &&
-            emp.nome_fantasia?.trim().toUpperCase().includes(unidade.trim().toUpperCase())
-          ) || [];
+          // Normalizar cargo da TLP para comparação
+          const normalizedTlpCargo = normalizeText(tlp.cargo || '');
+
+          // Filtrar funcionários que correspondem a este TLP (ignorando acentos)
+          const matchingEmployees = employees?.filter(emp => {
+            const empCargoNormalized = normalizeText(emp.cargo || '');
+            const empFantasiaUppercase = emp.nome_fantasia?.trim().toUpperCase() || '';
+
+            return (
+              empCargoNormalized === normalizedTlpCargo &&
+              emp.centro_custo?.trim() === tlp.centro_custo?.trim() &&
+              empFantasiaUppercase.includes(normalizedUnidade)
+            );
+          }) || [];
 
           const ativos = matchingEmployees.filter(e =>
             e.situacao && e.situacao.toUpperCase().includes('ATIVO')
