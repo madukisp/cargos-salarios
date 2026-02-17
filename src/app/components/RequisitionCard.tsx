@@ -24,9 +24,10 @@ export function RequisitionCard({
   const isExpanded = expandedId === requisition.id_solicitacao;
 
   // Buscar dados de TLP quando expandido
+  // Usar solicitante (unidade real) ao invés de lotacao (setor)
   const { data: tlpInfo, loading: tlpLoading, error: tlpError } = useTlpSearch(
     requisition.cargo,
-    requisition.unidade || requisition.lotacao || ''
+    requisition.solicitante || requisition.unidade || requisition.lotacao || ''
   );
 
   const formatDate = (dateString: string) => {
