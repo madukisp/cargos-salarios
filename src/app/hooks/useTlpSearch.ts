@@ -71,8 +71,9 @@ export function useTlpSearch(cargo: string, unidade: string) {
         if (empError) throw empError;
 
         // 3. Procurar pela melhor correspondência
-        // Só retorna TLP se houver funcionários correspondentes NAQUELA UNIDADE
+        // Prioriza: (1) TLP com funcionários na unidade (2) TLP que existe (mesmo sem funcionários)
         let bestMatch: TlpSearchResult | null = null;
+        let tlpWithoutEmployees: TlpSearchResult | null = null;
 
         for (const tlp of tlpTargets) {
           // Normalizar cargo da TLP para comparação
@@ -90,33 +91,38 @@ export function useTlpSearch(cargo: string, unidade: string) {
             );
           }) || [];
 
-          // Só considera se houver funcionários correspondentes nessa unidade
+          const ativos = matchingEmployees.filter(e =>
+            e.situacao && e.situacao.toUpperCase().includes('ATIVO')
+          ).length;
+
+          const afastados = matchingEmployees.length - ativos;
+
+          const currentMatch: TlpSearchResult = {
+            id: tlp.id,
+            cargo: tlp.cargo || '',
+            unidade: unidade,
+            centro_custo: tlp.centro_custo || '',
+            tlp_quantidade: tlp.quantidade_necessaria_ativos || 0,
+            ativos,
+            afastados,
+            saldo: ativos - (tlp.quantidade_necessaria_ativos || 0),
+            carga_horaria_semanal: tlp.carga_horaria_semanal,
+          };
+
+          // Se encontrou funcionários na unidade certa, usar como match principal
           if (matchingEmployees.length > 0) {
-            const ativos = matchingEmployees.filter(e =>
-              e.situacao && e.situacao.toUpperCase().includes('ATIVO')
-            ).length;
-
-            const afastados = matchingEmployees.length - ativos;
-
-            bestMatch = {
-              id: tlp.id,
-              cargo: tlp.cargo || '',
-              unidade: unidade,
-              centro_custo: tlp.centro_custo || '',
-              tlp_quantidade: tlp.quantidade_necessaria_ativos || 0,
-              ativos,
-              afastados,
-              saldo: ativos - (tlp.quantidade_necessaria_ativos || 0),
-              carga_horaria_semanal: tlp.carga_horaria_semanal,
-            };
-
-            // Encontrou correspondência, sair do loop
+            bestMatch = currentMatch;
             break;
+          }
+
+          // Se não encontrou funcionários mas essa é a primeira TLP, guardar como fallback
+          if (!tlpWithoutEmployees) {
+            tlpWithoutEmployees = currentMatch;
           }
         }
 
-        // Retorna apenas se encontrou match válido com funcionários na unidade
-        setData(bestMatch || null);
+        // Retorna: (1) TLP com funcionários, ou (2) TLP sem funcionários, ou (3) null
+        setData(bestMatch || tlpWithoutEmployees);
         setError(null);
       } catch (err: any) {
         setError(err.message);
