@@ -58,7 +58,9 @@ export function useTlpSearch(cargo: string, unidade: string) {
         if (empError) throw empError;
 
         // 3. Procurar pela melhor correspondência
+        // Prioriza: (1) TLP com funcionários correspondentes (2) TLP sem funcionários mas cargo/centro_custo existem
         let bestMatch: TlpSearchResult | null = null;
+        let fallbackMatch: TlpSearchResult | null = null;
 
         for (const tlp of tlpTargets) {
           // Filtrar funcionários que correspondem a este TLP
@@ -74,7 +76,7 @@ export function useTlpSearch(cargo: string, unidade: string) {
 
           const afastados = matchingEmployees.length - ativos;
 
-          bestMatch = {
+          const currentMatch: TlpSearchResult = {
             id: tlp.id,
             cargo: tlp.cargo || '',
             unidade: unidade,
@@ -86,13 +88,20 @@ export function useTlpSearch(cargo: string, unidade: string) {
             carga_horaria_semanal: tlp.carga_horaria_semanal,
           };
 
-          // Se encontrou correspondência, usar esta
+          // Se encontrou funcionários correspondentes, usar esta como match principal
           if (matchingEmployees.length > 0) {
+            bestMatch = currentMatch;
             break;
+          }
+
+          // Guardar como fallback apenas se ainda não temos um
+          if (!fallbackMatch) {
+            fallbackMatch = currentMatch;
           }
         }
 
-        setData(bestMatch);
+        // Usar o match encontrado com funcionários, ou fallback se nenhum encontrado
+        setData(bestMatch || fallbackMatch);
         setError(null);
       } catch (err: any) {
         setError(err.message);
