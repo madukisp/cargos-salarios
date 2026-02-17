@@ -3,7 +3,13 @@
     "allow": [
       "Bash(timeout 5 npm run dev:*)",
       "Bash(taskkill:*)",
-      "mcp__supabase__query_table"
+      "mcp__supabase__query_table",
+      "Bash(npm run dev:*)",
+      "mcp__plugin_supabase_supabase__list_tables",
+      "mcp__plugin_supabase_supabase__execute_sql",
+      "Bash(pkill:*)",
+      "Bash(git log:*)",
+      "Bash(psql:*)"
     ]
   },
   "enabledPlugins": {
