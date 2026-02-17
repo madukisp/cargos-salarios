@@ -1,7 +1,8 @@
-import { Filter, ChevronDown, ChevronUp, Users, AlertCircle, RefreshCw, ArrowUpDown, Archive, ArchiveRestore } from 'lucide-react';
+import { Filter, ChevronDown, ChevronUp, Users, AlertCircle, RefreshCw, ArrowUpDown, Archive, ArchiveRestore, Plus } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
 import { useState, useMemo } from 'react'; // ensure useMemo is imported
 import { useTlpData } from '@/app/hooks/useTlpData';
+import { AddCargoTlpModal } from './AddCargoTlpModal';
 
 export function TlpPanel() {
   const { data: tlpData, loading, error, updateTlp, archiveTlp, unarchiveTlp } = useTlpData();
@@ -13,6 +14,7 @@ export function TlpPanel() {
   const [updating, setUpdating] = useState<string | null>(null);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [showAddCargoModal, setShowAddCargoModal] = useState(false);
 
   // Gerar lista de unidades
   const units = useMemo(() => {
@@ -71,6 +73,11 @@ export function TlpPanel() {
     } else {
       setSelectedStatus(status);
     }
+  };
+
+  const handleCargoAdded = () => {
+    // Reload page to fetch new TLP data
+    window.location.reload();
   };
 
   const sortedData = useMemo(() => {
@@ -186,7 +193,17 @@ export function TlpPanel() {
         )}
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-3">
+        {/* Botão Adicionar Cargo */}
+        <button
+          onClick={() => setShowAddCargoModal(true)}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors bg-green-600 text-white hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600"
+        >
+          <Plus className="w-4 h-4" />
+          Adicionar Cargo
+        </button>
+
+        {/* Botão Ver Arquivados */}
         <button
           onClick={() => setShowArchived(!showArchived)}
           className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors border ${showArchived
@@ -610,6 +627,13 @@ export function TlpPanel() {
           </table>
         </div>
       </div>
+
+      {/* Modal Adicionar Cargo */}
+      <AddCargoTlpModal
+        open={showAddCargoModal}
+        onOpenChange={setShowAddCargoModal}
+        onSuccess={handleCargoAdded}
+      />
     </div>
   );
 }

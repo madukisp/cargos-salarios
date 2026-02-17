@@ -9,7 +9,9 @@
       "mcp__plugin_supabase_supabase__execute_sql",
       "Bash(pkill:*)",
       "Bash(git log:*)",
-      "Bash(psql:*)"
+      "Bash(psql:*)",
+      "Bash(git restore:*)",
+      "Bash(git clean:*)"
     ]
   },
   "enabledPlugins": {
