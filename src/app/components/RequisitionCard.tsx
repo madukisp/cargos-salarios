@@ -100,6 +100,14 @@ export function RequisitionCard({
             </div>
           )}
 
+          {!tlpLoading && !tlpError && !tlpInfo && (
+            <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
+              <p className="text-sm text-orange-700 dark:text-orange-400">
+                ⚠️ <span className="font-semibold">Não previsto em TLP</span> - Este cargo não está definido na Tabela de Lotação de Pessoal para esta unidade
+              </p>
+            </div>
+          )}
+
           {tlpInfo && !tlpLoading && (
             <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
               <h4 className="text-xs font-bold uppercase text-blue-700 dark:text-blue-400 mb-4 flex items-center gap-2">
