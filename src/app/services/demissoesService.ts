@@ -105,23 +105,18 @@ export async function carregarAfastamentos(
   cnpj?: string
 ): Promise<EventoDemissao[]> {
   try {
-    console.log('[carregarAfastamentos] Iniciando');
+    console.log('[carregarAfastamentos] Iniciando com tempo real de oris_funcionarios');
 
+    // Buscar todos os afastados diretamente de oris_funcionarios
     let query = supabase
-      .from('eventos_gestao_vagas_public')
-      .select('id_evento,nome,cargo,cnpj,data_evento,status_evento,dias_em_aberto,situacao_origem,lotacao')
-      .eq('status_evento', 'PENDENTE')
-      .order('data_evento', { ascending: false })
+      .from('oris_funcionarios')
+      .select(
+        'id,nome,cargo,cnpj,situacao,dt_inicio_situacao,carga_horaria_semanal,escala,centro_custo,nome_fantasia'
+      )
+      .order('dt_inicio_situacao', { ascending: false })
       .limit(500);
 
-    if (lotacao && lotacao !== 'TODAS') {
-      query = query.eq('lotacao', lotacao);
-    }
-
-    if (cnpj && cnpj !== 'todos') {
-      query = query.eq('cnpj', cnpj);
-    }
-
+    // Filtrar: afastamentos (não ativo, não demitido, não atestado)
     const { data, error } = await query;
 
     console.log('[carregarAfastamentos] Query error:', error, 'data length:', data?.length);
@@ -131,53 +126,56 @@ export async function carregarAfastamentos(
       return [];
     }
 
-    // Filtrar apenas afastamentos (NÃO demissões e NÃO atestados)
-    const afastamentos = ((data || []) as any[]).filter(
-      (d) => {
-        const situacao = (d.situacao_origem || '').toUpperCase();
-        // Excluir demissões
-        if (situacao === '99-DEMITIDO') return false;
-        // Excluir qualquer tipo de atestado (case-insensitive)
-        if (situacao.includes('ATESTADO')) return false;
-        // Manter apenas auxílios (licenças, afastamentos, etc.)
-        return true;
-      }
-    );
+    // Filtrar apenas afastamentos (NÃO ativo, NÃO demitido, NÃO atestado)
+    const afastamentos = ((data || []) as any[]).filter((d) => {
+      const situacao = (d.situacao || '').toUpperCase();
+      // Excluir ativos
+      if (situacao === '01-ATIVO') return false;
+      // Excluir demitidos
+      if (situacao === '99-DEMITIDO') return false;
+      // Excluir qualquer tipo de atestado (case-insensitive)
+      if (situacao.includes('ATESTADO')) return false;
+      // Manter apenas auxílios (licenças, afastamentos, etc.)
+      return true;
+    });
 
-    // Buscar situação, carga_horaria_semanal e escala na tabela oris_funcionarios para validar
-    const nomes = afastamentos.map((d: any) => d.nome).filter(Boolean);
-    let mapaDetalhes: Record<string, any> = {};
+    // Aplicar filtros de lotação e CNPJ
+    const afastamentosFiltrados = afastamentos.filter((d: any) => {
+      const matchLotacao = !lotacao || lotacao === 'TODAS' ||
+        d.centro_custo === lotacao ||
+        d.nome_fantasia === lotacao;
 
-    if (nomes.length > 0) {
-      const { data: orisData } = await supabase
-        .from('oris_funcionarios')
-        .select('nome, situacao, carga_horaria_semanal, escala')
-        .in('nome', nomes);
+      const matchCnpj = !cnpj || cnpj === 'todos' || d.cnpj === cnpj;
 
-      (orisData || []).forEach((oris: any) => {
-        mapaDetalhes[oris.nome] = oris;
-      });
-    }
+      return matchLotacao && matchCnpj;
+    });
 
-    // Filtrar: manter apenas afastamentos de funcionários que NÃO estão ativos
-    const afastamentosValidos = afastamentos
-      .filter((d: any) => {
-        const situacaoAtual = mapaDetalhes[d.nome]?.situacao;
-        // Se a situação atual é 01-ATIVO, excluir do afastamento
-        if (situacaoAtual === '01-ATIVO') {
-          console.log(`[carregarAfastamentos] Excluindo ${d.nome} - está com situacao 01-ATIVO`);
-          return false;
-        }
-        return true;
-      })
-      .map((d: any) => ({
-        ...d,
-        carga_horaria_semanal: mapaDetalhes[d.nome]?.carga_horaria_semanal || null,
-        escala: mapaDetalhes[d.nome]?.escala || null,
-      }));
+    // Calcular dias em aberto
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
 
-    console.log('[carregarAfastamentos] Retornando', afastamentosValidos.length, 'afastamentos');
-    return afastamentosValidos as EventoDemissao[];
+    const afastamentosFormatados = afastamentosFiltrados.map((d: any) => {
+      const dataEvento = new Date(d.dt_inicio_situacao + 'T00:00:00');
+      const diffTime = Math.abs(hoje.getTime() - dataEvento.getTime());
+      const diasEmAberto = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      return {
+        id_evento: d.id, // ID de oris_funcionarios como id_evento
+        nome: d.nome,
+        cargo: d.cargo,
+        cnpj: d.cnpj,
+        data_evento: d.dt_inicio_situacao, // Data de início da situação
+        status_evento: 'PENDENTE' as const,
+        dias_em_aberto: diasEmAberto,
+        situacao_origem: d.situacao,
+        lotacao: d.centro_custo || d.nome_fantasia || 'Sem lotação',
+        carga_horaria_semanal: d.carga_horaria_semanal,
+        escala: d.escala,
+      } as EventoDemissao;
+    });
+
+    console.log('[carregarAfastamentos] Retornando', afastamentosFormatados.length, 'afastamentos em tempo real');
+    return afastamentosFormatados;
   } catch (error) {
     console.error('[carregarAfastamentos] Exception:', error);
     return [];

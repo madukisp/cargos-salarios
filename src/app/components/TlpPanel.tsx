@@ -1,11 +1,11 @@
 import { Filter, ChevronDown, ChevronUp, Users, AlertCircle, RefreshCw, ArrowUpDown, Archive, ArchiveRestore, Plus } from 'lucide-react';
 import { StatusBadge } from './StatusBadge';
-import { useState, useMemo } from 'react'; // ensure useMemo is imported
+import { useState, useMemo, useEffect } from 'react';
 import { useTlpData } from '@/app/hooks/useTlpData';
 import { AddCargoTlpModal } from './AddCargoTlpModal';
 
 export function TlpPanel() {
-  const { data: tlpData, loading, error, updateTlp, archiveTlp, unarchiveTlp } = useTlpData();
+  const { data: tlpData, loading, error, updateTlp, archiveTlp, unarchiveTlp, loadData, unidades } = useTlpData();
   const [selectedUnit, setSelectedUnit] = useState('todas');
   const [selectedCostCenter, setSelectedCostCenter] = useState('todos');
   const [selectedRole, setSelectedRole] = useState('todos');
@@ -16,11 +16,17 @@ export function TlpPanel() {
   const [showArchived, setShowArchived] = useState(false);
   const [showAddCargoModal, setShowAddCargoModal] = useState(false);
 
-  // Gerar lista de unidades
+  // Carregar dados quando unidade mudar (apenas se não for 'todas')
+  useEffect(() => {
+    if (selectedUnit !== 'todas') {
+      loadData(selectedUnit);
+    }
+  }, [selectedUnit, loadData]);
+
+  // Gerar lista de unidades a partir do hook
   const units = useMemo(() => {
-    const unique = ['todas', ...Array.from(new Set(tlpData.map(d => d.unidade))).sort()];
-    return unique;
-  }, [tlpData]);
+    return ['todas', ...unidades];
+  }, [unidades]);
 
   // Gerar lista de centros de custo filtrados pela unidade selecionada
   const costCenters = useMemo(() => {
@@ -262,7 +268,22 @@ export function TlpPanel() {
         </div>
       </div>
 
-      {/* Summary Cards */}
+      {/* Empty State */}
+      {selectedUnit === 'todas' || tlpData.length === 0 ? (
+        <div className="flex items-center justify-center p-12 bg-slate-50 dark:bg-slate-900/20 rounded-lg border-2 border-dashed border-slate-200 dark:border-slate-800">
+          <div className="text-center">
+            <Users className="w-12 h-12 text-slate-400 dark:text-slate-600 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-2">
+              Selecione uma Unidade para Visualizar
+            </h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Escolha uma unidade no filtro acima para carregar os dados de TLP e quadro de pessoal.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-6">
           <div className="flex items-center justify-between">
@@ -628,12 +649,14 @@ export function TlpPanel() {
         </div>
       </div>
 
-      {/* Modal Adicionar Cargo */}
-      <AddCargoTlpModal
-        open={showAddCargoModal}
-        onOpenChange={setShowAddCargoModal}
-        onSuccess={handleCargoAdded}
-      />
+          {/* Modal Adicionar Cargo */}
+          <AddCargoTlpModal
+            open={showAddCargoModal}
+            onOpenChange={setShowAddCargoModal}
+            onSuccess={handleCargoAdded}
+          />
+        </>
+      )}
     </div>
   );
 }
