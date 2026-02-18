@@ -1,5 +1,18 @@
 import { supabase } from '@/lib/supabase';
 
+export interface VagaEmAberto {
+  id_evento: number;
+  cnpj: string;
+  quem_saiu: string;
+  cargo_saiu: string;
+  centro_custo: string;
+  data_abertura_vaga: string;
+  dias_em_aberto: number;
+  observacao?: string | null;
+  data_evento: string;
+  id_funcionario: number;
+}
+
 export interface EventoDemissao {
   id_evento: number;
   nome: string;
@@ -482,6 +495,43 @@ export async function buscarFuncionarioPorNome(nome: string): Promise<any | null
   } catch (error) {
     console.error('Erro:', error);
     return null;
+  }
+}
+
+export async function carregarVagasEmAberto(
+  lotacao?: string,
+  cnpj?: string
+): Promise<VagaEmAberto[]> {
+  try {
+    console.log('[carregarVagasEmAberto] Iniciando');
+
+    let query = supabase
+      .from('vw_vagas_em_aberto_por_cnpj')
+      .select('*')
+      .order('data_abertura_vaga', { ascending: false });
+
+    // Filtrar por lotação (centro_custo)
+    if (lotacao && lotacao !== 'TODAS') {
+      query = query.eq('centro_custo', lotacao);
+    }
+
+    // Filtrar por CNPJ
+    if (cnpj && cnpj !== 'todos') {
+      query = query.eq('cnpj', cnpj);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('[carregarVagasEmAberto] Erro:', error);
+      return [];
+    }
+
+    console.log('[carregarVagasEmAberto] Retornando', data?.length, 'vagas em aberto');
+    return (data || []) as VagaEmAberto[];
+  } catch (error) {
+    console.error('[carregarVagasEmAberto] Exception:', error);
+    return [];
   }
 }
 
