@@ -38,92 +38,87 @@ export async function carregarDemissoes(
   cnpj?: string
 ): Promise<EventoDemissao[]> {
   try {
-    console.log('[carregarDemissoes] Iniciando com tempo real de oris_funcionarios, status:', status, 'lotacao:', lotacao);
+    console.log('[carregarDemissoes] Iniciando com tempo real de oris_funcionarios, status:', status);
 
-    // Buscar todos os demitidos diretamente de oris_funcionarios (tempo real)
-    let query = supabase
+    // 1. Buscar todos os demitidos de oris_funcionarios
+    const { data: demitidos, error: empError } = await supabase
       .from('oris_funcionarios')
       .select(
-        'id,nome,cargo,cnpj,dt_saida,tipo_rescisao,carga_horaria_semanal,escala,centro_custo,nome_fantasia'
+        'id,nome,cargo,cnpj,dt_rescisao,tipo_rescisao,carga_horaria_semanal,escala,centro_custo,nome_fantasia'
       )
       .eq('situacao', '99-Demitido')
-      .order('dt_saida', { ascending: false })
+      .order('dt_rescisao', { ascending: false })
       .limit(500);
 
-    const { data, error } = await query;
+    if (empError) throw empError;
 
-    console.log('[carregarDemissoes] Query error:', error, 'data length:', data?.length);
+    console.log('[carregarDemissoes] Demitidos carregados:', demitidos?.length);
 
-    if (error) {
-      console.error('[carregarDemissoes] Erro:', error);
+    if (!demitidos || demitidos.length === 0) {
       return [];
     }
 
-    const demitidos = (data || []) as any[];
-
-    if (demitidos.length === 0) {
-      console.log('[carregarDemissoes] Nenhum demitido encontrado');
-      return [];
-    }
-
-    // Buscar respostas para determinar status (PENDENTE ou RESPONDIDO)
+    // 2. Buscar respostas dos gestores
     const idsEventos = demitidos.map(d => d.id);
-    const { data: respostas } = await supabase
+    const { data: respostas, error: respError } = await supabase
       .from('respostas_gestor')
       .select('id_evento')
       .in('id_evento', idsEventos)
       .eq('tipo_origem', 'DEMISSAO');
 
-    const respostasSet = new Set((respostas || []).map(r => r.id_evento));
+    if (respError) throw respError;
 
-    // Calcular dias em aberto
+    const respostasSet = new Set((respostas || []).map(r => r.id_evento));
+    console.log('[carregarDemissoes] Respostas encontradas:', respostasSet.size);
+
+    // 3. Calcular dias em aberto
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
 
-    // Aplicar filtros de lotação e CNPJ, e filtrar por status
-    const demissoesFiltradas = demitidos
-      .filter((d: any) => {
-        const matchLotacao = !lotacao || lotacao === 'TODAS' ||
-          d.centro_custo === lotacao ||
-          d.nome_fantasia === lotacao;
-
-        const matchCnpj = !cnpj || cnpj === 'todos' || d.cnpj === cnpj;
-
-        return matchLotacao && matchCnpj;
-      })
-      .filter((d: any) => {
+    // 4. Filtrar por status, lotação e CNPJ
+    const demissoesFiltradas = (demitidos as any[])
+      .filter(d => {
+        // Filtro de status
         const temResposta = respostasSet.has(d.id);
-        if (status === 'PENDENTE') {
-          return !temResposta;  // Sem resposta = pendente
-        } else {
-          return temResposta;   // Com resposta = respondido
+        if (status === 'PENDENTE' && temResposta) return false;
+        if (status === 'RESPONDIDO' && !temResposta) return false;
+
+        // Filtro de lotação
+        if (lotacao && lotacao !== 'TODAS') {
+          const matchLotacao = d.centro_custo === lotacao || d.nome_fantasia === lotacao;
+          if (!matchLotacao) return false;
         }
+
+        // Filtro de CNPJ
+        if (cnpj && cnpj !== 'todos' && d.cnpj !== cnpj) {
+          return false;
+        }
+
+        return true;
+      })
+      .map(d => {
+        const dataSaida = new Date(d.dt_rescisao + 'T00:00:00');
+        const diffTime = Math.abs(hoje.getTime() - dataSaida.getTime());
+        const diasEmAberto = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        return {
+          id_evento: d.id,
+          nome: d.nome,
+          cargo: d.cargo,
+          cnpj: d.cnpj,
+          data_evento: d.dt_rescisao,
+          status_evento: respostasSet.has(d.id) ? 'RESPONDIDO' : 'PENDENTE',
+          dias_em_aberto: diasEmAberto,
+          situacao_origem: '99-Demitido',
+          lotacao: d.centro_custo || d.nome_fantasia || 'Sem lotação',
+          tipo_rescisao: d.tipo_rescisao,
+          carga_horaria_semanal: d.carga_horaria_semanal,
+          escala: d.escala,
+        } as EventoDemissao;
       });
 
-    // Formatar resultado
-    const demissoesFormatadas = demissoesFiltradas.map((d: any) => {
-      const dataSaida = new Date(d.dt_saida + 'T00:00:00');
-      const diffTime = Math.abs(hoje.getTime() - dataSaida.getTime());
-      const diasEmAberto = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-      return {
-        id_evento: d.id,
-        nome: d.nome,
-        cargo: d.cargo,
-        cnpj: d.cnpj,
-        data_evento: d.dt_saida,
-        status_evento: respostasSet.has(d.id) ? 'RESPONDIDO' : 'PENDENTE',
-        dias_em_aberto: diasEmAberto,
-        situacao_origem: '99-Demitido',
-        lotacao: d.centro_custo || d.nome_fantasia || 'Sem lotação',
-        tipo_rescisao: d.tipo_rescisao,
-        carga_horaria_semanal: d.carga_horaria_semanal,
-        escala: d.escala,
-      } as EventoDemissao;
-    });
-
-    console.log('[carregarDemissoes] Retornando', demissoesFormatadas.length, 'demissões em tempo real');
-    return demissoesFormatadas;
+    console.log('[carregarDemissoes] Retornando', demissoesFiltradas.length, 'demissões');
+    return demissoesFiltradas;
   } catch (error) {
     console.error('[carregarDemissoes] Exception:', error);
     return [];
