@@ -138,10 +138,12 @@ export async function carregarAfastamentos(
       .select(
         'id,nome,cargo,cnpj,situacao,dt_inicio_situacao,carga_horaria_semanal,escala,centro_custo,nome_fantasia'
       )
+      .neq('situacao', '01-ATIVO')
+      .neq('situacao', '99-Demitido')
+      .not('situacao', 'ilike', '%ATESTADO%')
       .order('dt_inicio_situacao', { ascending: false })
       .limit(500);
 
-    // Filtrar: afastamentos (não ativo, não demitido, não atestado)
     const { data, error } = await query;
 
     console.log('[carregarAfastamentos] Query error:', error, 'data length:', data?.length);
@@ -151,21 +153,8 @@ export async function carregarAfastamentos(
       return [];
     }
 
-    // Filtrar apenas afastamentos (NÃO ativo, NÃO demitido, NÃO atestado)
-    const afastamentos = ((data || []) as any[]).filter((d) => {
-      const situacao = (d.situacao || '').toUpperCase();
-      // Excluir ativos
-      if (situacao === '01-ATIVO') return false;
-      // Excluir demitidos
-      if (situacao === '99-DEMITIDO') return false;
-      // Excluir qualquer tipo de atestado (case-insensitive)
-      if (situacao.includes('ATESTADO')) return false;
-      // Manter apenas auxílios (licenças, afastamentos, etc.)
-      return true;
-    });
-
     // Aplicar filtros de lotação e CNPJ
-    const afastamentosFiltrados = afastamentos.filter((d: any) => {
+    const afastamentosFiltrados = ((data || []) as any[]).filter((d: any) => {
       const matchLotacao = !lotacao || lotacao === 'TODAS' ||
         d.centro_custo === lotacao ||
         d.nome_fantasia === lotacao;
