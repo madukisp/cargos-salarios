@@ -11,7 +11,13 @@
       "Bash(git log:*)",
       "Bash(psql:*)",
       "Bash(git restore:*)",
-      "Bash(git clean:*)"
+      "Bash(git clean:*)",
+      "mcp__plugin_supabase_supabase__list_projects",
+      "Bash(curl:*)",
+      "Bash(node:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm --version:*)",
+      "Bash(npm cache clean:*)"
     ]
   },
   "enabledPlugins": {

@@ -43,6 +43,7 @@ export function useGestaoVagas() {
       const arquivadasRaw = await carregarVagasArquivadas(lotacao, cnpj);
       console.log('Fetching vagas em aberto...');
       const vagasEmAbertoRaw = await carregarVagasEmAberto(lotacao, cnpj);
+      console.log('[useGestaoVagas] vagasEmAbertoRaw recebido:', vagasEmAbertoRaw.length, 'items');
 
       // Combinar e desduplicar eventos
       const todosEventosRaw = [...demPendRaw, ...demRespRaw, ...afastPendRaw, ...arquivadasRaw];
@@ -109,6 +110,8 @@ export function useGestaoVagas() {
       setVagasArquivadas(arquivadas);
       setVagasEmAberto(vagasEmAbertoRaw);
       setLotacoes(lotacoesData || ['TODAS']);
+
+      console.log('[useGestaoVagas] Atualizadas', vagasEmAbertoRaw.length, 'vagas');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao carregar dados';
       setError(msg);

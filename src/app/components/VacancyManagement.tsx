@@ -64,6 +64,7 @@ export function VacancyManagement() {
     demissoesRespondidas,
     vagasPendentesEfetivacao,
     afastamentosPendentes,
+    vagasEmAberto: vagasEmAbertoFromHook,
     respostas,
     lotacoes: lotacoesFromHook,
     loading,
@@ -243,13 +244,8 @@ export function VacancyManagement() {
   const pendentesEf = useMemo(() => applyDateFilter(ordenarVagas(filtrarVagas(vagasPendentesEfetivacao, tlpData, fantasias))), [filtrarVagas, ordenarVagas, vagasPendentesEfetivacao, tlpData, fantasias, applyDateFilter]);
   const afastamentos = useMemo(() => applyDateFilter(ordenarVagas(filtrarVagas(afastamentosPendentes, tlpData, fantasias))), [filtrarVagas, ordenarVagas, afastamentosPendentes, tlpData, fantasias, applyDateFilter]);
 
-  const vagasEmAberto = useMemo(() => {
-    return respondidas.filter((vaga) => {
-      const resp = respostas[vaga.id_evento];
-      // Só mostra se abriu vaga E não foi preenchida
-      return resp?.abriu_vaga === true && resp?.vaga_preenchida !== 'SIM';
-    });
-  }, [respondidas, respostas]);
+  // Usar vagasEmAberto diretamente do hook - não filtrar localmente
+  const vagasEmAberto = vagasEmAbertoFromHook;
 
   const vagasFechadas = useMemo(() => {
     const fechadas = respondidas.filter((vaga) => respostas[vaga.id_evento]?.vaga_preenchida === 'SIM');
@@ -855,10 +851,20 @@ export function VacancyManagement() {
               {vagasEmAberto.length === 0 ? (
                 <EmptyState icon={TrendingUp} title="Nenhuma vaga em aberto" description="Eventos que geraram vagas e ainda não foram preenchidas aparecerão aqui." />
               ) : (
-                vagasEmAberto.map((vaga) => (
+                vagasEmAberto.map((vaga) => {
+                  // Mapear VagaEmAberto para formato esperado por VagaCard
+                  const vagaFormatada = {
+                    ...vaga,
+                    cargo: vaga.cargo_saiu || 'Cargo não informado',
+                    nome: vaga.quem_saiu || 'Sem nome',
+                    lotacao: vaga.centro_custo || '-',
+                    status_evento: 'RESPONDIDO' as const,
+                    situacao_origem: 'Vaga em aberto',
+                  };
+                  return (
                   <VagaCard
                     key={vaga.id_evento}
-                    vaga={vaga}
+                    vaga={vagaFormatada}
                     expandedId={expandedId}
                     setExpandedId={setExpandedId}
                     abaSelecionada={abaSelecionada}
@@ -878,7 +884,8 @@ export function VacancyManagement() {
                     onAtribuir={handleAtribuirVaga}
                     onArquivar={handleArquivar}
                   />
-                ))
+                  );
+                })
               )}
             </TabsContent>
 

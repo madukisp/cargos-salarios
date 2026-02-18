@@ -42,6 +42,7 @@ export function Dashboard() {
 
   // Load data for vagas abertas initially and when selectedFantasia changes
   useEffect(() => {
+    console.log('[Dashboard] carregarDados com selectedFantasia:', selectedFantasia);
     carregarDados(undefined, selectedFantasia);
   }, [selectedFantasia, carregarDados]);
 
@@ -277,7 +278,7 @@ export function Dashboard() {
             Vagas Abertas {selectedFantasia !== 'todos' && `- ${fantasias.find(c => c.cnpj === selectedFantasia)?.display_name || selectedFantasia}`}
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            {loadingVagas ? 'Carregando...' : `Total: ${filteredDemissoesRespondidas.length} registros`}
+            {loadingVagas ? 'Carregando...' : `Total: ${vagasEmAberto.length} registros`}
           </p>
         </div>
         <div className="overflow-x-auto">
@@ -286,41 +287,39 @@ export function Dashboard() {
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
               <span className="ml-2 text-slate-600 dark:text-slate-400">Carregando vagas abertas...</span>
             </div>
-          ) : filteredDemissoesRespondidas.length > 0 ? (
+          ) : vagasEmAberto.length > 0 ? (
             <table className="w-full text-sm">
               <thead className="bg-slate-50 dark:bg-slate-900/50">
                 <tr>
                   <th className="px-6 py-3 text-left font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Cargo</th>
-                  <th className="px-6 py-3 text-left font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Nome (Dem.)</th>
-                  <th className="px-6 py-3 text-left font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Unidade</th>
-                  <th className="px-6 py-3 text-left font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Motivo</th>
-                  <th className="px-6 py-3 text-left font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Data Evento</th>
+                  <th className="px-6 py-3 text-left font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Pessoa que Saiu</th>
+                  <th className="px-6 py-3 text-left font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Centro de Custo</th>
+                  <th className="px-6 py-3 text-left font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Data Abertura</th>
                   <th className="px-6 py-3 text-left font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">Dias em Aberto</th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
-                {filteredDemissoesRespondidas.slice(0, 20).map((vaga: any, index) => (
+                {vagasEmAberto.slice(0, 20).map((vaga: any, index) => (
                   <tr key={index} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                    <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-100">{vaga.cargo || '-'}</td>
+                    <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-100">{vaga.cargo_saiu || '-'}</td>
                     <td className="px-6 py-4">
                       <button
                         className="font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer transition-colors flex items-center gap-1"
                         onClick={() => handleVerPerfilClicado(vaga)}
                         disabled={loadingProfile}
                       >
-                        {vaga.nome || '-'}
+                        {vaga.quem_saiu || '-'}
                         {loadingProfile && <Loader2 className="w-3 h-3 animate-spin inline ml-1" />}
                       </button>
                     </td>
-                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300">{vaga.lotacao || '-'}</td>
-                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300">{vaga.situacao_origem || '-'}</td>
-                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300">{formatarData(vaga.data_evento)}</td>
+                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300">{vaga.centro_custo || '-'}</td>
+                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300">{formatarData(vaga.data_abertura_vaga || vaga.data_evento)}</td>
                     <td className="px-6 py-4 text-sm">
                       <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300">
                         <Clock className="w-4 h-4" />
                         <span className={vaga.dias_em_aberto > 30 ? 'text-red-600 dark:text-red-400 font-medium' :
                           (vaga.dias_em_aberto > 15 ? 'text-amber-600 dark:text-amber-400 font-medium' : '')}>
-                          {vaga.dias_em_aberto > 0 ? vaga.dias_em_aberto : calculateDaysOpen(vaga.data_evento)} dias
+                          {vaga.dias_em_aberto} dias
                         </span>
                       </div>
                     </td>
@@ -334,10 +333,10 @@ export function Dashboard() {
             </div>
           )}
         </div>
-        {filteredDemissoesRespondidas.length > 20 && (
+        {vagasEmAberto.length > 20 && (
           <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700">
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Mostrando 20 de {filteredDemissoesRespondidas.length} registros
+              Mostrando 20 de {vagasEmAberto.length} registros
             </p>
           </div>
         )}
