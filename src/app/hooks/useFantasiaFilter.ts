@@ -26,7 +26,11 @@ export function useFantasiaFilter() {
 
   // Salvar contrato selecionado no localStorage quando mudar
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, selectedFantasia);
+    if (selectedFantasia === 'todos') {
+      localStorage.removeItem(STORAGE_KEY);
+    } else {
+      localStorage.setItem(STORAGE_KEY, selectedFantasia);
+    }
   }, [selectedFantasia]);
 
   // Buscar todos os contratos da tabela cnpj

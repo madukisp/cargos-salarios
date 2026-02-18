@@ -503,7 +503,7 @@ export async function carregarVagasEmAberto(
   cnpj?: string
 ): Promise<VagaEmAberto[]> {
   try {
-    console.log('[carregarVagasEmAberto] Iniciando');
+    console.log('[carregarVagasEmAberto] Iniciando com lotacao:', lotacao, 'cnpj:', cnpj);
 
     let query = supabase
       .from('vw_vagas_em_aberto_por_cnpj')
@@ -512,12 +512,16 @@ export async function carregarVagasEmAberto(
 
     // Filtrar por lotação (centro_custo)
     if (lotacao && lotacao !== 'TODAS') {
+      console.log('[carregarVagasEmAberto] Aplicando filtro de lotação:', lotacao);
       query = query.eq('centro_custo', lotacao);
     }
 
-    // Filtrar por CNPJ
+    // Filtrar por CNPJ - SÓ SE NÃO FOR 'todos'
     if (cnpj && cnpj !== 'todos') {
+      console.log('[carregarVagasEmAberto] Aplicando filtro de CNPJ:', cnpj);
       query = query.eq('cnpj', cnpj);
+    } else {
+      console.log('[carregarVagasEmAberto] Sem filtro de CNPJ - carregando todos');
     }
 
     const { data, error } = await query;
