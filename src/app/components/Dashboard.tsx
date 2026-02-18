@@ -18,6 +18,7 @@ export function Dashboard() {
   const {
     demissoesRespondidas,
     vagasPendentesEfetivacao,
+    vagasEmAberto,
     loading: loadingVagas,
     carregarDados,
   } = useGestaoVagas();
@@ -119,7 +120,7 @@ export function Dashboard() {
     },
     {
       title: 'Vagas Abertas',
-      value: loadingVagas ? '...' : String(filteredDemissoesRespondidas.length),
+      value: loadingVagas ? '...' : String(vagasEmAberto.length),
       icon: AlertCircle,
       iconBg: 'bg-amber-100',
       iconColor: 'text-amber-600',
@@ -136,7 +137,7 @@ export function Dashboard() {
   ];
 
   const vacancyStatus = [
-    { name: 'Abertas', value: filteredDemissoesRespondidas.length, color: '#3b82f6' },
+    { name: 'Abertas', value: vagasEmAberto.length, color: '#3b82f6' },
     { name: 'Em Processo', value: filteredVagasPendentesEfetivacao.length, color: '#0ea5e9' },
     { name: 'Preenchidas (30d)', value: 42, color: '#10b981' }, // "Preenchidas (30d)" might need a different data source, keep static for now
   ];

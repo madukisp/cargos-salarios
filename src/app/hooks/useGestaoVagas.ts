@@ -8,8 +8,10 @@ import {
   carregarLotacoes,
   carregarVagasArquivadas,
   arquivarVaga,
+  carregarVagasEmAberto,
   EventoDemissao,
   RespostaGestor,
+  VagaEmAberto,
 } from '@/app/services/demissoesService';
 
 export function useGestaoVagas() {
@@ -18,6 +20,7 @@ export function useGestaoVagas() {
   const [vagasPendentesEfetivacao, setVagasPendentesEfetivacao] = useState<EventoDemissao[]>([]);
   const [afastamentosPendentes, setAfastamentosPendentes] = useState<EventoDemissao[]>([]);
   const [vagasArquivadas, setVagasArquivadas] = useState<EventoDemissao[]>([]);
+  const [vagasEmAberto, setVagasEmAberto] = useState<VagaEmAberto[]>([]);
   const [respostas, setRespostas] = useState<Record<number, RespostaGestor>>({});
   const [lotacoes, setLotacoes] = useState<string[]>(['TODAS']);
   const [loading, setLoading] = useState(false);
@@ -38,6 +41,8 @@ export function useGestaoVagas() {
       const afastPendRaw = await carregarAfastamentos(lotacao, cnpj);
       console.log('Fetching archived vacancies...');
       const arquivadasRaw = await carregarVagasArquivadas(lotacao, cnpj);
+      console.log('Fetching vagas em aberto...');
+      const vagasEmAbertoRaw = await carregarVagasEmAberto(lotacao, cnpj);
 
       // Combinar e desduplicar eventos
       const todosEventosRaw = [...demPendRaw, ...demRespRaw, ...afastPendRaw, ...arquivadasRaw];
@@ -102,6 +107,7 @@ export function useGestaoVagas() {
       setVagasPendentesEfetivacao(demPendEf);
       setAfastamentosPendentes(afastPend);
       setVagasArquivadas(arquivadas);
+      setVagasEmAberto(vagasEmAbertoRaw);
       setLotacoes(lotacoesData || ['TODAS']);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao carregar dados';
@@ -159,6 +165,7 @@ export function useGestaoVagas() {
     vagasPendentesEfetivacao,
     afastamentosPendentes,
     vagasArquivadas,
+    vagasEmAberto,
     respostas,
     lotacoes,
     loading,
