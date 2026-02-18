@@ -11,11 +11,10 @@ export function useCargaHorariaList() {
       try {
         setLoading(true);
 
-        // Buscar todas as cargas horárias únicas de oris_funcionarios
+        // Buscar todas as cargas horárias de oris_funcionarios
         const { data, error: dbError } = await supabase
           .from('oris_funcionarios')
-          .select('carga_horaria_semanal', { count: 'exact' })
-          .neq('carga_horaria_semanal', null);
+          .select('carga_horaria_semanal', { count: 'exact' });
 
         if (dbError) throw dbError;
 
