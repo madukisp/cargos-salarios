@@ -43,7 +43,7 @@ export async function carregarDemissoes(
     // Usar a view eventos_gestao_vagas_public para demissões
     let query = supabase
       .from('eventos_gestao_vagas_public')
-      .select('id_evento,nome,cargo,cnpj,data_evento,status_evento,dias_em_aberto,situacao_origem,lotacao,tipo_rescisao,carga_horaria_semanal,escala')
+      .select('id_evento,nome,cargo,cnpj,data_evento,status_evento,dias_em_aberto,situacao_origem,lotacao')
       .eq('status_evento', status)
       .eq('situacao_origem', '99-Demitido')
       .order('data_evento', { ascending: false })
@@ -66,7 +66,35 @@ export async function carregarDemissoes(
       return [];
     }
 
-    const demissoes = (data || []) as EventoDemissao[];
+    // Buscar detalhes adicionais (tipo_rescisao, carga_horaria_semanal, escala) de oris_funcionarios
+    const demissoesBrutos = (data || []) as any[];
+
+    if (demissoesBrutos.length === 0) {
+      console.log('[carregarDemissoes] Nenhuma demissão encontrada');
+      return [];
+    }
+
+    const nomes = demissoesBrutos.map((d: any) => d.nome).filter(Boolean);
+    let mapaDetalhes: Record<string, any> = {};
+
+    if (nomes.length > 0) {
+      const { data: orisData } = await supabase
+        .from('oris_funcionarios')
+        .select('nome, tipo_rescisao, carga_horaria_semanal, escala')
+        .in('nome', nomes);
+
+      (orisData || []).forEach((oris: any) => {
+        mapaDetalhes[oris.nome] = oris;
+      });
+    }
+
+    // Adicionar detalhes aos resultados
+    const demissoes = demissoesBrutos.map((d: any) => ({
+      ...d,
+      tipo_rescisao: mapaDetalhes[d.nome]?.tipo_rescisao || null,
+      carga_horaria_semanal: mapaDetalhes[d.nome]?.carga_horaria_semanal || null,
+      escala: mapaDetalhes[d.nome]?.escala || null,
+    })) as EventoDemissao[];
 
     console.log('[carregarDemissoes] Retornando', demissoes.length, 'demissões');
     return demissoes;
