@@ -38,17 +38,24 @@ export async function carregarDemissoes(
   cnpj?: string
 ): Promise<EventoDemissao[]> {
   try {
-    console.log('[carregarDemissoes] Iniciando com tempo real de oris_funcionarios, status:', status);
+    console.log('[carregarDemissoes] Iniciando com status:', status, 'lotacao:', lotacao);
 
-    // Buscar todos os demitidos diretamente de oris_funcionarios
+    // Usar a view eventos_gestao_vagas_public para demissões
     let query = supabase
-      .from('oris_funcionarios')
-      .select(
-        'id,nome,cargo,cnpj,dt_saida,tipo_rescisao,carga_horaria_semanal,escala,centro_custo,nome_fantasia'
-      )
-      .eq('situacao', '99-Demitido')
-      .order('dt_saida', { ascending: false })
+      .from('eventos_gestao_vagas_public')
+      .select('id_evento,nome,cargo,cnpj,data_evento,status_evento,dias_em_aberto,situacao_origem,lotacao,tipo_rescisao,carga_horaria_semanal,escala')
+      .eq('status_evento', status)
+      .eq('situacao_origem', '99-Demitido')
+      .order('data_evento', { ascending: false })
       .limit(500);
+
+    if (lotacao && lotacao !== 'TODAS') {
+      query = query.eq('lotacao', lotacao);
+    }
+
+    if (cnpj && cnpj !== 'todos') {
+      query = query.eq('cnpj', cnpj);
+    }
 
     const { data, error } = await query;
 
@@ -59,76 +66,10 @@ export async function carregarDemissoes(
       return [];
     }
 
-    // Formatar demissões com status baseado em respostas_gestor
-    const demitidos = (data || []) as any[];
+    const demissoes = (data || []) as EventoDemissao[];
 
-    if (demitidos.length === 0) {
-      console.log('[carregarDemissoes] Nenhum demitido encontrado');
-      return [];
-    }
-
-    // Buscar respostas para determinar status (PENDENTE ou RESPONDIDO)
-    const idsEventos = demitidos.map(d => d.id);
-    const { data: respostas } = await supabase
-      .from('respostas_gestor')
-      .select('id_evento, data_resposta')
-      .in('id_evento', idsEventos)
-      .eq('tipo_origem', 'DEMISSAO');
-
-    const respostasMap: Record<number, any> = {};
-    (respostas || []).forEach(r => {
-      respostasMap[r.id_evento] = r;
-    });
-
-    // Calcular dias em aberto
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-
-    // Aplicar filtros de lotação e CNPJ
-    const demissoesFiltradas = demitidos
-      .filter((d: any) => {
-        const matchLotacao = !lotacao || lotacao === 'TODAS' ||
-          d.centro_custo === lotacao ||
-          d.nome_fantasia === lotacao;
-
-        const matchCnpj = !cnpj || cnpj === 'todos' || d.cnpj === cnpj;
-
-        return matchLotacao && matchCnpj;
-      })
-      // Filtrar por status da resposta
-      .filter((d: any) => {
-        const temResposta = !!respostasMap[d.id];
-        if (status === 'PENDENTE') {
-          return !temResposta;
-        } else {
-          return temResposta;
-        }
-      });
-
-    // Formatar resultado
-    const demissoesFormatadas = demissoesFiltradas.map((d: any) => {
-      const dataSaida = new Date(d.dt_saida + 'T00:00:00');
-      const diffTime = Math.abs(hoje.getTime() - dataSaida.getTime());
-      const diasEmAberto = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-      return {
-        id_evento: d.id,
-        nome: d.nome,
-        cargo: d.cargo,
-        cnpj: d.cnpj,
-        data_evento: d.dt_saida,
-        status_evento: respostasMap[d.id] ? 'RESPONDIDO' : 'PENDENTE',
-        dias_em_aberto: diasEmAberto,
-        situacao_origem: '99-Demitido',
-        lotacao: d.centro_custo || d.nome_fantasia || 'Sem lotação',
-        tipo_rescisao: d.tipo_rescisao,
-        carga_horaria_semanal: d.carga_horaria_semanal,
-        escala: d.escala,
-      } as EventoDemissao;
-    });
-
-    console.log('[carregarDemissoes] Retornando', demissoesFormatadas.length, 'demissões em tempo real');
-    return demissoesFormatadas;
+    console.log('[carregarDemissoes] Retornando', demissoes.length, 'demissões');
+    return demissoes;
   } catch (error) {
     console.error('[carregarDemissoes] Exception:', error);
     return [];
