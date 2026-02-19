@@ -28,28 +28,16 @@ export function useTlpData() {
     useEffect(() => {
         async function loadUnidades() {
             try {
-                // Carregar unidades de oris_funcionarios (nome_fantasia)
-                const { data: funcionariosData, error: empError } = await supabase
+                const { data, error } = await supabase
                     .from('oris_funcionarios')
                     .select('nome_fantasia')
                     .neq('situacao', '99-Demitido')
                     .neq('nome_fantasia', null);
 
-                if (empError) throw empError;
-
-                // Carregar unidades de tlp_quadro_necessario (centro_custo)
-                const { data: tlpData, error: tlpError } = await supabase
-                    .from('tlp_quadro_necessario')
-                    .select('centro_custo');
-
-                if (tlpError) throw tlpError;
-
-                // Combinar ambas as fontes
-                const unidadesFromFunc = (funcionariosData || []).map((d: any) => d.nome_fantasia).filter(Boolean);
-                const unidadesFromTlp = (tlpData || []).map((d: any) => d.centro_custo).filter(Boolean);
+                if (error) throw error;
 
                 const uniqueUnidades = Array.from(
-                    new Set([...unidadesFromFunc, ...unidadesFromTlp])
+                    new Set((data || []).map((d: any) => d.nome_fantasia).filter(Boolean))
                 ).sort() as string[];
 
                 setUnidades(uniqueUnidades);
