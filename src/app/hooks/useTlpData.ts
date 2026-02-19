@@ -62,23 +62,42 @@ export function useTlpData() {
                 return Number.isInteger(n) ? String(n) : String(n);
             };
 
-            // 1. Fetch TLP targets (quadro necessário)
-            const { data: tlpTargets, error: tlpError } = await supabase
-                .from('tlp_quadro_necessario')
-                .select('*');
-
-            if (tlpError) throw tlpError;
-            console.log('[loadData] TLP carregado:', tlpTargets?.length, 'registros');
-
-            // 2. Fetch Employees
-            let empQuery = supabase
+            // 2. Fetch Employees (sempre carrega todos para determinar centros de custo)
+            const { data: allEmployees, error: empError } = await supabase
                 .from('oris_funcionarios')
                 .select('nome, cargo, centro_custo, nome_fantasia, dt_admissao, situacao, carga_horaria_semanal')
                 .neq('situacao', '99-Demitido');
 
-            const { data: employees, error: empError } = await empQuery;
             if (empError) throw empError;
-            console.log('[loadData] Funcionários carregados:', employees?.length, 'registros');
+            console.log('[loadData] Funcionários carregados:', allEmployees?.length, 'registros');
+
+            // 1. Fetch TLP targets (quadro necessário)
+            // Se unidade selecionada, filtra TLP pelos centros de custo dessa unidade
+            let tlpQuery = supabase.from('tlp_quadro_necessario').select('*');
+
+            if (unidade && unidade !== 'todas') {
+                // Encontra centros de custo que pertencem à unidade selecionada
+                const centrosCustoUnit = new Set(
+                    (allEmployees || [])
+                        .filter(emp => emp.nome_fantasia === unidade)
+                        .map(emp => emp.centro_custo)
+                );
+
+                if (centrosCustoUnit.size > 0) {
+                    const centrosArray = Array.from(centrosCustoUnit);
+                    // Filtra TLP por esses centros de custo
+                    tlpQuery = tlpQuery.in('centro_custo', centrosArray);
+                }
+            }
+
+            const { data: tlpTargets, error: tlpError } = await tlpQuery;
+            if (tlpError) throw tlpError;
+            console.log('[loadData] TLP carregado:', tlpTargets?.length, 'registros');
+
+            // Use filtered employees for matching
+            const employees = unidade && unidade !== 'todas'
+                ? (allEmployees || []).filter(emp => emp.nome_fantasia === unidade || emp.centro_custo === unidade)
+                : allEmployees;
 
             // 3. Process and Merge Data
             const processedData: TlpData[] = [];
