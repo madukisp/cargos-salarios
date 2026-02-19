@@ -92,13 +92,7 @@ export function useTlpData() {
             // Key: `${centro_custo}|${cargo}|${normalized_hours}`
             const employeeGroups = new Map<string, typeof employees>();
 
-            // Filter employees if unidade is selected (by nome_fantasia OR centro_custo)
-            const filteredEmployees = employees?.filter(emp => {
-                if (!unidade || unidade === 'todas') return true;
-                return emp.nome_fantasia === unidade || emp.centro_custo === unidade;
-            });
-
-            filteredEmployees?.forEach(emp => {
+            employees?.forEach(emp => {
                 const h = normalizeHours(emp.carga_horaria_semanal);
                 const key = `${emp.centro_custo?.trim()}|${emp.cargo?.trim()}|${h}`;
 
