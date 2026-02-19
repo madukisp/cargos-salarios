@@ -67,6 +67,8 @@ import { Toaster } from './components/ui/sonner';
 
 const queryClient = new QueryClient();
 
+import { ErrorBoundary } from './components/ErrorBoundary';
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -74,7 +76,9 @@ export default function App() {
         <NotificationProvider>
           <SidebarProvider>
             <BrowserRouter>
-              <AppContent />
+              <ErrorBoundary>
+                <AppContent />
+              </ErrorBoundary>
               <Toaster />
             </BrowserRouter>
           </SidebarProvider>
