@@ -28,16 +28,28 @@ export function useTlpData() {
     useEffect(() => {
         async function loadUnidades() {
             try {
-                const { data, error } = await supabase
+                // Carregar unidades de oris_funcionarios (nome_fantasia)
+                const { data: funcionariosData, error: empError } = await supabase
                     .from('oris_funcionarios')
                     .select('nome_fantasia')
                     .neq('situacao', '99-Demitido')
                     .neq('nome_fantasia', null);
 
-                if (error) throw error;
+                if (empError) throw empError;
+
+                // Carregar unidades de tlp_quadro_necessario (centro_custo)
+                const { data: tlpData, error: tlpError } = await supabase
+                    .from('tlp_quadro_necessario')
+                    .select('centro_custo');
+
+                if (tlpError) throw tlpError;
+
+                // Combinar ambas as fontes
+                const unidadesFromFunc = (funcionariosData || []).map((d: any) => d.nome_fantasia).filter(Boolean);
+                const unidadesFromTlp = (tlpData || []).map((d: any) => d.centro_custo).filter(Boolean);
 
                 const uniqueUnidades = Array.from(
-                    new Set((data || []).map((d: any) => d.nome_fantasia).filter(Boolean))
+                    new Set([...unidadesFromFunc, ...unidadesFromTlp])
                 ).sort() as string[];
 
                 setUnidades(uniqueUnidades);
@@ -63,21 +75,29 @@ export function useTlpData() {
             };
 
             // 1. Fetch TLP targets (quadro necessário)
-            const { data: tlpTargets, error: tlpError } = await supabase
+            let tlpQuery = supabase
                 .from('tlp_quadro_necessario')
                 .select('*');
+
+            if (unidade && unidade !== 'todas') {
+                // Filtrar por centro_custo se unidade selecionada
+                tlpQuery = tlpQuery.eq('centro_custo', unidade);
+            }
+
+            const { data: tlpTargets, error: tlpError } = await tlpQuery;
 
             if (tlpError) throw tlpError;
             console.log('[loadData] TLP carregado:', tlpTargets?.length, 'registros');
 
-            // 2. Fetch Employees - filtrar por nome_fantasia (unidade) se fornecida
+            // 2. Fetch Employees - filtrar por nome_fantasia OU centro_custo (unidade) se fornecida
             let empQuery = supabase
                 .from('oris_funcionarios')
                 .select('nome, cargo, centro_custo, nome_fantasia, dt_admissao, situacao, carga_horaria_semanal')
                 .neq('situacao', '99-Demitido');
 
             if (unidade && unidade !== 'todas') {
-                empQuery = empQuery.eq('nome_fantasia', unidade);
+                // Filtrar por nome_fantasia OU centro_custo
+                empQuery = empQuery.or(`nome_fantasia.eq.${unidade},centro_custo.eq.${unidade}`);
             }
 
             const { data: employees, error: empError } = await empQuery;
@@ -152,7 +172,7 @@ export function useTlpData() {
                 if (saldo < 0) status = 'deficit';
                 if (saldo > 0) status = 'excedente';
 
-                const unidadeName = groupEmployees[0]?.nome_fantasia || 'N/A';
+                const unidadeName = groupEmployees[0]?.nome_fantasia || target.centro_custo || 'N/A';
 
                 if (excludedUnits.includes(unidadeName)) {
                     if (bestMatchKey) matchedEmployeeKeys.add(bestMatchKey);
@@ -202,7 +222,7 @@ export function useTlpData() {
                 const tlpCount = 0;
                 const saldo = activeCount + afastadosCount;
 
-                const unidadeName = emps[0]?.nome_fantasia || 'Sem Unidade';
+                const unidadeName = emps[0]?.nome_fantasia || centro_custo_key || 'Sem Unidade';
 
                 if (excludedUnits.includes(unidadeName)) return;
 
