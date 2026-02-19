@@ -862,28 +862,28 @@ export function VacancyManagement() {
                     situacao_origem: 'Vaga em aberto',
                   };
                   return (
-                  <VagaCard
-                    key={vaga.id_evento}
-                    vaga={vagaFormatada}
-                    expandedId={expandedId}
-                    setExpandedId={setExpandedId}
-                    abaSelecionada={abaSelecionada}
-                    respostas={respostas}
-                    formData={formData}
-                    updateFormDataMap={updateFormDataMap}
-                    tlpData={tlpData}
-                    fantasias={fantasias}
-                    loadingProfile={loadingProfile}
-                    setLoadingProfile={setLoadingProfile}
-                    setSelectedProfileFunc={setSelectedProfileFunc}
-                    handleResponder={handleResponder}
-                    handleEfetivar={handleEfetivar}
-                    respondendo={respondendo}
-                    handleUpdateTlpValue={handleUpdateTlpValue}
-                    updatingTlp={updatingTlp}
-                    onAtribuir={handleAtribuirVaga}
-                    onArquivar={handleArquivar}
-                  />
+                    <VagaCard
+                      key={vaga.id_evento}
+                      vaga={vagaFormatada}
+                      expandedId={expandedId}
+                      setExpandedId={setExpandedId}
+                      abaSelecionada={abaSelecionada}
+                      respostas={respostas}
+                      formData={formData}
+                      updateFormDataMap={updateFormDataMap}
+                      tlpData={tlpData}
+                      fantasias={fantasias}
+                      loadingProfile={loadingProfile}
+                      setLoadingProfile={setLoadingProfile}
+                      setSelectedProfileFunc={setSelectedProfileFunc}
+                      handleResponder={handleResponder}
+                      handleEfetivar={handleEfetivar}
+                      respondendo={respondendo}
+                      handleUpdateTlpValue={handleUpdateTlpValue}
+                      updatingTlp={updatingTlp}
+                      onAtribuir={handleAtribuirVaga}
+                      onArquivar={handleArquivar}
+                    />
                   );
                 })
               )}
@@ -1557,7 +1557,7 @@ function VagaCard({
                       <div>
                         <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Saldo</p>
                         <p className={`text-lg font-bold ${tlpEntry.saldo < 0 ? 'text-red-600' : 'text-amber-600'}`}>
-                          {tlpEntry.saldo > 0 ? '+' : ''}{tlpEntry.saldo}
+                          {tlpEntry.saldo > 0 ? `+${tlpEntry.saldo}` : tlpEntry.saldo}
                         </p>
                       </div>
                     </div>
@@ -1772,7 +1772,8 @@ function VagaCard({
             </div>
           </div>
         </CardContent>
-      )}
-    </Card>
+      )
+      }
+    </Card >
   );
 }
