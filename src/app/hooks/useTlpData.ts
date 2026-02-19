@@ -75,30 +75,18 @@ export function useTlpData() {
             };
 
             // 1. Fetch TLP targets (quadro necessário)
-            let tlpQuery = supabase
+            const { data: tlpTargets, error: tlpError } = await supabase
                 .from('tlp_quadro_necessario')
                 .select('*');
-
-            if (unidade && unidade !== 'todas') {
-                // Filtrar por centro_custo se unidade selecionada
-                tlpQuery = tlpQuery.eq('centro_custo', unidade);
-            }
-
-            const { data: tlpTargets, error: tlpError } = await tlpQuery;
 
             if (tlpError) throw tlpError;
             console.log('[loadData] TLP carregado:', tlpTargets?.length, 'registros');
 
-            // 2. Fetch Employees - filtrar por nome_fantasia OU centro_custo (unidade) se fornecida
+            // 2. Fetch Employees
             let empQuery = supabase
                 .from('oris_funcionarios')
                 .select('nome, cargo, centro_custo, nome_fantasia, dt_admissao, situacao, carga_horaria_semanal')
                 .neq('situacao', '99-Demitido');
-
-            if (unidade && unidade !== 'todas') {
-                // Filtrar por nome_fantasia OU centro_custo
-                empQuery = empQuery.or(`nome_fantasia.eq.${unidade},centro_custo.eq.${unidade}`);
-            }
 
             const { data: employees, error: empError } = await empQuery;
             if (empError) throw empError;
@@ -116,7 +104,13 @@ export function useTlpData() {
             // Key: `${centro_custo}|${cargo}|${normalized_hours}`
             const employeeGroups = new Map<string, typeof employees>();
 
-            employees?.forEach(emp => {
+            // Filter employees if unidade is selected (by nome_fantasia OR centro_custo)
+            const filteredEmployees = employees?.filter(emp => {
+                if (!unidade || unidade === 'todas') return true;
+                return emp.nome_fantasia === unidade || emp.centro_custo === unidade;
+            });
+
+            filteredEmployees?.forEach(emp => {
                 const h = normalizeHours(emp.carga_horaria_semanal);
                 const key = `${emp.centro_custo?.trim()}|${emp.cargo?.trim()}|${h}`;
 
