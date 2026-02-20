@@ -252,14 +252,23 @@ export function VacancyManagement() {
     return fechadas;
   }, [respondidas, respostas]);
 
+  // Afastamentos respondidos que abriram vaga mas ainda não foram preenchidos → "Vagas em Aberto"
+  const afastamentosEmAberto = useMemo(() => {
+    return respondidas.filter((v) => {
+      if (v.situacao_origem === '99-Demitido') return false;
+      const resp = respostas[v.id_evento];
+      return resp?.abriu_vaga === true && resp?.vaga_preenchida !== 'SIM';
+    });
+  }, [respondidas, respostas]);
+
   // Verificar se há busca ativa
   const temBuscaAtiva = busca.trim().length > 0;
 
   // Agregar todos os resultados quando há busca
   const todosResultadosBusca = useMemo(() => {
     if (!temBuscaAtiva) return [];
-    return [...pendentes, ...afastamentos, ...pendentesEf, ...vagasEmAberto, ...vagasFechadas, ...vagasArquivadas];
-  }, [temBuscaAtiva, pendentes, afastamentos, pendentesEf, vagasEmAberto, vagasFechadas, vagasArquivadas]);
+    return [...pendentes, ...afastamentos, ...pendentesEf, ...vagasEmAberto, ...afastamentosEmAberto, ...vagasFechadas, ...vagasArquivadas];
+  }, [temBuscaAtiva, pendentes, afastamentos, pendentesEf, vagasEmAberto, afastamentosEmAberto, vagasFechadas, vagasArquivadas]);
 
 
 
@@ -552,7 +561,7 @@ export function VacancyManagement() {
                 value="respondidas"
                 className="rounded-none border-b-2 border-transparent data-[state=active]:border-green-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-1 pb-4 text-sm font-semibold"
               >
-                Vagas em Aberto ({vagasEmAberto.length})
+                Vagas em Aberto ({vagasEmAberto.length + afastamentosEmAberto.length})
               </TabsTrigger>
               <TabsTrigger
                 value="pendentes_ef"
@@ -848,23 +857,50 @@ export function VacancyManagement() {
             )}
 
             <TabsContent value="respondidas" className="space-y-3 mt-0 focusVisible:outline-none">
-              {vagasEmAberto.length === 0 ? (
+              {vagasEmAberto.length === 0 && afastamentosEmAberto.length === 0 ? (
                 <EmptyState icon={TrendingUp} title="Nenhuma vaga em aberto" description="Eventos que geraram vagas e ainda não foram preenchidas aparecerão aqui." />
               ) : (
-                vagasEmAberto.map((vaga) => {
-                  // Mapear VagaEmAberto para formato esperado por VagaCard
-                  const vagaFormatada = {
-                    ...vaga,
-                    cargo: vaga.cargo_saiu || 'Cargo não informado',
-                    nome: vaga.quem_saiu || 'Sem nome',
-                    lotacao: vaga.centro_custo || '-',
-                    status_evento: 'RESPONDIDO' as const,
-                    situacao_origem: 'Vaga em aberto',
-                  };
-                  return (
+                <>
+                  {vagasEmAberto.map((vaga) => {
+                    // Mapear VagaEmAberto para formato esperado por VagaCard
+                    const vagaFormatada = {
+                      ...vaga,
+                      cargo: vaga.cargo_saiu || 'Cargo não informado',
+                      nome: vaga.quem_saiu || 'Sem nome',
+                      lotacao: vaga.centro_custo || '-',
+                      status_evento: 'RESPONDIDO' as const,
+                      situacao_origem: 'Vaga em aberto',
+                    };
+                    return (
+                      <VagaCard
+                        key={vaga.id_evento}
+                        vaga={vagaFormatada}
+                        expandedId={expandedId}
+                        setExpandedId={setExpandedId}
+                        abaSelecionada={abaSelecionada}
+                        respostas={respostas}
+                        formData={formData}
+                        updateFormDataMap={updateFormDataMap}
+                        tlpData={tlpData}
+                        fantasias={fantasias}
+                        loadingProfile={loadingProfile}
+                        setLoadingProfile={setLoadingProfile}
+                        setSelectedProfileFunc={setSelectedProfileFunc}
+                        handleResponder={handleResponder}
+                        handleEfetivar={handleEfetivar}
+                        respondendo={respondendo}
+                        handleUpdateTlpValue={handleUpdateTlpValue}
+                        updatingTlp={updatingTlp}
+                        onAtribuir={handleAtribuirVaga}
+                        onArquivar={handleArquivar}
+                      />
+                    );
+                  })}
+                  {afastamentosEmAberto.map((vaga) => (
                     <VagaCard
-                      key={vaga.id_evento}
-                      vaga={vagaFormatada}
+                      key={`afas-${vaga.id_evento}`}
+                      vaga={vaga}
+                      mostrarSituacao={true}
                       expandedId={expandedId}
                       setExpandedId={setExpandedId}
                       abaSelecionada={abaSelecionada}
@@ -884,8 +920,8 @@ export function VacancyManagement() {
                       onAtribuir={handleAtribuirVaga}
                       onArquivar={handleArquivar}
                     />
-                  );
-                })
+                  ))}
+                </>
               )}
             </TabsContent>
 

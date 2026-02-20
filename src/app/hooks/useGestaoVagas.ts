@@ -92,12 +92,16 @@ export function useGestaoVagas() {
                 demResp.push(ev);
               }
             } else {
-              // Afastamentos
-              // Se veio parar aqui e não é demissão, assumimos afastamento.
-              // Normalmente filtramos apenas PENDENTE para afastamentos, mas se tiver algum respondido não-arquivado, onde colocamos?
-              // A lógica original separa por 'fetch'.
-              // Vamos manter simples: se não é demissão, é afastamento.
-              afastPend.push(ev);
+              // Afastamentos: verificar se já tem resposta do gestor
+              const resp = mapaRespostas[ev.id_evento];
+              if (resp) {
+                // Com resposta: sai de afastamentos e vai para respondidos
+                // (de onde vagasFechadas e vagas em aberto são derivados)
+                demResp.push(ev);
+              } else {
+                // Sem resposta: permanece em afastamentos pendentes
+                afastPend.push(ev);
+              }
             }
           }
         }
