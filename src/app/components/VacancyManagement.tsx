@@ -275,9 +275,12 @@ export function VacancyManagement() {
     });
   }, [vagasEmAbertoFromHook, busca, selectedFantasia, apenasContratosSP, fantasias, CONTRATOS_SP]);
 
-  // Vagas efetivamente preenchidas com candidato
+  // Vagas efetivamente preenchidas com candidato — exige substituto registrado
   const vagasFechadas = useMemo(() => {
-    return respondidas.filter((vaga) => respostas[vaga.id_evento]?.vaga_preenchida === 'SIM');
+    return respondidas.filter((vaga) => {
+      const resp = respostas[vaga.id_evento];
+      return resp?.vaga_preenchida === 'SIM' && (resp?.id_substituto || resp?.nome_candidato);
+    });
   }, [respondidas, respostas]);
 
   // Respondidos onde não houve abertura de vaga (abriu_vaga=false ou null, sem candidato)
@@ -332,7 +335,10 @@ export function VacancyManagement() {
       await responder(idEvento, tipoOrigem, dados);
       setExpandedId(null);
       // Navegar para a aba correta após salvar
-      if (dados.vaga_preenchida === 'SIM') {
+      if (dados.pendente_efetivacao === true) {
+        // Se está com pendente de efetivação, fica em pendentes_ef
+        setAbaSelecionada('pendentes_ef');
+      } else if (dados.vaga_preenchida === 'SIM') {
         setAbaSelecionada('fechadas');
       } else if (dados.abriu_vaga === true && dados.vaga_preenchida !== 'SIM') {
         setAbaSelecionada('respondidas');
@@ -1711,7 +1717,7 @@ function VagaCard({
           <div className={`mt-1 p-2 rounded-lg ${tipoOrigem === 'DEMISSAO' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
             <Users size={18} />
           </div>
-          <div onClick={(e) => e.stopPropagation()}>
+          <div>
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <h3 className="font-semibold text-slate-900 dark:text-slate-100">{vaga.cargo || 'Cargo não informado'}</h3>
               <Badge variant="outline" className="text-[10px] h-5 uppercase">

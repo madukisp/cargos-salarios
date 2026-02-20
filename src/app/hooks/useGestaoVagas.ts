@@ -79,7 +79,9 @@ export function useGestaoVagas() {
           arquivadas.push(ev);
         } else {
           const resp = mapaRespostas[ev.id_evento];
-          const pendenteEf = resp?.pendente_efetivacao === true;
+          // Pendente de efetivação: campo explícito OU vaga marcada como SIM sem substituto
+          const pendenteEf = resp?.pendente_efetivacao === true ||
+            (resp?.vaga_preenchida === 'SIM' && !resp?.id_substituto && !resp?.nome_candidato);
 
           if (pendenteEf) {
             demPendEf.push(ev);

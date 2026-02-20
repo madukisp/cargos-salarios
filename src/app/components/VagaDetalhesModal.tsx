@@ -346,14 +346,20 @@ export function VagaDetalhesModal({ vaga, onClose, onVagaFechada }: VagaDetalhes
     setSalvandoFechamento(true);
     try {
       const atualizacao: Record<string, any> = {
-        vaga_preenchida: 'SIM',
         abriu_vaga: true,
         data_abertura_vaga: dataAbertura,
         data_fechamento_vaga: dataFechamento,
       };
+
+      // Se há substituto: marca como preenchida (vai para Fechadas)
+      // Se não há substituto: marca como pendente de efetivação (fica em Aberto/Pendentes)
       if (substitutoSelecionado) {
+        atualizacao.vaga_preenchida = 'SIM';
         atualizacao.id_substituto = substitutoSelecionado.id;
         atualizacao.nome_candidato = substitutoSelecionado.nome;
+      } else {
+        atualizacao.vaga_preenchida = 'NAO';
+        atualizacao.pendente_efetivacao = true;
       }
 
       const { error } = await supabase
@@ -379,14 +385,14 @@ export function VagaDetalhesModal({ vaga, onClose, onVagaFechada }: VagaDetalhes
         funcionarioAtual,
         resposta: {
           ...prev.resposta,
-          vaga_preenchida: 'SIM',
+          vaga_preenchida: substitutoSelecionado ? 'SIM' : 'NAO',
           abriu_vaga: true,
           data_abertura_vaga: dataAbertura,
           data_fechamento_vaga: dataFechamento,
           ...(substitutoSelecionado ? {
             id_substituto: substitutoSelecionado.id,
             nome_candidato: substitutoSelecionado.nome,
-          } : {}),
+          } : { pendente_efetivacao: true }),
         },
       }));
 
@@ -658,6 +664,18 @@ export function VagaDetalhesModal({ vaga, onClose, onVagaFechada }: VagaDetalhes
                         lotacaoAlvo={vaga.lotacao}
                         cnpjAlvo={vaga.cnpj}
                       />
+
+                      {!substitutoSelecionado && (
+                        <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg flex items-start gap-3">
+                          <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Sem substituto registrado</p>
+                            <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                              Se salvar sem selecionar um substituto, essa vaga irá para <strong>"Pendentes de Efetivação"</strong> para registro posterior.
+                            </p>
+                          </div>
+                        </div>
+                      )}
 
                       <div className="flex gap-3 pt-1">
                         <button
