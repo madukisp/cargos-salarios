@@ -11,6 +11,8 @@ export interface VagaEmAberto {
   observacao?: string | null;
   data_evento: string;
   id_funcionario: number;
+  carga_horaria_semanal?: string | null;
+  escala?: string | null;
 }
 
 export interface EventoDemissao {
@@ -570,8 +572,32 @@ export async function carregarVagasEmAberto(
       return [];
     }
 
-    console.log('[carregarVagasEmAberto] Retornando', data?.length, 'vagas em aberto');
-    return (data || []) as VagaEmAberto[];
+    const vagas = (data || []) as VagaEmAberto[];
+
+    // Enriquecer com carga_horaria_semanal e escala do oris_funcionarios
+    const ids = vagas.map(v => v.id_funcionario).filter(Boolean);
+    if (ids.length > 0) {
+      const { data: orisData } = await supabase
+        .from('oris_funcionarios')
+        .select('id, carga_horaria_semanal, escala')
+        .in('id', ids);
+
+      if (orisData && orisData.length > 0) {
+        const mapaOris: Record<number, { carga_horaria_semanal?: string; escala?: string }> = {};
+        orisData.forEach((o: any) => { mapaOris[o.id] = o; });
+
+        vagas.forEach(v => {
+          const oris = mapaOris[v.id_funcionario];
+          if (oris) {
+            v.carga_horaria_semanal = oris.carga_horaria_semanal ?? null;
+            v.escala = oris.escala ?? null;
+          }
+        });
+      }
+    }
+
+    console.log('[carregarVagasEmAberto] Retornando', vagas.length, 'vagas em aberto');
+    return vagas;
   } catch (error) {
     console.error('[carregarVagasEmAberto] Exception:', error);
     return [];

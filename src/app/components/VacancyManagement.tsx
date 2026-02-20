@@ -166,15 +166,20 @@ export function VacancyManagement() {
   const lotacoes = lotacoesFromHook;
 
   // Aplicar filtro de data
+  // Usa data_abertura_vaga se existir (na resposta ou no objeto), senão usa data_evento
   const applyDateFilter = useCallback((data: any[]) => {
     if (selectedYear === 'TODOS' && selectedMonth === 'TODOS') {
       return data;
     }
 
     return data.filter((item) => {
-      if (!item.data_evento) return false;
+      const dataReferencia = item.data_abertura_vaga
+        || respostas[item.id_evento]?.data_abertura_vaga
+        || item.data_evento;
 
-      const eventDate = new Date(item.data_evento);
+      if (!dataReferencia) return false;
+
+      const eventDate = new Date(dataReferencia);
       const year = String(eventDate.getFullYear());
       const month = String(eventDate.getMonth() + 1);
 
@@ -183,7 +188,7 @@ export function VacancyManagement() {
 
       return matchYear && matchMonth;
     });
-  }, [selectedYear, selectedMonth]);
+  }, [selectedYear, selectedMonth, respostas]);
 
   // Filtrar dados
   const filtrarVagas = useCallback(
@@ -869,7 +874,7 @@ export function VacancyManagement() {
                       nome: vaga.quem_saiu || 'Sem nome',
                       lotacao: vaga.centro_custo || '-',
                       status_evento: 'RESPONDIDO' as const,
-                      situacao_origem: 'Vaga em aberto',
+                      situacao_origem: '99-Demitido', // itens da view são sempre demissões
                     };
                     return (
                       <VagaCard
@@ -1351,6 +1356,19 @@ function VagaCard({
   const naoPertenceUnidade = getVal('nao_pertence_unidade') === true;
   const dataAbertura = getVal('data_abertura_vaga', '');
   const dataFechamento = getVal('data_fechamento_vaga', '');
+
+  // Detectar data de abertura suspeita
+  // dataAberturaDisplay unifica o campo direto do objeto (view) com a resposta salva
+  const dataAberturaDisplay: string | null = (vaga as any).data_abertura_vaga || dataAbertura || null;
+  // Inconsistente: abertura ANTES da situação (impossível — a vaga não pode abrir antes do evento)
+  const dataInconsistente = !!(
+    dataAberturaDisplay &&
+    vaga.data_evento &&
+    new Date(dataAberturaDisplay + 'T00:00:00') < new Date(vaga.data_evento + 'T00:00:00')
+  );
+  // Suspeito: mais de 365 dias em aberto pode indicar erro de ano
+  const diasSuspeitos = displayDiasEmAberto > 365;
+  const alertaDataSuspeita = dataInconsistente || diasSuspeitos;
   const vagaPreenchida = getVal('vaga_preenchida', 'NAO'); // Default 'NAO' for Select
   // Check both keys for candidate name just in case
   // Campo de busca usa apenas o que foi digitado agora (currentForm), não carrega valor anterior
@@ -1454,7 +1472,7 @@ function VagaCard({
 
 
   return (
-    <Card key={vaga.id_evento} className={`mb-3 overflow-hidden border-slate-200 dark:border-slate-800 transition-all hover:shadow-md ${isPendenteEf ? 'border-l-4 border-l-amber-500' : ''}`}>
+    <Card key={vaga.id_evento} className={`mb-3 overflow-hidden border-slate-200 dark:border-slate-800 transition-all hover:shadow-md ${alertaDataSuspeita ? 'border-l-4 border-l-yellow-400' : isPendenteEf ? 'border-l-4 border-l-amber-500' : ''}`}>
       <div
         className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-between"
         onClick={() => setExpandedId(isExpanded ? null : vaga.id_evento)}
@@ -1477,7 +1495,22 @@ function VagaCard({
               <Badge className={`text-[10px] h-5 uppercase font-semibold border-none ${getStatusBadge().color}`}>
                 {getStatusBadge().label}
               </Badge>
+              {abaSelecionada === 'respondidas' && (
+                <Badge className={`text-[10px] h-5 uppercase font-semibold border-none ${
+                  tipoOrigem === 'DEMISSAO'
+                    ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                    : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                }`}>
+                  {tipoOrigem === 'DEMISSAO' ? 'Demissão' : 'Afastamento'}
+                </Badge>
+              )}
               <SlaIcon className={`w-4 h-4 ${sla.color}`} />
+              {alertaDataSuspeita && (
+                <Badge className="text-[10px] h-5 font-semibold border border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 flex items-center gap-1">
+                  <AlertTriangle size={10} />
+                  {dataInconsistente ? 'Abertura anterior à situação' : `${displayDiasEmAberto}d em aberto`}
+                </Badge>
+              )}
             </div>
             {mostrarSubstituto ? (
               <div className="space-y-2">
@@ -1521,8 +1554,20 @@ function VagaCard({
                 )}
               </div>
             )}
-            <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
-              <span className="flex items-center gap-1"><Calendar size={12} /> {formatarData(vaga.data_evento)}</span>
+            <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 flex-wrap">
+              <span className="flex items-center gap-1">
+                <Calendar size={12} />
+                <span className="text-slate-400">Situação:</span>
+                {formatarData(vaga.data_evento)}
+              </span>
+              {dataAberturaDisplay && (
+                <span className={`flex items-center gap-1 ${dataInconsistente ? 'text-yellow-600 dark:text-yellow-400 font-semibold' : ''}`}>
+                  <Calendar size={12} className={dataInconsistente ? 'text-yellow-500' : 'text-blue-400'} />
+                  <span className="text-slate-400">Abertura:</span>
+                  {formatarData(dataAberturaDisplay)}
+                  {dataInconsistente && <AlertTriangle size={10} className="text-yellow-500" />}
+                </span>
+              )}
               <span className="flex items-center gap-1"><Clock size={12} /> {displayDiasEmAberto} dias</span>
             </div>
           </div>
