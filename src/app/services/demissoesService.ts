@@ -13,6 +13,9 @@ export interface VagaEmAberto {
   id_funcionario: number;
   carga_horaria_semanal?: string | null;
   escala?: string | null;
+  // Identifica registros vindos de vagas_movimentacao
+  _source?: 'MOVIMENTACAO';
+  tipo_movimentacao?: 'PROMOCAO' | 'TRANSFERENCIA';
 }
 
 export interface EventoDemissao {
@@ -596,8 +599,51 @@ export async function carregarVagasEmAberto(
       }
     }
 
-    console.log('[carregarVagasEmAberto] Retornando', vagas.length, 'vagas em aberto');
-    return vagas;
+    // Buscar vagas de movimentação manual (status ABERTA)
+    let movQuery = supabase
+      .from('vagas_movimentacao')
+      .select('*')
+      .eq('status', 'ABERTA')
+      .order('data_abertura', { ascending: false });
+
+    if (lotacao && lotacao !== 'TODAS') {
+      movQuery = movQuery.eq('centro_custo', lotacao);
+    }
+    if (cnpj && cnpj !== 'todos') {
+      movQuery = movQuery.eq('cnpj', cnpj);
+    }
+
+    const { data: movData } = await movQuery;
+
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const vagasMovimentacao: VagaEmAberto[] = (movData || []).map((m: any) => {
+      const dataAbertura = new Date(m.data_abertura + 'T00:00:00');
+      const diasEmAberto = Math.ceil(
+        (hoje.getTime() - dataAbertura.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      return {
+        id_evento: m.id,
+        cnpj: m.cnpj,
+        quem_saiu: m.nome_funcionario,
+        cargo_saiu: m.cargo,
+        centro_custo: m.centro_custo,
+        data_abertura_vaga: m.data_abertura,
+        dias_em_aberto: diasEmAberto,
+        observacao: m.observacao,
+        data_evento: m.data_abertura, // sem evento anterior — data abertura = data da vaga
+        id_funcionario: m.id_funcionario,
+        carga_horaria_semanal: m.carga_horaria_semanal,
+        escala: m.escala,
+        _source: 'MOVIMENTACAO',
+        tipo_movimentacao: m.tipo_movimentacao,
+      };
+    });
+
+    const total = [...vagas, ...vagasMovimentacao];
+    console.log('[carregarVagasEmAberto] Retornando', total.length, 'vagas em aberto');
+    return total;
   } catch (error) {
     console.error('[carregarVagasEmAberto] Exception:', error);
     return [];

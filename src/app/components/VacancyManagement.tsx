@@ -22,6 +22,7 @@ import { useTlpData } from '@/app/hooks/useTlpData';
 import { StatusBadge } from './StatusBadge';
 import { formatarData } from '@/lib/column-formatters';
 import { AtribuirVagaModal } from './AtribuirVagaModal';
+import { NovaVagaMovimentacaoModal } from './NovaVagaMovimentacaoModal';
 
 const FILTROS_STORAGE_KEY = 'vacancy_management_filtros';
 
@@ -110,6 +111,7 @@ export function VacancyManagement() {
 
   // Atribuição de Vaga
   const [selectedVagaForAtribuicao, setSelectedVagaForAtribuicao] = useState<any | null>(null);
+  const [modalMovimentacaoOpen, setModalMovimentacaoOpen] = useState(false);
 
   const handleAtribuirVaga = (vaga: any) => {
     setSelectedVagaForAtribuicao(vaga);
@@ -334,14 +336,16 @@ export function VacancyManagement() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100 uppercase tracking-tight flex items-center gap-2">
-          <TrendingUp className="text-blue-600" />
-          Gestão de Vagas
-        </h1>
-        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-          Acompanhamento e controle de respostas pendentes
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100 uppercase tracking-tight flex items-center gap-2">
+            <TrendingUp className="text-blue-600" />
+            Gestão de Vagas
+          </h1>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+            Acompanhamento e controle de respostas pendentes
+          </p>
+        </div>
       </div>
 
       {/* Erro */}
@@ -527,6 +531,17 @@ export function VacancyManagement() {
             <Label htmlFor="contratos-sp" className="text-sm cursor-pointer font-medium text-blue-600 dark:text-blue-400">
               Exibir apenas contratos de SP (ZN/Norte)
             </Label>
+          </div>
+
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => setModalMovimentacaoOpen(true)}
+              className="inline-flex items-center gap-2 text-white bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700 hover:bg-gradient-to-br focus:ring-4 focus:outline-none focus:ring-blue-300 dark:focus:ring-blue-800 font-medium rounded-lg text-sm px-4 py-2.5 leading-5"
+            >
+              <UserPlus size={16} />
+              Abrir Vaga de Movimentação
+            </button>
           </div>
         </CardContent>
       </Card>
@@ -1025,6 +1040,14 @@ export function VacancyManagement() {
           lotacao: selectedVagaForAtribuicao.lotacao
         } : null}
       />
+
+      {/* Modal Nova Vaga de Movimentação */}
+      <NovaVagaMovimentacaoModal
+        open={modalMovimentacaoOpen}
+        onOpenChange={setModalMovimentacaoOpen}
+        fantasias={fantasias}
+        onSaved={() => carregarDados(lotacao === 'TODAS' ? undefined : lotacao, selectedFantasia)}
+      />
     </div>
   );
 }
@@ -1360,14 +1383,18 @@ function VagaCard({
   // Detectar data de abertura suspeita
   // dataAberturaDisplay unifica o campo direto do objeto (view) com a resposta salva
   const dataAberturaDisplay: string | null = (vaga as any).data_abertura_vaga || dataAbertura || null;
-  // Inconsistente: abertura ANTES da situação (impossível — a vaga não pode abrir antes do evento)
-  const dataInconsistente = !!(
-    dataAberturaDisplay &&
-    vaga.data_evento &&
-    new Date(dataAberturaDisplay + 'T00:00:00') < new Date(vaga.data_evento + 'T00:00:00')
-  );
-  // Suspeito: mais de 365 dias em aberto pode indicar erro de ano
-  const diasSuspeitos = displayDiasEmAberto > 365;
+  // Inconsistente: abertura ANTES da situação com diferença > 60 dias
+  // (até 60 dias é tolerável — aviso prévio, adiantamento de vaga, etc.)
+  const diffAberturaVsSituacao = dataAberturaDisplay && vaga.data_evento
+    ? Math.floor(
+        (new Date(vaga.data_evento + 'T00:00:00').getTime() -
+          new Date(dataAberturaDisplay + 'T00:00:00').getTime()) /
+        (1000 * 60 * 60 * 24)
+      )
+    : 0;
+  const dataInconsistente = diffAberturaVsSituacao > 60;
+  // Suspeito: mais de 365 dias em aberto sem data de abertura (pode indicar erro de ano)
+  const diasSuspeitos = !dataAberturaDisplay && displayDiasEmAberto > 365;
   const alertaDataSuspeita = dataInconsistente || diasSuspeitos;
   const vagaPreenchida = getVal('vaga_preenchida', 'NAO'); // Default 'NAO' for Select
   // Check both keys for candidate name just in case
@@ -1495,15 +1522,25 @@ function VagaCard({
               <Badge className={`text-[10px] h-5 uppercase font-semibold border-none ${getStatusBadge().color}`}>
                 {getStatusBadge().label}
               </Badge>
-              {abaSelecionada === 'respondidas' && (
-                <Badge className={`text-[10px] h-5 uppercase font-semibold border-none ${
-                  tipoOrigem === 'DEMISSAO'
+              {abaSelecionada === 'respondidas' && (() => {
+                const isMovimentacao = (vaga as any)._source === 'MOVIMENTACAO';
+                const tipoMov = (vaga as any).tipo_movimentacao as string | undefined;
+                const label = isMovimentacao
+                  ? (tipoMov === 'PROMOCAO' ? 'Promoção' : 'Transferência')
+                  : tipoOrigem === 'DEMISSAO' ? 'Demissão' : 'Afastamento';
+                const color = isMovimentacao
+                  ? (tipoMov === 'PROMOCAO'
+                      ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                      : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400')
+                  : tipoOrigem === 'DEMISSAO'
                     ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                    : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                }`}>
-                  {tipoOrigem === 'DEMISSAO' ? 'Demissão' : 'Afastamento'}
-                </Badge>
-              )}
+                    : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400';
+                return (
+                  <Badge className={`text-[10px] h-5 uppercase font-semibold border-none ${color}`}>
+                    {label}
+                  </Badge>
+                );
+              })()}
               <SlaIcon className={`w-4 h-4 ${sla.color}`} />
               {alertaDataSuspeita && (
                 <Badge className="text-[10px] h-5 font-semibold border border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 flex items-center gap-1">
@@ -1568,7 +1605,11 @@ function VagaCard({
                   {dataInconsistente && <AlertTriangle size={10} className="text-yellow-500" />}
                 </span>
               )}
-              <span className="flex items-center gap-1"><Clock size={12} /> {displayDiasEmAberto} dias</span>
+              <span className={`flex items-center gap-1 ${alertaDataSuspeita ? 'text-yellow-600 dark:text-yellow-400 font-semibold' : ''}`}>
+                <Clock size={12} className={alertaDataSuspeita ? 'text-yellow-500' : ''} />
+                {displayDiasEmAberto} dias
+                {alertaDataSuspeita && <AlertTriangle size={10} className="text-yellow-500" />}
+              </span>
             </div>
           </div>
         </div>
@@ -1753,10 +1794,29 @@ function VagaCard({
                       <Input
                         type="date"
                         id={`fechamento-${vaga.id_evento}`}
-                        className="mt-1"
+                        className={`mt-1 ${
+                          dataFechamento &&
+                          Math.floor((new Date().getTime() - new Date(dataFechamento + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24)) > 30
+                            ? 'border-amber-400 focus:border-amber-500 focus:ring-amber-500'
+                            : ''
+                        }`}
                         value={dataFechamento}
                         onChange={(e) => updateFormDataMap(vaga.id_evento, { data_fechamento_vaga: e.target.value })}
                       />
+                      {dataFechamento && (() => {
+                        const diasPassados = Math.floor(
+                          (new Date().getTime() - new Date(dataFechamento + 'T00:00:00').getTime()) /
+                          (1000 * 60 * 60 * 24)
+                        );
+                        return diasPassados > 30 ? (
+                          <div className="mt-1.5 flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2 py-1.5">
+                            <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                            <span>
+                              Esta data é de <strong>{diasPassados} dias atrás</strong>. Confirme se o fechamento realmente ocorreu em {new Date(dataFechamento + 'T00:00:00').toLocaleDateString('pt-BR')}.
+                            </span>
+                          </div>
+                        ) : null;
+                      })()}
                     </div>
                     <div>
                       <Label htmlFor={`substituto-${vaga.id_evento}`} className="text-sm">
