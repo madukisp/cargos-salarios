@@ -18,7 +18,8 @@
       "Bash(npx tsc:*)",
       "Bash(npm --version:*)",
       "Bash(npm cache clean:*)",
-      "mcp__plugin_supabase_supabase__apply_migration"
+      "mcp__plugin_supabase_supabase__apply_migration",
+      "Bash(python3:*)"
     ]
   },
   "enabledPlugins": {

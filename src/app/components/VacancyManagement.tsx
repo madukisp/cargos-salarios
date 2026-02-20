@@ -79,6 +79,7 @@ export function VacancyManagement() {
 
   const { data: tlpData, updateTlp } = useTlpData();
   const [updatingTlp, setUpdatingTlp] = useState<string | null>(null);
+  const [erroFechamento, setErroFechamento] = useState<number | null>(null);
 
   const {
     fantasias,
@@ -274,19 +275,35 @@ export function VacancyManagement() {
     });
   }, [vagasEmAbertoFromHook, busca, selectedFantasia, apenasContratosSP, fantasias, CONTRATOS_SP]);
 
+  // Vagas efetivamente preenchidas com candidato
   const vagasFechadas = useMemo(() => {
-    const fechadas = respondidas.filter((vaga) => respostas[vaga.id_evento]?.vaga_preenchida === 'SIM');
-    return fechadas;
+    return respondidas.filter((vaga) => respostas[vaga.id_evento]?.vaga_preenchida === 'SIM');
   }, [respondidas, respostas]);
 
-  // Afastamentos respondidos que abriram vaga mas ainda não foram preenchidos → "Vagas em Aberto"
-  const afastamentosEmAberto = useMemo(() => {
-    return respondidas.filter((v) => {
-      if (v.situacao_origem === '99-Demitido') return false;
-      const resp = respostas[v.id_evento];
-      return resp?.abriu_vaga === true && resp?.vaga_preenchida !== 'SIM';
+  // Respondidos onde não houve abertura de vaga (abriu_vaga=false ou null, sem candidato)
+  const vagasSemAbertura = useMemo(() => {
+    return respondidas.filter((vaga) => {
+      const resp = respostas[vaga.id_evento];
+      const isEmAberto = resp?.abriu_vaga === true && resp?.vaga_preenchida !== 'SIM';
+      const isPreenchida = resp?.vaga_preenchida === 'SIM';
+      return !isEmAberto && !isPreenchida;
     });
   }, [respondidas, respostas]);
+
+  // Respondidos que abriram vaga mas ainda não foram preenchidos → "Vagas em Aberto"
+  // Exclui os que já aparecem em vagasEmAberto (view) para evitar duplicação
+  const afastamentosEmAberto = useMemo(() => {
+    const idsNaView = new Set(vagasEmAberto.map((v) => v.id_evento));
+    return respondidas.filter((v) => {
+      const resp = respostas[v.id_evento];
+      return resp?.abriu_vaga === true && resp?.vaga_preenchida !== 'SIM' && !idsNaView.has(v.id_evento);
+    });
+  }, [respondidas, respostas, vagasEmAberto]);
+
+  const arquivadasFiltradas = useMemo(
+    () => applyDateFilter(ordenarVagas(filtrarVagas(vagasArquivadas, tlpData, fantasias))),
+    [filtrarVagas, ordenarVagas, vagasArquivadas, tlpData, fantasias, applyDateFilter]
+  );
 
   // Verificar se há busca ativa
   const temBuscaAtiva = busca.trim().length > 0;
@@ -294,17 +311,32 @@ export function VacancyManagement() {
   // Agregar todos os resultados quando há busca
   const todosResultadosBusca = useMemo(() => {
     if (!temBuscaAtiva) return [];
-    return [...pendentes, ...afastamentos, ...pendentesEf, ...vagasEmAberto, ...afastamentosEmAberto, ...vagasFechadas, ...vagasArquivadas];
-  }, [temBuscaAtiva, pendentes, afastamentos, pendentesEf, vagasEmAberto, afastamentosEmAberto, vagasFechadas, vagasArquivadas]);
+    return [...pendentes, ...afastamentos, ...pendentesEf, ...vagasEmAberto, ...afastamentosEmAberto, ...vagasFechadas, ...arquivadasFiltradas];
+  }, [temBuscaAtiva, pendentes, afastamentos, pendentesEf, vagasEmAberto, afastamentosEmAberto, vagasFechadas, arquivadasFiltradas]);
 
 
 
   const handleResponder = async (idEvento: number, tipoOrigem: 'DEMISSAO' | 'AFASTAMENTO') => {
+    const dados = formData[idEvento] || {};
+    if (dados.abriu_vaga === true && !dados.data_abertura_vaga) {
+      setErroFechamento(idEvento);
+      return;
+    }
+    if (dados.vaga_preenchida === 'SIM' && !dados.data_fechamento_vaga) {
+      setErroFechamento(idEvento);
+      return;
+    }
+    setErroFechamento(null);
     setRespondendo((prev) => ({ ...prev, [idEvento]: true }));
     try {
-      const dados = formData[idEvento] || {};
       await responder(idEvento, tipoOrigem, dados);
       setExpandedId(null);
+      // Navegar para a aba correta após salvar
+      if (dados.vaga_preenchida === 'SIM') {
+        setAbaSelecionada('fechadas');
+      } else if (dados.abriu_vaga === true && dados.vaga_preenchida !== 'SIM') {
+        setAbaSelecionada('respondidas');
+      }
     } catch (err) {
       console.error('Erro ao salvar resposta:', err);
     } finally {
@@ -622,13 +654,13 @@ export function VacancyManagement() {
                 value="fechadas"
                 className="rounded-none border-b-2 border-transparent data-[state=active]:border-green-600 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-1 pb-4 text-sm font-semibold"
               >
-                Vagas Fechadas ({vagasFechadas.length})
+                Vagas Fechadas ({vagasFechadas.length + vagasSemAbertura.length})
               </TabsTrigger>
               <TabsTrigger
                 value="arquivadas"
                 className="rounded-none border-b-2 border-transparent data-[state=active]:border-slate-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-1 pb-4 text-sm font-semibold flex items-center gap-2"
               >
-                <Archive size={14} /> Arquivadas ({vagasArquivadas.length})
+                <Archive size={14} /> Canceladas ({arquivadasFiltradas.length})
               </TabsTrigger>
 
             </TabsList>
@@ -659,6 +691,8 @@ export function VacancyManagement() {
                     updatingTlp={updatingTlp}
                     onAtribuir={handleAtribuirVaga}
                     onArquivar={handleArquivar}
+                    erroFechamento={erroFechamento}
+                    setErroFechamento={setErroFechamento}
                   />
                 ))
               )}
@@ -691,6 +725,8 @@ export function VacancyManagement() {
                     updatingTlp={updatingTlp}
                     onAtribuir={handleAtribuirVaga}
                     onArquivar={handleArquivar}
+                    erroFechamento={erroFechamento}
+                    setErroFechamento={setErroFechamento}
                   />
                 ))
               )}
@@ -722,6 +758,8 @@ export function VacancyManagement() {
                     updatingTlp={updatingTlp}
                     onAtribuir={handleAtribuirVaga}
                     onArquivar={handleArquivar}
+                    erroFechamento={erroFechamento}
+                    setErroFechamento={setErroFechamento}
                   />
                 ))
               )}
@@ -762,6 +800,8 @@ export function VacancyManagement() {
                             updatingTlp={updatingTlp}
                             onAtribuir={handleAtribuirVaga}
                             onArquivar={handleArquivar}
+                            erroFechamento={erroFechamento}
+                            setErroFechamento={setErroFechamento}
                           />
                         ))}
                       </div>
@@ -796,6 +836,8 @@ export function VacancyManagement() {
                             updatingTlp={updatingTlp}
                             onAtribuir={handleAtribuirVaga}
                             onArquivar={handleArquivar}
+                            erroFechamento={erroFechamento}
+                            setErroFechamento={setErroFechamento}
                           />
                         ))}
                       </div>
@@ -829,6 +871,8 @@ export function VacancyManagement() {
                             updatingTlp={updatingTlp}
                             onAtribuir={handleAtribuirVaga}
                             onArquivar={handleArquivar}
+                            erroFechamento={erroFechamento}
+                            setErroFechamento={setErroFechamento}
                           />
                         ))}
                       </div>
@@ -862,6 +906,8 @@ export function VacancyManagement() {
                             updatingTlp={updatingTlp}
                             onAtribuir={handleAtribuirVaga}
                             onArquivar={handleArquivar}
+                            erroFechamento={erroFechamento}
+                            setErroFechamento={setErroFechamento}
                           />
                         ))}
                       </div>
@@ -896,6 +942,42 @@ export function VacancyManagement() {
                             updatingTlp={updatingTlp}
                             onAtribuir={handleAtribuirVaga}
                             onArquivar={handleArquivar}
+                            erroFechamento={erroFechamento}
+                            setErroFechamento={setErroFechamento}
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                    {arquivadasFiltradas.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 px-2">
+                          <span className="w-3 h-3 rounded-full bg-slate-400"></span>
+                          Canceladas ({arquivadasFiltradas.length})
+                        </h4>
+                        {arquivadasFiltradas.map((vaga) => (
+                          <VagaCard
+                            key={vaga.id_evento}
+                            vaga={vaga}
+                            expandedId={expandedId}
+                            setExpandedId={setExpandedId}
+                            abaSelecionada="arquivadas"
+                            respostas={respostas}
+                            formData={formData}
+                            updateFormDataMap={updateFormDataMap}
+                            tlpData={tlpData}
+                            fantasias={fantasias}
+                            loadingProfile={loadingProfile}
+                            setLoadingProfile={setLoadingProfile}
+                            setSelectedProfileFunc={setSelectedProfileFunc}
+                            handleResponder={handleResponder}
+                            handleEfetivar={handleEfetivar}
+                            respondendo={respondendo}
+                            handleUpdateTlpValue={handleUpdateTlpValue}
+                            updatingTlp={updatingTlp}
+                            onAtribuir={handleAtribuirVaga}
+                            onArquivar={handleArquivar}
+                            isArquivada={true}
                           />
                         ))}
                       </div>
@@ -911,6 +993,8 @@ export function VacancyManagement() {
               ) : (
                 <>
                   {vagasEmAberto.map((vaga) => {
+                    const isMovimentacao = (vaga as any)._source === 'MOVIMENTACAO';
+                    const tipoMov = (vaga as any).tipo_movimentacao as string | undefined;
                     // Mapear VagaEmAberto para formato esperado por VagaCard
                     const vagaFormatada = {
                       ...vaga,
@@ -918,9 +1002,10 @@ export function VacancyManagement() {
                       nome: vaga.quem_saiu || 'Sem nome',
                       lotacao: vaga.centro_custo || '-',
                       status_evento: 'RESPONDIDO' as const,
-                      situacao_origem: '99-Demitido', // itens da view são sempre demissões
+                      situacao_origem: isMovimentacao
+                        ? ((vaga as any).situacao_atual ?? 'Movimentação')
+                        : '99-Demitido',
                     };
-                    const isMovimentacao = (vaga as any)._source === 'MOVIMENTACAO';
                     return (
                       <div key={vaga.id_evento} className="relative">
                         {isMovimentacao && (
@@ -953,6 +1038,8 @@ export function VacancyManagement() {
                           updatingTlp={updatingTlp}
                           onAtribuir={handleAtribuirVaga}
                           onArquivar={handleArquivar}
+                          erroFechamento={erroFechamento}
+                          setErroFechamento={setErroFechamento}
                         />
                       </div>
                     );
@@ -980,49 +1067,99 @@ export function VacancyManagement() {
                       updatingTlp={updatingTlp}
                       onAtribuir={handleAtribuirVaga}
                       onArquivar={handleArquivar}
+                      erroFechamento={erroFechamento}
+                      setErroFechamento={setErroFechamento}
                     />
                   ))}
                 </>
               )}
             </TabsContent>
 
-            <TabsContent value="fechadas" className="space-y-3 mt-0 focusVisible:outline-none">
-              {vagasFechadas.length === 0 ? (
-                <EmptyState icon={CheckCircle} title="Nenhuma vaga fechada" description="Vagas que foram preenchidas aparecerão aqui." />
+            <TabsContent value="fechadas" className="space-y-4 mt-0 focusVisible:outline-none">
+              {vagasFechadas.length === 0 && vagasSemAbertura.length === 0 ? (
+                <EmptyState icon={CheckCircle} title="Nenhuma vaga encerrada" description="Vagas preenchidas ou respondidas sem necessidade de abertura aparecerão aqui." />
               ) : (
-                vagasFechadas.map((vaga) => (
-                  <VagaCard
-                    key={vaga.id_evento}
-                    vaga={vaga}
-                    mostrarSubstituto={true}
-                    expandedId={expandedId}
-                    setExpandedId={setExpandedId}
-                    abaSelecionada={abaSelecionada}
-                    respostas={respostas}
-                    formData={formData}
-                    updateFormDataMap={updateFormDataMap}
-                    tlpData={tlpData}
-                    fantasias={fantasias}
-                    loadingProfile={loadingProfile}
-                    setLoadingProfile={setLoadingProfile}
-                    setSelectedProfileFunc={setSelectedProfileFunc}
-                    handleResponder={handleResponder}
-                    handleEfetivar={handleEfetivar}
-                    respondendo={respondendo}
-                    handleUpdateTlpValue={handleUpdateTlpValue}
-                    updatingTlp={updatingTlp}
-                    onAtribuir={handleAtribuirVaga}
-                    onArquivar={handleArquivar}
-                  />
-                ))
+                <>
+                  {vagasFechadas.length > 0 && (
+                    <div className="space-y-3">
+                      {vagasSemAbertura.length > 0 && (
+                        <h4 className="text-xs font-bold uppercase text-slate-500 dark:text-slate-400 flex items-center gap-2 px-1">
+                          <span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
+                          Vaga Preenchida ({vagasFechadas.length})
+                        </h4>
+                      )}
+                      {vagasFechadas.map((vaga) => (
+                        <VagaCard
+                          key={vaga.id_evento}
+                          vaga={vaga}
+                          mostrarSubstituto={true}
+                          expandedId={expandedId}
+                          setExpandedId={setExpandedId}
+                          abaSelecionada={abaSelecionada}
+                          respostas={respostas}
+                          formData={formData}
+                          updateFormDataMap={updateFormDataMap}
+                          tlpData={tlpData}
+                          fantasias={fantasias}
+                          loadingProfile={loadingProfile}
+                          setLoadingProfile={setLoadingProfile}
+                          setSelectedProfileFunc={setSelectedProfileFunc}
+                          handleResponder={handleResponder}
+                          handleEfetivar={handleEfetivar}
+                          respondendo={respondendo}
+                          handleUpdateTlpValue={handleUpdateTlpValue}
+                          updatingTlp={updatingTlp}
+                          onAtribuir={handleAtribuirVaga}
+                          onArquivar={handleArquivar}
+                          erroFechamento={erroFechamento}
+                          setErroFechamento={setErroFechamento}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {vagasSemAbertura.length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-bold uppercase text-slate-500 dark:text-slate-400 flex items-center gap-2 px-1">
+                        <span className="w-2 h-2 rounded-full bg-slate-400 inline-block"></span>
+                        Sem Abertura de Vaga ({vagasSemAbertura.length})
+                      </h4>
+                      {vagasSemAbertura.map((vaga) => (
+                        <VagaCard
+                          key={vaga.id_evento}
+                          vaga={vaga}
+                          expandedId={expandedId}
+                          setExpandedId={setExpandedId}
+                          abaSelecionada={abaSelecionada}
+                          respostas={respostas}
+                          formData={formData}
+                          updateFormDataMap={updateFormDataMap}
+                          tlpData={tlpData}
+                          fantasias={fantasias}
+                          loadingProfile={loadingProfile}
+                          setLoadingProfile={setLoadingProfile}
+                          setSelectedProfileFunc={setSelectedProfileFunc}
+                          handleResponder={handleResponder}
+                          handleEfetivar={handleEfetivar}
+                          respondendo={respondendo}
+                          handleUpdateTlpValue={handleUpdateTlpValue}
+                          updatingTlp={updatingTlp}
+                          onAtribuir={handleAtribuirVaga}
+                          onArquivar={handleArquivar}
+                          erroFechamento={erroFechamento}
+                          setErroFechamento={setErroFechamento}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </TabsContent>
 
             <TabsContent value="arquivadas" className="space-y-3 mt-0 focusVisible:outline-none">
-              {vagasArquivadas.length === 0 ? (
-                <EmptyState icon={Archive} title="Nenhuma vaga arquivada" description="Vagas arquivadas aparecerão aqui." />
+              {arquivadasFiltradas.length === 0 ? (
+                <EmptyState icon={Archive} title="Nenhuma vaga cancelada" description="Vagas canceladas aparecerão aqui." />
               ) : (
-                vagasArquivadas.map((vaga) => (
+                arquivadasFiltradas.map((vaga) => (
                   <VagaCard
                     key={vaga.id_evento}
                     vaga={vaga}
@@ -1373,7 +1510,9 @@ function VagaCard({
   updatingTlp,
   onAtribuir,
   onArquivar,
-  isArquivada
+  isArquivada,
+  erroFechamento,
+  setErroFechamento
 }: {
   vaga: any;
   mostrarSubstituto?: boolean;
@@ -1397,10 +1536,14 @@ function VagaCard({
   onAtribuir?: (vaga: any) => void;
   onArquivar?: (id: number, tipo: 'DEMISSAO' | 'AFASTAMENTO', status: boolean) => Promise<void>;
   isArquivada?: boolean;
+  erroFechamento: number | null;
+  setErroFechamento: (id: number | null) => void;
 }) {
   if (!vaga || !vaga.id_evento) return null;
 
-  const displayDiasEmAberto = vaga.dias_em_aberto > 0 ? vaga.dias_em_aberto : calculateDaysOpen(vaga.data_evento);
+  const displayDiasEmAberto = isArquivada
+    ? (vaga.dias_em_aberto || 0)
+    : (vaga.dias_em_aberto > 0 ? vaga.dias_em_aberto : calculateDaysOpen(vaga.data_evento));
   const isExpanded = expandedId === vaga.id_evento;
   const sla = getSlaStatus(displayDiasEmAberto || 0);
   const SlaIcon = sla.icon;
@@ -1423,6 +1566,18 @@ function VagaCard({
   const dataAbertura = getVal('data_abertura_vaga', '');
   const dataFechamento = getVal('data_fechamento_vaga', '');
 
+  // Para vagas fechadas/pendentes efetivação: dias entre abertura e fechamento
+  const isFechadaOuPendenteEf = abaSelecionada === 'fechadas' || abaSelecionada === 'pendentes_ef';
+  const diasParaFechar: number | null = (() => {
+    if (!isFechadaOuPendenteEf || !dataFechamento) return null;
+    const dataInicio = (vaga as any).data_abertura_vaga || dataAbertura || vaga.data_evento;
+    if (!dataInicio) return null;
+    return Math.max(0, Math.floor(
+      (new Date(dataFechamento + 'T00:00:00').getTime() - new Date(dataInicio + 'T00:00:00').getTime())
+      / (1000 * 60 * 60 * 24)
+    ));
+  })();
+
   // Detectar data de abertura suspeita
   // dataAberturaDisplay unifica o campo direto do objeto (view) com a resposta salva
   const dataAberturaDisplay: string | null = (vaga as any).data_abertura_vaga || dataAbertura || null;
@@ -1435,10 +1590,15 @@ function VagaCard({
         (1000 * 60 * 60 * 24)
       )
     : 0;
-  const dataInconsistente = diffAberturaVsSituacao > 60;
+  const dataInconsistente = !isArquivada && diffAberturaVsSituacao > 60;
   // Suspeito: mais de 365 dias em aberto sem data de abertura (pode indicar erro de ano)
-  const diasSuspeitos = !dataAberturaDisplay && displayDiasEmAberto > 365;
+  const diasSuspeitos = !isArquivada && !dataAberturaDisplay && displayDiasEmAberto > 365;
   const alertaDataSuspeita = dataInconsistente || diasSuspeitos;
+
+  // Para Vagas em Aberto: contar da data de abertura até hoje (não da data da situação)
+  const diasEmAbertoExibir = abaSelecionada === 'respondidas' && dataAberturaDisplay
+    ? calculateDaysOpen(dataAberturaDisplay)
+    : displayDiasEmAberto;
   const vagaPreenchida = getVal('vaga_preenchida', 'NAO'); // Default 'NAO' for Select
   // Check both keys for candidate name just in case
   // Campo de busca usa apenas o que foi digitado agora (currentForm), não carrega valor anterior
@@ -1476,8 +1636,8 @@ function VagaCard({
     }
     if (abaSelecionada === 'arquivadas') {
       return {
-        label: 'Arquivada',
-        color: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+        label: 'Cancelada',
+        color: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
       };
     }
     return {
@@ -1565,7 +1725,7 @@ function VagaCard({
               <Badge className={`text-[10px] h-5 uppercase font-semibold border-none ${getStatusBadge().color}`}>
                 {getStatusBadge().label}
               </Badge>
-              {abaSelecionada === 'respondidas' && (() => {
+              {(() => {
                 const isMovimentacao = (vaga as any)._source === 'MOVIMENTACAO';
                 const tipoMov = (vaga as any).tipo_movimentacao as string | undefined;
                 const MOTIVO_LABEL: Record<string, string> = {
@@ -1592,6 +1752,12 @@ function VagaCard({
                 );
               })()}
               <SlaIcon className={`w-4 h-4 ${sla.color}`} />
+              {respostas[vaga.id_evento]?.nome_analista && (
+                <Badge className="text-[10px] h-5 font-medium border-none bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 flex items-center gap-1">
+                  <UserCheck size={10} />
+                  {respostas[vaga.id_evento]?.nome_analista}
+                </Badge>
+              )}
               {alertaDataSuspeita && (
                 <Badge className="text-[10px] h-5 font-semibold border border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 flex items-center gap-1">
                   <AlertTriangle size={10} />
@@ -1630,7 +1796,7 @@ function VagaCard({
                   {loadingProfile && <Loader2 className="w-3 h-3 animate-spin inline ml-1" />}
                 </span>
                 {mostrarSituacao && vaga.situacao_origem && (
-                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                  <div className={`text-xs ${vaga.situacao_origem === '01-ATIVO' ? 'text-green-600 dark:text-green-400 font-medium' : 'text-slate-500 dark:text-slate-400'}`}>
                     {vaga.situacao_origem}
                   </div>
                 )}
@@ -1655,11 +1821,25 @@ function VagaCard({
                   {dataInconsistente && <AlertTriangle size={10} className="text-yellow-500" />}
                 </span>
               )}
-              <span className={`flex items-center gap-1 ${alertaDataSuspeita ? 'text-yellow-600 dark:text-yellow-400 font-semibold' : ''}`}>
-                <Clock size={12} className={alertaDataSuspeita ? 'text-yellow-500' : ''} />
-                {displayDiasEmAberto} dias
-                {alertaDataSuspeita && <AlertTriangle size={10} className="text-yellow-500" />}
-              </span>
+              {(abaSelecionada === 'pendentes_ef' || abaSelecionada === 'fechadas') && dataFechamento && (
+                <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                  <CheckCircle size={12} />
+                  <span className="text-slate-400">Fechamento:</span>
+                  {formatarData(dataFechamento)}
+                </span>
+              )}
+              {diasParaFechar !== null ? (
+                <span className="flex items-center gap-1 text-slate-500">
+                  <Clock size={12} />
+                  {diasParaFechar} dias para fechar
+                </span>
+              ) : (
+                <span className={`flex items-center gap-1 ${alertaDataSuspeita ? 'text-yellow-600 dark:text-yellow-400 font-semibold' : ''}`}>
+                  <Clock size={12} className={alertaDataSuspeita ? 'text-yellow-500' : ''} />
+                  {diasEmAbertoExibir} dias em aberto
+                  {alertaDataSuspeita && <AlertTriangle size={10} className="text-yellow-500" />}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -1679,11 +1859,11 @@ function VagaCard({
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                   <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Situação</span>
-                  <span className={`font-medium ${vaga.situacao_origem === '99-Demitido' ? 'text-red-600' : ''}`}>{vaga.situacao_origem}</span>
+                  <span className={`font-medium ${vaga.situacao_origem === '99-Demitido' ? 'text-red-600' : vaga.situacao_origem === '01-ATIVO' ? 'text-green-600' : ''}`}>{vaga.situacao_origem}</span>
                 </div>
                 <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                   <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Dias em aberto</span>
-                  <span className={`font-medium ${sla.color}`}>{displayDiasEmAberto} dias</span>
+                  <span className={`font-medium ${sla.color}`}>{diasEmAbertoExibir} dias</span>
                 </div>
                 <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                   <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Carga Horária Semanal</span>
@@ -1804,15 +1984,18 @@ function VagaCard({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label htmlFor={`data-${vaga.id_evento}`} className="text-sm">
-                      Data Abertura
+                      Data Abertura{abriuVaga === true && <span className="text-red-500 ml-1">*</span>}
                     </Label>
                     <Input
                       type="date"
                       id={`data-${vaga.id_evento}`}
-                      className="mt-1"
+                      className={`mt-1 ${abriuVaga === true && !dataAbertura ? 'border-red-400 focus:border-red-500' : ''}`}
                       value={dataAbertura}
                       onChange={(e) => updateFormDataMap(vaga.id_evento, { data_abertura_vaga: e.target.value })}
                     />
+                    {abriuVaga === true && !dataAbertura && (
+                      <p className="text-xs text-red-500 mt-1">Campo obrigatório</p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor={`preench-${vaga.id_evento}`} className="text-sm">
@@ -1839,20 +2022,25 @@ function VagaCard({
                   <div className="space-y-3">
                     <div>
                       <Label htmlFor={`fechamento-${vaga.id_evento}`} className="text-sm">
-                        Data Fechamento
+                        Data Fechamento <span className="text-red-500">*</span>
                       </Label>
                       <Input
                         type="date"
                         id={`fechamento-${vaga.id_evento}`}
                         className={`mt-1 ${
-                          dataFechamento &&
-                          Math.floor((new Date().getTime() - new Date(dataFechamento + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24)) > 30
+                          !dataFechamento
+                            ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
+                            : dataFechamento &&
+                              Math.floor((new Date().getTime() - new Date(dataFechamento + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24)) > 30
                             ? 'border-amber-400 focus:border-amber-500 focus:ring-amber-500'
                             : ''
                         }`}
                         value={dataFechamento}
                         onChange={(e) => updateFormDataMap(vaga.id_evento, { data_fechamento_vaga: e.target.value })}
                       />
+                      {!dataFechamento && (
+                        <p className="text-xs text-red-500 mt-1">Campo obrigatório</p>
+                      )}
                       {dataFechamento && (() => {
                         const diasPassados = Math.floor(
                           (new Date().getTime() - new Date(dataFechamento + 'T00:00:00').getTime()) /
@@ -1918,10 +2106,10 @@ function VagaCard({
                   <button
                     onClick={() => onArquivar(vaga.id_evento, tipoOrigem, !isArquivada)}
                     className={`px-4 py-2 ${isArquivada ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-600 hover:bg-slate-700'} text-white rounded font-medium text-sm transition-colors flex items-center gap-2 shadow-sm`}
-                    title={isArquivada ? "Desarquivar Vaga" : "Arquivar Vaga"}
+                    title={isArquivada ? "Reabrir Vaga" : "Cancelar Vaga"}
                   >
                     {isArquivada ? <ArchiveRestore size={16} /> : <Archive size={16} />}
-                    {isArquivada ? 'Desarquivar' : 'Arquivar'}
+                    {isArquivada ? 'Reabrir' : 'Cancelar'}
                   </button>
                 )}
 
@@ -1944,6 +2132,12 @@ function VagaCard({
                     {respondendo[vaga.id_evento] && <Loader2 className="w-4 h-4 animate-spin" />}
                     {respondendo[vaga.id_evento] ? 'Salvando...' : 'Salvar Resposta'}
                   </button>
+                )}
+
+                {erroFechamento === vaga.id_evento && (
+                  <p className="w-full text-xs text-red-600 font-medium text-center">
+                    Informe a data de fechamento da vaga antes de salvar.
+                  </p>
                 )}
 
                 {abaSelecionada === 'respondidas' && (

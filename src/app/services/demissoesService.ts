@@ -15,7 +15,8 @@ export interface VagaEmAberto {
   escala?: string | null;
   // Identifica registros vindos de vagas_movimentacao
   _source?: 'MOVIMENTACAO';
-  tipo_movimentacao?: 'PROMOCAO' | 'TRANSFERENCIA';
+  tipo_movimentacao?: string;
+  situacao_atual?: string | null;
 }
 
 export interface EventoDemissao {
@@ -48,6 +49,7 @@ export interface RespostaGestor {
   nao_pertence_unidade?: boolean | null;
   data_fechamento_vaga?: string | null;
   arquivado?: boolean | null;
+  nome_analista?: string | null;
 }
 
 export async function carregarDemissoes(
@@ -298,6 +300,32 @@ export async function carregarRespostasLote(
       });
     }
 
+    // Carregar analistas atribuídos às vagas
+    const { data: atribuicoes } = await supabase
+      .from('vagas_analista')
+      .select('id_evento, id_analista')
+      .in('id_evento', ids_eventos)
+      .eq('ativo', true);
+
+    if (atribuicoes && atribuicoes.length > 0) {
+      const idsAnalistas = [...new Set(atribuicoes.map((a: any) => a.id_analista))];
+      const { data: analistas } = await supabase
+        .from('oris_funcionarios')
+        .select('id, nome')
+        .in('id', idsAnalistas);
+
+      const mapaAnalistas: Record<number, string> = {};
+      (analistas || []).forEach((a: any) => {
+        mapaAnalistas[a.id] = a.nome.split(' ')[0]; // apenas o primeiro nome
+      });
+
+      atribuicoes.forEach((a: any) => {
+        if (mapa[a.id_evento] && mapaAnalistas[a.id_analista]) {
+          mapa[a.id_evento].nome_analista = mapaAnalistas[a.id_analista];
+        }
+      });
+    }
+
     return mapa;
   } catch (error) {
     console.error('Erro:', error);
@@ -318,16 +346,19 @@ export async function salvarResposta(
   dados: Partial<RespostaGestor>
 ): Promise<void> {
   try {
+    // Extrair apenas os campos que existem na tabela (excluir campos virtuais como nome_analista)
+    const { nome_analista, id_resposta, ...dadosTabela } = dados as RespostaGestor & { nome_analista?: string | null; id_resposta?: number };
+
     const { error } = await supabase
       .from('respostas_gestor')
       .upsert(
         {
           id_evento,
           tipo_origem,
-          ...dados,
-          data_resposta: new Date().toISOString().split('T')[0], // Apenas a data
+          ...dadosTabela,
+          data_resposta: new Date().toISOString().split('T')[0],
           data_fechamento_vaga: dados.vaga_preenchida === 'SIM'
-            ? (dados.data_fechamento_vaga || new Date().toISOString().split('T')[0])
+            ? (dados.data_fechamento_vaga || null)
             : null,
         },
         { onConflict: 'id_evento, tipo_origem' }
@@ -618,6 +649,17 @@ export async function carregarVagasEmAberto(
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
 
+    // Buscar situacao atual dos funcionários de movimentação
+    const idsFuncMov = (movData || []).map((m: any) => m.id_funcionario).filter(Boolean);
+    const mapaSituacao: Record<number, string> = {};
+    if (idsFuncMov.length > 0) {
+      const { data: situacaoData } = await supabase
+        .from('oris_funcionarios')
+        .select('id, situacao')
+        .in('id', idsFuncMov);
+      (situacaoData || []).forEach((s: any) => { mapaSituacao[s.id] = s.situacao; });
+    }
+
     const vagasMovimentacao: VagaEmAberto[] = (movData || []).map((m: any) => {
       const dataAbertura = new Date(m.data_abertura + 'T00:00:00');
       const diasEmAberto = Math.ceil(
@@ -632,12 +674,13 @@ export async function carregarVagasEmAberto(
         data_abertura_vaga: m.data_abertura,
         dias_em_aberto: diasEmAberto,
         observacao: m.observacao,
-        data_evento: m.data_abertura, // sem evento anterior — data abertura = data da vaga
+        data_evento: m.data_abertura,
         id_funcionario: m.id_funcionario,
         carga_horaria_semanal: m.carga_horaria_semanal,
         escala: m.escala,
         _source: 'MOVIMENTACAO',
         tipo_movimentacao: m.tipo_movimentacao,
+        situacao_atual: mapaSituacao[m.id_funcionario] ?? null,
       };
     });
 
