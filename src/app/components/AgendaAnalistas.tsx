@@ -32,6 +32,8 @@ interface FiltrosSalvos {
   analista?: string;
   status?: string;
   busca?: string;
+  ano?: string;
+  mes?: string;
 }
 
 const carregarFiltros = (): FiltrosSalvos | null => {
@@ -77,10 +79,24 @@ export function AgendaAnalistas() {
   // Filtros salvos
   const filtrosSalvos = useMemo(() => carregarFiltros(), []);
 
+  // Constantes de tempo
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 5 }, (_, i) => String(currentYear - i));
+  const months = [
+    { value: '1', label: 'Janeiro' }, { value: '2', label: 'Fevereiro' },
+    { value: '3', label: 'Março' }, { value: '4', label: 'Abril' },
+    { value: '5', label: 'Maio' }, { value: '6', label: 'Junho' },
+    { value: '7', label: 'Julho' }, { value: '8', label: 'Agosto' },
+    { value: '9', label: 'Setembro' }, { value: '10', label: 'Outubro' },
+    { value: '11', label: 'Novembro' }, { value: '12', label: 'Dezembro' },
+  ];
+
   // Estados
   const [buscaAnalista, setBuscaAnalista] = useState<string>(filtrosSalvos?.analista ?? '');
   const [statusFiltro, setStatusFiltro] = useState<string>(filtrosSalvos?.status ?? 'todos');
   const [busca, setBusca] = useState<string>(filtrosSalvos?.busca ?? '');
+  const [selectedYear, setSelectedYear] = useState<string>(filtrosSalvos?.ano ?? 'TODOS');
+  const [selectedMonth, setSelectedMonth] = useState<string>(filtrosSalvos?.mes ?? 'TODOS');
   const [expandidos, setExpandidos] = useState<Set<number>>(new Set());
   const [removendo, setRemovendo] = useState<string | null>(null);
   const [vagaSelecionada, setVagaSelecionada] = useState<(VagaAtribuida & { nomeAnalista: string; cargoAnalista: string }) | null>(null);
@@ -120,7 +136,22 @@ export function AgendaAnalistas() {
       );
     }
 
-    // Filtro por status das vagas (usando dias_reais)
+    // Filtro por período (ano/mês do data_evento da vaga)
+    if (selectedYear !== 'TODOS' || selectedMonth !== 'TODOS') {
+      result = result.map(a => ({
+        ...a,
+        vagas: a.vagas.filter(v => {
+          if (!v.data_evento) return false;
+          const d = new Date(v.data_evento + 'T00:00:00');
+          const matchAno = selectedYear === 'TODOS' || String(d.getFullYear()) === selectedYear;
+          const matchMes = selectedMonth === 'TODOS' || String(d.getMonth() + 1) === selectedMonth;
+          return matchAno && matchMes;
+        }),
+      }));
+      result = result.filter(a => a.vagas.length > 0);
+    }
+
+    // Filtro por status das vagas (usando dias_reais) — só abertas
     if (statusFiltro !== 'todos') {
       result = result.map(a => ({
         ...a,
@@ -145,23 +176,40 @@ export function AgendaAnalistas() {
       result = result.filter(a => a.vagas.length > 0);
     }
 
-    return result;
-  }, [analistas, buscaAnalista, statusFiltro, busca]);
+    // Recalcular contadores com base nas vagas filtradas
+    return result.map(a => ({
+      ...a,
+      totalVagas: a.vagas.length,
+      vagasEmAberto: a.vagas.filter(v => v.vaga_preenchida !== 'SIM').length,
+      vagasFechadas: a.vagas.filter(v => v.vaga_preenchida === 'SIM').length,
+      vagasCriticas: a.vagas.filter(v => v.vaga_preenchida !== 'SIM' && v.dias_reais >= 45).length,
+    }));
+  }, [analistas, buscaAnalista, statusFiltro, busca, selectedYear, selectedMonth]);
 
   // Atualizar filtros salvos quando mudam
   const handleBuscaAnalistaChange = (valor: string) => {
     setBuscaAnalista(valor);
-    handleSalvarFiltros({ analista: valor, status: statusFiltro, busca });
+    handleSalvarFiltros({ analista: valor, status: statusFiltro, busca, ano: selectedYear, mes: selectedMonth });
   };
 
   const handleStatusFiltroChange = (valor: string) => {
     setStatusFiltro(valor);
-    handleSalvarFiltros({ analista: buscaAnalista, status: valor, busca });
+    handleSalvarFiltros({ analista: buscaAnalista, status: valor, busca, ano: selectedYear, mes: selectedMonth });
   };
 
   const handleBuscaChange = (valor: string) => {
     setBusca(valor);
-    handleSalvarFiltros({ analista: buscaAnalista, status: statusFiltro, busca: valor });
+    handleSalvarFiltros({ analista: buscaAnalista, status: statusFiltro, busca: valor, ano: selectedYear, mes: selectedMonth });
+  };
+
+  const handleYearChange = (valor: string) => {
+    setSelectedYear(valor);
+    handleSalvarFiltros({ analista: buscaAnalista, status: statusFiltro, busca, ano: valor, mes: selectedMonth });
+  };
+
+  const handleMonthChange = (valor: string) => {
+    setSelectedMonth(valor);
+    handleSalvarFiltros({ analista: buscaAnalista, status: statusFiltro, busca, ano: selectedYear, mes: valor });
   };
 
   if (error) {
@@ -258,7 +306,7 @@ export function AgendaAnalistas() {
 
       {/* Filtros */}
       <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-        <CardContent className="p-6">
+        <CardContent className="p-6 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Busca por Analista */}
             <div className="flex-1">
@@ -306,6 +354,58 @@ export function AgendaAnalistas() {
                 />
               </div>
             </div>
+          </div>
+
+          {/* Filtros de Período */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-slate-100 dark:border-slate-700">
+            {/* Ano */}
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Ano
+              </label>
+              <Select value={selectedYear} onValueChange={handleYearChange}>
+                <SelectTrigger className="bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TODOS">Todos os anos</SelectItem>
+                  {years.map(y => (
+                    <SelectItem key={y} value={y}>{y}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Mês */}
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Mês
+              </label>
+              <Select value={selectedMonth} onValueChange={handleMonthChange}>
+                <SelectTrigger className="bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TODOS">Todos os meses</SelectItem>
+                  {months.map(m => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Limpar filtros de período */}
+            {(selectedYear !== 'TODOS' || selectedMonth !== 'TODOS') && (
+              <div className="flex items-end">
+                <button
+                  onClick={() => { handleYearChange('TODOS'); handleMonthChange('TODOS'); }}
+                  className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Limpar período
+                </button>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -357,10 +457,17 @@ export function AgendaAnalistas() {
                       {analista.cargo}
                     </p>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <Badge variant="outline" className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700">
-                      {analista.totalVagas} vaga{analista.totalVagas !== 1 ? 's' : ''}
-                    </Badge>
+                  <div className="flex items-center gap-2">
+                    {analista.vagasEmAberto > 0 && (
+                      <Badge variant="outline" className="bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-700">
+                        {analista.vagasEmAberto} em aberto
+                      </Badge>
+                    )}
+                    {analista.vagasFechadas > 0 && (
+                      <Badge variant="outline" className="bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-700">
+                        {analista.vagasFechadas} fechada{analista.vagasFechadas !== 1 ? 's' : ''}
+                      </Badge>
+                    )}
                     {analista.vagasCriticas > 0 && (
                       <Badge className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-0">
                         {analista.vagasCriticas} crítica{analista.vagasCriticas !== 1 ? 's' : ''}
@@ -372,17 +479,19 @@ export function AgendaAnalistas() {
 
               {/* Conteúdo Expansível */}
               {expandidos.has(analista.id) && (
-                <CardContent className="p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/50">
+                <CardContent className="p-4 space-y-4 bg-slate-50/50 dark:bg-slate-900/50">
                   {analista.vagas.length === 0 ? (
                     <p className="text-center text-slate-500 dark:text-slate-400 py-4">
                       Nenhuma vaga corresponde aos filtros
                     </p>
-                  ) : (
-                    analista.vagas.map((vaga) => {
+                  ) : (() => {
+                    const vagasAbertas = analista.vagas.filter(v => v.vaga_preenchida !== 'SIM');
+                    const vagasFechadas = analista.vagas.filter(v => v.vaga_preenchida === 'SIM');
+
+                    const renderVaga = (vaga: VagaAtribuida) => {
                       const statusBadge = getStatusBadge(vaga.dias_reais);
                       const key = `${analista.id}-${vaga.id_evento}`;
                       const isRemoving = removendo === key;
-
                       return (
                         <div
                           key={vaga.id_evento}
@@ -403,15 +512,16 @@ export function AgendaAnalistas() {
                                     <Badge variant="outline" className="text-xs bg-slate-50 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600">
                                       📍 {vaga.lotacao}
                                     </Badge>
-                                    <Badge
-                                      variant="outline"
-                                      className={`text-xs ${statusBadge.bg} ${statusBadge.text} border-0`}
-                                    >
-                                      {statusBadge.label} • {vaga.dias_reais}d
-                                    </Badge>
-                                    {vaga.vaga_preenchida === 'SIM' && (
-                                      <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700">
-                                        ✓ Preenchida
+                                    {vaga.vaga_preenchida === 'SIM' ? (
+                                      <Badge variant="outline" className="text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-0">
+                                        ✓ Fechada em {vaga.dias_reais}d
+                                      </Badge>
+                                    ) : (
+                                      <Badge
+                                        variant="outline"
+                                        className={`text-xs ${statusBadge.bg} ${statusBadge.text} border-0`}
+                                      >
+                                        {statusBadge.label} • {vaga.dias_reais}d
                                       </Badge>
                                     )}
                                   </div>
@@ -422,7 +532,7 @@ export function AgendaAnalistas() {
                               </div>
                             </div>
                             <button
-                              onClick={() => handleRemoverVaga(vaga.id_evento, analista.id)}
+                              onClick={(e) => { e.stopPropagation(); handleRemoverVaga(vaga.id_evento, analista.id); }}
                               disabled={isRemoving}
                               className="p-2 text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50"
                               title="Remover atribuição"
@@ -436,8 +546,31 @@ export function AgendaAnalistas() {
                           </div>
                         </div>
                       );
-                    })
-                  )}
+                    };
+
+                    return (
+                      <>
+                        {vagasAbertas.length > 0 && (
+                          <div className="space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                              Em Aberto ({vagasAbertas.length})
+                            </p>
+                            {vagasAbertas.map(renderVaga)}
+                          </div>
+                        )}
+                        {vagasFechadas.length > 0 && (
+                          <div className="space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-green-600 dark:text-green-400 flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+                              Fechadas ({vagasFechadas.length})
+                            </p>
+                            {vagasFechadas.map(renderVaga)}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </CardContent>
               )}
             </Card>
@@ -450,6 +583,7 @@ export function AgendaAnalistas() {
         <VagaDetalhesModal
           vaga={vagaSelecionada}
           onClose={() => setVagaSelecionada(null)}
+          onVagaFechada={() => { setVagaSelecionada(null); carregarDados(); }}
         />
       )}
     </div>

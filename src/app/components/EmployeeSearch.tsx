@@ -40,7 +40,7 @@ export function EmployeeSearch() {
         // Buscar por nome ou CPF
         const { data, error: queryError } = await supabase
           .from('oris_funcionarios')
-          .select('nome, cpf, cargo, local_de_trabalho, centro_custo, situacao, dt_admissao, nome_fantasia, tipo_funcionario, dt_inicio_situacao, dt_rescisao, dt_nascimento, sexo')
+          .select('id, nome, cpf, cargo, local_de_trabalho, centro_custo, situacao, dt_admissao, nome_fantasia, tipo_funcionario, dt_inicio_situacao, dt_rescisao, dt_nascimento, sexo')
           .or(`nome.ilike.%${searchLower}%,cpf.ilike.%${searchLower}%`)
           .limit(50);
 
@@ -150,17 +150,17 @@ export function EmployeeSearch() {
                     >
                       <td className="px-6 py-4">
                         <Badge
-                          className={`text-xs font-semibold ${
-                            func.situacao?.includes('ATIVO')
+                          className={`text-xs font-semibold ${func.situacao?.includes('ATIVO')
                               ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
                               : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
-                          }`}
+                            }`}
                         >
                           {func.situacao || 'Desconhecida'}
                         </Badge>
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-slate-900 dark:text-slate-100 font-medium text-blue-600 dark:text-blue-400">
+                          <span className="text-xs text-slate-400 dark:text-slate-500 mr-1.5">#{func.id}</span>
                           {func.nome || '-'}
                         </span>
                       </td>

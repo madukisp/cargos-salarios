@@ -1585,10 +1585,10 @@ function VagaCard({
   // (até 60 dias é tolerável — aviso prévio, adiantamento de vaga, etc.)
   const diffAberturaVsSituacao = dataAberturaDisplay && vaga.data_evento
     ? Math.floor(
-        (new Date(vaga.data_evento + 'T00:00:00').getTime() -
-          new Date(dataAberturaDisplay + 'T00:00:00').getTime()) /
-        (1000 * 60 * 60 * 24)
-      )
+      (new Date(vaga.data_evento + 'T00:00:00').getTime() -
+        new Date(dataAberturaDisplay + 'T00:00:00').getTime()) /
+      (1000 * 60 * 60 * 24)
+    )
     : 0;
   const dataInconsistente = !isArquivada && diffAberturaVsSituacao > 60;
   // Suspeito: mais de 365 dias em aberto sem data de abertura (pode indicar erro de ano)
@@ -2027,14 +2027,13 @@ function VagaCard({
                       <Input
                         type="date"
                         id={`fechamento-${vaga.id_evento}`}
-                        className={`mt-1 ${
-                          !dataFechamento
-                            ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
-                            : dataFechamento &&
-                              Math.floor((new Date().getTime() - new Date(dataFechamento + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24)) > 30
+                        className={`mt-1 ${!dataFechamento
+                          ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
+                          : dataFechamento &&
+                            Math.floor((new Date().getTime() - new Date(dataFechamento + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24)) > 30
                             ? 'border-amber-400 focus:border-amber-500 focus:ring-amber-500'
                             : ''
-                        }`}
+                          }`}
                         value={dataFechamento}
                         onChange={(e) => updateFormDataMap(vaga.id_evento, { data_fechamento_vaga: e.target.value })}
                       />

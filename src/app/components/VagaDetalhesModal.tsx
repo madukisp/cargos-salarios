@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
-import { X, Loader2, AlertCircle, Search } from 'lucide-react';
+import ReactConfetti from 'react-confetti';
+import { X, Loader2, AlertCircle, Search, CheckCircle, ChevronsUpDown, Check } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { formatarData } from '@/lib/column-formatters';
 import { VagaAtribuida } from '@/app/services/agendaAnalistasService';
 import { Badge } from './ui/badge';
+import { buscarSugestoesSubstitutos } from '@/app/services/demissoesService';
 
 interface VagaDetalhesModalProps {
   vaga: VagaAtribuida & { nomeAnalista: string; cargoAnalista: string };
   onClose: () => void;
+  onVagaFechada?: () => void;
 }
 
 interface DetalhesCompletos {
@@ -22,19 +25,181 @@ interface SugestaoFuncionario {
   id: number;
   nome: string;
   cargo: string;
+  centro_custo?: string;
+  local_de_trabalho?: string;
+  nome_fantasia?: string;
+  cnpj?: string;
+  cnpj_empresa?: string;
+  dt_admissao?: string;
+}
+
+interface BuscaSubstitutoFormProps {
+  searchSubstituto: string;
+  setSearchSubstituto: (v: string) => void;
+  sugestoesSubstituto: SugestaoFuncionario[];
+  setSugestoesSubstituto: (v: SugestaoFuncionario[]) => void;
+  substitutoSelecionado: SugestaoFuncionario | null;
+  setSubstitutoSelecionado: (v: SugestaoFuncionario | null) => void;
+  cargoAlvo: string;
+  lotacaoAlvo: string;
+  cnpjAlvo: string;
+}
+
+function BuscaSubstitutoForm({
+  searchSubstituto,
+  setSearchSubstituto,
+  sugestoesSubstituto,
+  setSugestoesSubstituto,
+  substitutoSelecionado,
+  setSubstitutoSelecionado,
+  cargoAlvo,
+  lotacaoAlvo,
+  cnpjAlvo,
+}: BuscaSubstitutoFormProps) {
+  const removerQualificadores = (cargo: string) =>
+    cargo.toLowerCase().trim()
+      .replace(/\s+(lider|substituto|interino|coordenador|gerente|supervisor|chefe|assistente|auxiliar|tecnico|aux\.|técnico)\b/gi, '')
+      .trim();
+
+  const getScore = (item: SugestaoFuncionario) => {
+    let score = 0;
+    const cargoAlvoClean = removerQualificadores(cargoAlvo || '');
+    const itemCargoClean = removerQualificadores(item.cargo || '');
+    const cargoMatch = cargoAlvoClean && itemCargoClean && cargoAlvoClean === itemCargoClean;
+    const lotacaoLower = lotacaoAlvo?.toLowerCase().trim() || '';
+    const centroLower = item.centro_custo?.toLowerCase().trim() || '';
+    const localLower = item.local_de_trabalho?.toLowerCase().trim() || '';
+    const lotacaoMatch = lotacaoLower && (centroLower === lotacaoLower || localLower === lotacaoLower);
+    const cnpjAlvoClean = cnpjAlvo?.replace(/\D/g, '') || '';
+    const itemCnpjClean = ((item.cnpj_empresa || item.cnpj) || '').replace(/\D/g, '');
+    const contratoMatch = !!(cnpjAlvoClean && itemCnpjClean && cnpjAlvoClean === itemCnpjClean);
+    if (cargoMatch) {
+      if (lotacaoMatch && contratoMatch) score = 10000;
+      else if (lotacaoMatch) score = 8000;
+      else if (contratoMatch) score = 5000;
+      else score = 1000;
+    } else {
+      if (contratoMatch) score += 100;
+      if (lotacaoMatch) score += 50;
+    }
+    return score;
+  };
+
+  const sortedSugestoes = [...sugestoesSubstituto]
+    .sort((a, b) => getScore(b) - getScore(a))
+    .slice(0, 50);
+
+  return (
+    <div className="mb-4 relative">
+      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+        Buscar Substituto <span className="text-slate-400 text-xs font-normal">(opcional)</span>
+      </label>
+
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+        <input
+          type="text"
+          placeholder="Nome do novo funcionário..."
+          value={searchSubstituto}
+          onChange={(e) => setSearchSubstituto(e.target.value)}
+          className="w-full pl-10 pr-10 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 pointer-events-none">
+          <ChevronsUpDown className="w-4 h-4" />
+        </div>
+      </div>
+
+      {sortedSugestoes.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          <div className="py-1">
+            {sortedSugestoes.map((s) => {
+              const cargoAlvoClean = removerQualificadores(cargoAlvo || '');
+              const itemCargoClean = removerQualificadores(s.cargo || '');
+              const cargoMatch = cargoAlvoClean && itemCargoClean && cargoAlvoClean === itemCargoClean;
+              const lotacaoLower = lotacaoAlvo?.toLowerCase().trim() || '';
+              const centroLower = s.centro_custo?.toLowerCase().trim() || '';
+              const localLower = s.local_de_trabalho?.toLowerCase().trim() || '';
+              const lotacaoMatch = lotacaoLower && (centroLower === lotacaoLower || localLower === lotacaoLower);
+              const cnpjAlvoClean = cnpjAlvo?.replace(/\D/g, '') || '';
+              const itemCnpjClean = ((s.cnpj_empresa || s.cnpj) || '').replace(/\D/g, '');
+              const contratoMatch = !!(cnpjAlvoClean && itemCnpjClean && cnpjAlvoClean === itemCnpjClean);
+              const isRecommended = cargoMatch && (lotacaoMatch || contratoMatch);
+              return (
+                <div
+                  key={s.id}
+                  className={`px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer flex flex-col gap-0.5 ${isRecommended ? 'bg-slate-50 dark:bg-slate-900/50' : ''}`}
+                  onClick={() => {
+                    setSubstitutoSelecionado(s);
+                    setSugestoesSubstituto([]);
+                    setSearchSubstituto('');
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{s.nome}</span>
+                    {isRecommended && (
+                      <Badge variant="outline" className="text-[10px] h-4 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-700 flex gap-1 items-center">
+                        <Check className="h-2 w-2" /> Recomendado
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-xs text-slate-500 flex flex-wrap gap-x-2 items-center">
+                    <span className={cargoMatch ? 'font-semibold text-slate-700 dark:text-slate-300' : ''}>{s.cargo}</span>
+                    <span className="text-slate-300">•</span>
+                    <span className={lotacaoMatch ? 'font-semibold text-slate-700 dark:text-slate-300' : ''}>
+                      {s.local_de_trabalho || s.centro_custo || 'Sem lotação'}
+                    </span>
+                    {s.nome_fantasia && (
+                      <>
+                        <span className="text-slate-300">•</span>
+                        <span className={`uppercase text-[10px] px-1.5 rounded ${contratoMatch ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-semibold' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
+                          {s.nome_fantasia}
+                        </span>
+                      </>
+                    )}
+                    {s.dt_admissao && (
+                      <>
+                        <span className="text-slate-300">•</span>
+                        <span className="text-slate-500">Admissão: {formatarData(s.dt_admissao)}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {substitutoSelecionado && (
+        <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg flex items-start justify-between">
+          <div>
+            <p className="text-xs text-green-600 dark:text-green-400 font-medium mb-0.5">✓ Selecionado</p>
+            <p className="font-semibold text-slate-900 dark:text-slate-100">{substitutoSelecionado.nome}</p>
+            <p className="text-xs text-slate-600 dark:text-slate-400">{substitutoSelecionado.cargo}</p>
+          </div>
+          <button
+            onClick={() => setSubstitutoSelecionado(null)}
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function getStatusBadge(diasEmAberto: number) {
   if (diasEmAberto >= 45) {
-    return { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-400', label: '🔴 Crítico', cor: 'vermelho' };
+    return { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-400', label: '🔴 Crítico' };
   } else if (diasEmAberto >= 15) {
-    return { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-700 dark:text-amber-400', label: '🟡 Atenção', cor: 'âmbar' };
+    return { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-700 dark:text-amber-400', label: '🟡 Atenção' };
   } else {
-    return { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-400', label: '🟢 Normal', cor: 'verde' };
+    return { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-400', label: '🟢 Normal' };
   }
 }
 
-export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
+export function VagaDetalhesModal({ vaga, onClose, onVagaFechada }: VagaDetalhesModalProps) {
   const [detalhes, setDetalhes] = useState<DetalhesCompletos>({
     evento: null,
     resposta: null,
@@ -42,7 +207,22 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
     error: null,
     loading: true,
   });
+
+  // Formulário: registrar substituto (quando já fechada mas sem dados)
   const [mostrarFormularioSubstituto, setMostrarFormularioSubstituto] = useState(false);
+
+  // Confetti
+  const [showConfetti, setShowConfetti] = useState(false);
+
+  // Formulário: fechar vaga
+  const [mostrarFormularioFechamento, setMostrarFormularioFechamento] = useState(false);
+  const [dataAbertura, setDataAbertura] = useState('');
+  const [dataFechamento, setDataFechamento] = useState('');
+  const [erroDataAbertura, setErroDataAbertura] = useState(false);
+  const [erroDataFechamento, setErroDataFechamento] = useState(false);
+  const [salvandoFechamento, setSalvandoFechamento] = useState(false);
+
+  // Busca de substituto (compartilhada entre os dois formulários)
   const [searchSubstituto, setSearchSubstituto] = useState('');
   const [sugestoesSubstituto, setSugestoesSubstituto] = useState<SugestaoFuncionario[]>([]);
   const [substitutoSelecionado, setSubstitutoSelecionado] = useState<SugestaoFuncionario | null>(null);
@@ -51,18 +231,14 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
   useEffect(() => {
     const carregarDetalhes = async () => {
       try {
-        // Buscar evento completo
         const { data: eventoData, error: eventoError } = await supabase
           .from('eventos_gestao_vagas_public')
           .select('*')
           .eq('id_evento', vaga.id_evento)
           .single();
 
-        if (eventoError) {
-          console.warn('Erro ao buscar evento:', eventoError);
-        }
+        if (eventoError) console.warn('Erro ao buscar evento:', eventoError);
 
-        // Buscar resposta do gestor
         const { data: respostaData, error: respostaError } = await supabase
           .from('respostas_gestor')
           .select('*')
@@ -73,63 +249,22 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
           console.warn('Erro ao buscar resposta:', respostaError);
         }
 
-        console.log('Resposta do gestor para evento', vaga.id_evento, ':', respostaData);
-
-        // Buscar dados do substituto se houver
         let substitutoData = null;
-        console.log('[DEBUG] Resposta completa para ID', vaga.id_evento, ':', respostaData);
+        if (respostaData?.id_substituto) {
+          const { data: subData } = await supabase
+            .from('oris_funcionarios')
+            .select('id, nome, cargo, dt_admissao, centro_custo')
+            .eq('id', respostaData.id_substituto);
+          if (subData && subData.length > 0) substitutoData = subData[0];
+        }
 
-        if (respostaData) {
-          // Tentar diferentes estratégias para encontrar o substituto
-
-          // Estratégia 1: Buscar por id_substituto
-          if (respostaData?.id_substituto) {
-            console.log('Estratégia 1: Buscando substituto com ID:', respostaData.id_substituto);
-            const { data: subData, error: subError } = await supabase
-              .from('oris_funcionarios')
-              .select('id, nome, cargo, dt_admissao, centro_custo')
-              .eq('id', respostaData.id_substituto);
-
-            if (subError) {
-              console.error('Erro ao buscar por ID:', subError);
-            } else if (subData && subData.length > 0) {
-              console.log('Substituto encontrado por ID:', subData[0]);
-              substitutoData = subData[0];
-            } else {
-              console.warn('Nenhum substituto encontrado com ID:', respostaData.id_substituto);
-            }
-          }
-
-          // Estratégia 2: Buscar por nome_candidato se não encontrou por ID
-          if (!substitutoData && respostaData?.nome_candidato) {
-            console.log('Estratégia 2: Buscando substituto por nome:', respostaData.nome_candidato);
-            const { data: subData, error: subError } = await supabase
-              .from('oris_funcionarios')
-              .select('id, nome, cargo, dt_admissao, centro_custo')
-              .ilike('nome', `%${respostaData.nome_candidato}%`)
-              .limit(1);
-
-            if (subError) {
-              console.error('Erro ao buscar por nome:', subError);
-            } else if (subData && subData.length > 0) {
-              console.log('Substituto encontrado por nome:', subData[0]);
-              substitutoData = subData[0];
-            } else {
-              console.warn('Nenhum substituto encontrado com nome:', respostaData.nome_candidato);
-            }
-          }
-
-          // Debug: mostrar todos os campos da resposta
-          if (!substitutoData) {
-            console.log('[DEBUG] Campos em respostaData para evento', vaga.id_evento, ':', Object.keys(respostaData));
-            console.log('[DEBUG] Valores completos:', {
-              id_substituto: respostaData.id_substituto,
-              nome_candidato: respostaData.nome_candidato,
-              vaga_preenchida: respostaData.vaga_preenchida,
-            });
-          } else {
-            console.log('[SUCCESS] Substituto carregado para evento', vaga.id_evento, ':', substitutoData.nome);
-          }
+        if (!substitutoData && respostaData?.nome_candidato) {
+          const { data: subData } = await supabase
+            .from('oris_funcionarios')
+            .select('id, nome, cargo, dt_admissao, centro_custo')
+            .ilike('nome', `%${respostaData.nome_candidato}%`)
+            .limit(1);
+          if (subData && subData.length > 0) substitutoData = subData[0];
         }
 
         setDetalhes({
@@ -140,7 +275,6 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
           loading: false,
         });
       } catch (err) {
-        console.error('Erro ao carregar detalhes:', err);
         setDetalhes(prev => ({
           ...prev,
           error: err instanceof Error ? err.message : 'Erro desconhecido',
@@ -152,32 +286,23 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
     carregarDetalhes();
   }, [vaga.id_evento]);
 
-  // Buscar sugestões de funcionários para substituto
   useEffect(() => {
     const buscarSugestoes = async () => {
       if (searchSubstituto.trim().length < 2) {
         setSugestoesSubstituto([]);
         return;
       }
-
       try {
-        const { data } = await supabase
-          .from('oris_funcionarios')
-          .select('id, nome, cargo')
-          .ilike('nome', `%${searchSubstituto}%`)
-          .limit(10);
-
-        setSugestoesSubstituto(data || []);
+        const results = await buscarSugestoesSubstitutos(searchSubstituto.trim(), undefined);
+        setSugestoesSubstituto(results);
       } catch (err) {
         console.error('Erro ao buscar sugestões:', err);
       }
     };
-
     const timer = setTimeout(buscarSugestoes, 300);
     return () => clearTimeout(timer);
   }, [searchSubstituto]);
 
-  // Calcular dias reais: se a vaga foi fechada, contar até a data de fechamento; senão, usar dias_em_aberto
   const calcularDiasReais = (): number => {
     if (detalhes.resposta?.data_fechamento_vaga && detalhes.resposta?.data_abertura_vaga) {
       const abertura = new Date(detalhes.resposta.data_abertura_vaga);
@@ -188,14 +313,99 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
   };
 
   const diasReais = calcularDiasReais();
+  const vagaFechada = detalhes.resposta?.vaga_preenchida === 'SIM';
   const statusBadge = getStatusBadge(diasReais);
+
+  const resetFormularioFechamento = () => {
+    setMostrarFormularioFechamento(false);
+    setDataAbertura('');
+    setDataFechamento('');
+    setErroDataAbertura(false);
+    setErroDataFechamento(false);
+    setSearchSubstituto('');
+    setSugestoesSubstituto([]);
+    setSubstitutoSelecionado(null);
+  };
+
+  const abrirFormularioFechamento = () => {
+    // Pré-preencher data de abertura se já existe na resposta
+    if (detalhes.resposta?.data_abertura_vaga) {
+      setDataAbertura(detalhes.resposta.data_abertura_vaga);
+    }
+    setMostrarFormularioFechamento(true);
+  };
+
+  const fecharVaga = async () => {
+    let hasError = false;
+    if (!dataAbertura) { setErroDataAbertura(true); hasError = true; }
+    if (!dataFechamento) { setErroDataFechamento(true); hasError = true; }
+    if (hasError) return;
+
+    setErroDataAbertura(false);
+    setErroDataFechamento(false);
+    setSalvandoFechamento(true);
+    try {
+      const atualizacao: Record<string, any> = {
+        vaga_preenchida: 'SIM',
+        abriu_vaga: true,
+        data_abertura_vaga: dataAbertura,
+        data_fechamento_vaga: dataFechamento,
+      };
+      if (substitutoSelecionado) {
+        atualizacao.id_substituto = substitutoSelecionado.id;
+        atualizacao.nome_candidato = substitutoSelecionado.nome;
+      }
+
+      const { error } = await supabase
+        .from('respostas_gestor')
+        .update(atualizacao)
+        .eq('id_evento', vaga.id_evento);
+
+      if (error) throw error;
+
+      // Buscar dados completos do substituto se selecionado
+      let funcionarioAtual = detalhes.funcionarioAtual;
+      if (substitutoSelecionado) {
+        const { data: subData } = await supabase
+          .from('oris_funcionarios')
+          .select('id, nome, cargo, dt_admissao, centro_custo')
+          .eq('id', substitutoSelecionado.id)
+          .single();
+        if (subData) funcionarioAtual = subData;
+      }
+
+      setDetalhes(prev => ({
+        ...prev,
+        funcionarioAtual,
+        resposta: {
+          ...prev.resposta,
+          vaga_preenchida: 'SIM',
+          abriu_vaga: true,
+          data_abertura_vaga: dataAbertura,
+          data_fechamento_vaga: dataFechamento,
+          ...(substitutoSelecionado ? {
+            id_substituto: substitutoSelecionado.id,
+            nome_candidato: substitutoSelecionado.nome,
+          } : {}),
+        },
+      }));
+
+      resetFormularioFechamento();
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 5000);
+      onVagaFechada?.();
+    } catch (err) {
+      console.error('Erro ao fechar vaga:', err);
+      alert('Erro ao fechar vaga: ' + (err instanceof Error ? err.message : 'Erro desconhecido'));
+    } finally {
+      setSalvandoFechamento(false);
+    }
+  };
 
   const salvarSubstituto = async () => {
     if (!substitutoSelecionado) return;
-
     setSalvandoSubstituto(true);
     try {
-      // Buscar dados completos do substituto
       const { data: funcionario } = await supabase
         .from('oris_funcionarios')
         .select('id, nome, cargo, dt_admissao, centro_custo')
@@ -204,7 +414,6 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
 
       if (!funcionario) throw new Error('Funcionário não encontrado');
 
-      // Atualizar a resposta com o substituto
       const { error } = await supabase
         .from('respostas_gestor')
         .update({
@@ -216,7 +425,6 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
 
       if (error) throw error;
 
-      // Atualizar o estado local
       setDetalhes(prev => ({
         ...prev,
         funcionarioAtual: funcionario,
@@ -231,6 +439,7 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
       setMostrarFormularioSubstituto(false);
       setSearchSubstituto('');
       setSubstitutoSelecionado(null);
+      onVagaFechada?.();
     } catch (err) {
       console.error('Erro ao salvar substituto:', err);
       alert('Erro ao salvar substituto: ' + (err instanceof Error ? err.message : 'Erro desconhecido'));
@@ -240,6 +449,17 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
   };
 
   return (
+    <>
+    {showConfetti && (
+      <ReactConfetti
+        recycle={false}
+        numberOfPieces={400}
+        gravity={0.25}
+        style={{ position: 'fixed', top: 0, left: 0, zIndex: 9999, pointerEvents: 'none' }}
+        width={window.innerWidth}
+        height={window.innerHeight}
+      />
+    )}
     <div className="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
@@ -249,7 +469,7 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
               {vaga.nomeAnalista}
             </h2>
             <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-              ID do Evento: {vaga.id_evento}
+              {vaga.cargoAnalista}
             </p>
           </div>
           <button
@@ -324,17 +544,19 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
                       {detalhes.funcionarioAtual.dt_admissao && (
                         <div>
                           <p className="text-xs text-green-600 dark:text-green-500 font-medium">Data de Admissão</p>
-                          <p className="font-medium text-slate-900 dark:text-slate-100 break-all">{formatarData(detalhes.funcionarioAtual.dt_admissao)}</p>
+                          <p className="font-medium text-slate-900 dark:text-slate-100">{formatarData(detalhes.funcionarioAtual.dt_admissao)}</p>
                         </div>
                       )}
                     </div>
                   </div>
-                ) : detalhes.resposta?.vaga_preenchida === 'SIM' ? (
+                ) : vagaFechada ? (
                   <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg">
                     <h3 className="text-sm font-semibold text-amber-700 dark:text-amber-400 uppercase mb-3">
                       ⚠️ Preenchida Sem Registro
                     </h3>
-                    <p className="text-sm text-amber-800 dark:text-amber-300 mb-3">A vaga foi marcada como preenchida, mas os dados do substituto não foram registrados no sistema.</p>
+                    <p className="text-sm text-amber-800 dark:text-amber-300 mb-3">
+                      Vaga marcada como preenchida, mas substituto não registrado.
+                    </p>
                     <button
                       onClick={() => setMostrarFormularioSubstituto(true)}
                       className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm rounded transition-colors"
@@ -343,22 +565,137 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
                     </button>
                   </div>
                 ) : (
-                  <div className="p-4 bg-slate-100 dark:bg-slate-700/50 border border-slate-300 dark:border-slate-600 rounded-lg">
-                    <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-400 uppercase mb-3">
-                      ℹ️ Substituto
-                    </h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400">Nenhum substituto atribuído ou vaga não preenchida</p>
+                  <div className="p-4 bg-slate-100 dark:bg-slate-700/50 border border-slate-300 dark:border-slate-600 rounded-lg flex flex-col justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-400 uppercase mb-1">
+                        ℹ️ Substituto
+                      </h3>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">Nenhum substituto registrado</p>
+                    </div>
                   </div>
                 )}
               </div>
+
+              {/* Botão Fechar Vaga — só para vagas abertas */}
+              {!vagaFechada && (
+                <div className="p-4 border-2 border-dashed border-green-300 dark:border-green-700 rounded-lg bg-green-50/50 dark:bg-green-900/10">
+                  {!mostrarFormularioFechamento ? (
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-green-800 dark:text-green-300">Fechar esta vaga</p>
+                        <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">Registre o fechamento com data e substituto (opcional)</p>
+                      </div>
+                      <button
+                        onClick={abrirFormularioFechamento}
+                        className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        Fechar Vaga
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-green-800 dark:text-green-300">
+                          Fechar Vaga
+                        </h3>
+                        <button
+                          onClick={resetFormularioFechamento}
+                          className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* Datas — grid lado a lado */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Data de Abertura <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="date"
+                            value={dataAbertura}
+                            onChange={(e) => { setDataAbertura(e.target.value); setErroDataAbertura(false); }}
+                            className={`w-full px-3 py-2 border rounded-lg dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-green-500 ${
+                              erroDataAbertura
+                                ? 'border-red-400 focus:ring-red-500'
+                                : 'border-slate-300 dark:border-slate-600'
+                            }`}
+                          />
+                          {erroDataAbertura && (
+                            <p className="text-xs text-red-500 mt-1">Campo obrigatório.</p>
+                          )}
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Data de Fechamento <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="date"
+                            value={dataFechamento}
+                            onChange={(e) => { setDataFechamento(e.target.value); setErroDataFechamento(false); }}
+                            className={`w-full px-3 py-2 border rounded-lg dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-green-500 ${
+                              erroDataFechamento
+                                ? 'border-red-400 focus:ring-red-500'
+                                : 'border-slate-300 dark:border-slate-600'
+                            }`}
+                          />
+                          {erroDataFechamento && (
+                            <p className="text-xs text-red-500 mt-1">Campo obrigatório.</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <BuscaSubstitutoForm
+                        searchSubstituto={searchSubstituto}
+                        setSearchSubstituto={setSearchSubstituto}
+                        sugestoesSubstituto={sugestoesSubstituto}
+                        setSugestoesSubstituto={setSugestoesSubstituto}
+                        substitutoSelecionado={substitutoSelecionado}
+                        setSubstitutoSelecionado={setSubstitutoSelecionado}
+                        cargoAlvo={vaga.cargo_vaga}
+                        lotacaoAlvo={vaga.lotacao}
+                        cnpjAlvo={vaga.cnpj}
+                      />
+
+                      <div className="flex gap-3 pt-1">
+                        <button
+                          onClick={resetFormularioFechamento}
+                          className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-sm"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={fecharVaga}
+                          disabled={salvandoFechamento}
+                          className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-lg transition-colors flex items-center justify-center gap-2 text-sm font-medium"
+                        >
+                          {salvandoFechamento ? (
+                            <><Loader2 className="w-4 h-4 animate-spin" /> Salvando...</>
+                          ) : (
+                            <><CheckCircle className="w-4 h-4" /> Confirmar Fechamento</>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Status e Timing */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
                   <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mb-2">Status</p>
-                  <Badge className={`${statusBadge.bg} ${statusBadge.text} border-0`}>
-                    {statusBadge.label}
-                  </Badge>
+                  {vagaFechada ? (
+                    <Badge className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-0">
+                      ✓ Fechada
+                    </Badge>
+                  ) : (
+                    <Badge className={`${statusBadge.bg} ${statusBadge.text} border-0`}>
+                      {statusBadge.label}
+                    </Badge>
+                  )}
                   <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">{diasReais} dias</p>
                 </div>
                 <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
@@ -367,8 +704,8 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
                 </div>
               </div>
 
-              {/* Timeline de Abertura e Fechamento */}
-              {detalhes.resposta && (
+              {/* Timeline */}
+              {detalhes.resposta && (detalhes.resposta.data_abertura_vaga || detalhes.resposta.data_fechamento_vaga) && (
                 <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg space-y-3">
                   <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100">📅 Timeline da Vaga</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -392,8 +729,7 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
                             (new Date(detalhes.resposta.data_fechamento_vaga).getTime() -
                               new Date(detalhes.resposta.data_abertura_vaga).getTime()) /
                             (1000 * 60 * 60 * 24)
-                          )}{' '}
-                          dias
+                          )}{' '}dias
                         </p>
                       </div>
                     )}
@@ -401,7 +737,7 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
                 </div>
               )}
 
-              {/* Informações de Lotação e Contrato */}
+              {/* Lotação e Contrato */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
                 <div>
                   <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mb-1">Lotação</p>
@@ -418,77 +754,12 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
                 <p className="text-xs text-blue-700 dark:text-blue-400 font-medium mb-1">Data de Atribuição ao Analista</p>
                 <p className="text-lg font-semibold text-blue-900 dark:text-blue-100">{formatarData(vaga.data_atribuicao)}</p>
               </div>
-
-              {/* Status da Resposta */}
-              {detalhes.resposta && (
-                <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">
-                    Status da Resposta do Gestor
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-                      <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mb-1">Abriu Vaga?</p>
-                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {detalhes.resposta.abriu_vaga ? '✓ Sim' : detalhes.resposta.abriu_vaga === false ? '✗ Não' : '-'}
-                      </p>
-                    </div>
-                    <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-                      <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mb-1">Vaga Preenchida?</p>
-                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {detalhes.resposta.vaga_preenchida || '-'}
-                      </p>
-                    </div>
-                    {detalhes.resposta.data_abertura_vaga && (
-                      <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-                        <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mb-1">Data de Abertura</p>
-                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                          {formatarData(detalhes.resposta.data_abertura_vaga)}
-                        </p>
-                      </div>
-                    )}
-                    {detalhes.resposta.pendente_efetivacao && (
-                      <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-700">
-                        <p className="text-xs text-amber-700 dark:text-amber-400 font-medium mb-1">⚠️ Pendente Efetivação</p>
-                        <p className="text-sm font-medium text-amber-900 dark:text-amber-100">Sim</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Informações do Evento Completo */}
-              {detalhes.evento && (
-                <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">
-                    Informações Completas do Evento
-                  </h3>
-                  <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-4 space-y-3">
-                    <div className="grid grid-cols-2 gap-4">
-                      {Object.entries(detalhes.evento).map(([chave, valor]) => {
-                        if (!valor || chave.startsWith('_')) return null;
-                        return (
-                          <div key={chave}>
-                            <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mb-1">
-                              {chave.replace(/_/g, ' ').toUpperCase()}
-                            </p>
-                            <p className="text-sm text-slate-900 dark:text-slate-100 break-words">
-                              {typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}/.test(valor)
-                                ? formatarData(valor)
-                                : String(valor)}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>
       </div>
 
-      {/* Modal Registrar Substituto */}
+      {/* Modal Registrar Substituto (quando já fechada mas sem dados) */}
       {mostrarFormularioSubstituto && (
         <div className="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md p-6">
@@ -509,59 +780,18 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
               </button>
             </div>
 
-            {/* Campo de Busca */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Buscar Funcionário
-              </label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Digite o nome do funcionário..."
-                  value={searchSubstituto}
-                  onChange={(e) => setSearchSubstituto(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
+            <BuscaSubstitutoForm
+              searchSubstituto={searchSubstituto}
+              setSearchSubstituto={setSearchSubstituto}
+              sugestoesSubstituto={sugestoesSubstituto}
+              setSugestoesSubstituto={setSugestoesSubstituto}
+              substitutoSelecionado={substitutoSelecionado}
+              setSubstitutoSelecionado={setSubstitutoSelecionado}
+              cargoAlvo={vaga.cargo_vaga}
+              lotacaoAlvo={vaga.lotacao}
+              cnpjAlvo={vaga.cnpj}
+            />
 
-            {/* Sugestões */}
-            {sugestoesSubstituto.length > 0 && (
-              <div className="mb-4 max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg">
-                {sugestoesSubstituto.map(func => (
-                  <button
-                    key={func.id}
-                    onClick={() => setSubstitutoSelecionado(func)}
-                    className={`w-full text-left p-3 border-b border-slate-200 dark:border-slate-700 last:border-b-0 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors ${
-                      substitutoSelecionado?.id === func.id
-                        ? 'bg-blue-100 dark:bg-blue-900/40'
-                        : ''
-                    }`}
-                  >
-                    <p className="font-medium text-slate-900 dark:text-slate-100">{func.nome}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">{func.cargo}</p>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Substituto Selecionado */}
-            {substitutoSelecionado && (
-              <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg">
-                <p className="text-sm font-medium text-green-900 dark:text-green-100">
-                  ✓ Selecionado:
-                </p>
-                <p className="font-semibold text-slate-900 dark:text-slate-100">
-                  {substitutoSelecionado.nome}
-                </p>
-                <p className="text-xs text-slate-600 dark:text-slate-400">
-                  {substitutoSelecionado.cargo}
-                </p>
-              </div>
-            )}
-
-            {/* Botões */}
             <div className="flex gap-3">
               <button
                 onClick={() => {
@@ -580,10 +810,7 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
                 className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
               >
                 {salvandoSubstituto ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Salvando...
-                  </>
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Salvando...</>
                 ) : (
                   'Registrar'
                 )}
@@ -593,5 +820,6 @@ export function VagaDetalhesModal({ vaga, onClose }: VagaDetalhesModalProps) {
         </div>
       )}
     </div>
+    </>
   );
 }

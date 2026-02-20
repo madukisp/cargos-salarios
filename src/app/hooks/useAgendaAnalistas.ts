@@ -32,17 +32,21 @@ export function useAgendaAnalistas() {
       // Atualizar estado localmente
       setAnalistas(prev =>
         prev
-          .map(a =>
-            a.id === idAnalista
-              ? {
-                  ...a,
-                  vagas: a.vagas.filter(v => v.id_evento !== idEvento),
-                  totalVagas: a.totalVagas - 1,
-                  vagasEmAberto: a.vagasEmAberto - (a.vagas.find(v => v.id_evento === idEvento)?.dias_em_aberto || 0 > 0 ? 1 : 0),
-                  vagasCriticas: a.vagasCriticas - (a.vagas.find(v => v.id_evento === idEvento)?.dias_em_aberto || 0 > 30 ? 1 : 0),
-                }
-              : a
-          )
+          .map(a => {
+            if (a.id !== idAnalista) return a;
+            const vaga = a.vagas.find(v => v.id_evento === idEvento);
+            const estaAberta = vaga?.vaga_preenchida !== 'SIM';
+            const estaFechada = vaga?.vaga_preenchida === 'SIM';
+            const ehCritica = (vaga?.dias_reais ?? 0) >= 45;
+            return {
+              ...a,
+              vagas: a.vagas.filter(v => v.id_evento !== idEvento),
+              totalVagas: a.totalVagas - 1,
+              vagasEmAberto: a.vagasEmAberto - (estaAberta ? 1 : 0),
+              vagasFechadas: a.vagasFechadas - (estaFechada ? 1 : 0),
+              vagasCriticas: a.vagasCriticas - (ehCritica ? 1 : 0),
+            };
+          })
           .filter(a => a.totalVagas > 0)
       );
     } catch (err) {
