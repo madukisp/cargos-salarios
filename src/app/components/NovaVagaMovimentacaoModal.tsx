@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Search, Loader2, UserPlus, Users, AlertTriangle, PenLine } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { Label } from './ui/label';
 import { Input } from './ui/input';
 import { Checkbox } from './ui/checkbox';
@@ -40,7 +39,7 @@ export function NovaVagaMovimentacaoModal({
   const [buscaFuncionario, setBuscaFuncionario] = useState('');
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [selectedFuncionario, setSelectedFuncionario] = useState<Funcionario | null>(null);
-  const [tipoMovimentacao, setTipoMovimentacao] = useState<'PROMOCAO' | 'TRANSFERENCIA'>('TRANSFERENCIA');
+  const [tipoMovimentacao, setTipoMovimentacao] = useState('');
 
   // Dados manuais
   const [dadosManuais, setDadosManuais] = useState(false);
@@ -135,6 +134,10 @@ export function NovaVagaMovimentacaoModal({
       setError('Preencha todos os campos obrigatórios.');
       return;
     }
+    if (!tipoMovimentacao) {
+      setError('Selecione o motivo da movimentação.');
+      return;
+    }
     if (dadosManuais && !cargoFinal) {
       setError('Selecione o cargo para continuar.');
       return;
@@ -172,7 +175,7 @@ export function NovaVagaMovimentacaoModal({
     setSelectedCentroCusto('');
     setBuscaFuncionario('');
     setSelectedFuncionario(null);
-    setTipoMovimentacao('TRANSFERENCIA');
+    setTipoMovimentacao('');
     setDadosManuais(false);
     setManualCargo('');
     setManualCargaHoraria('');
@@ -206,25 +209,25 @@ export function NovaVagaMovimentacaoModal({
         {/* Body */}
         <div className="p-5 space-y-4 overflow-y-auto flex-1">
 
-          {/* Tipo */}
+          {/* Motivo */}
           <div>
-            <Label className="text-xs font-bold uppercase text-slate-500 mb-2 block">
-              Tipo de Movimentação
+            <Label className="text-xs font-bold uppercase text-slate-500 mb-1.5 block">
+              Motivo da Movimentação <span className="text-red-500">*</span>
             </Label>
-            <RadioGroup
+            <select
+              className="w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 dark:text-slate-100 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400"
               value={tipoMovimentacao}
-              onValueChange={(v) => setTipoMovimentacao(v as 'PROMOCAO' | 'TRANSFERENCIA')}
-              className="flex gap-6"
+              onChange={(e) => setTipoMovimentacao(e.target.value)}
             >
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="TRANSFERENCIA" id="tipo-transf" />
-                <Label htmlFor="tipo-transf" className="cursor-pointer font-medium">Transferência</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="PROMOCAO" id="tipo-prom" />
-                <Label htmlFor="tipo-prom" className="cursor-pointer font-medium">Promoção</Label>
-              </div>
-            </RadioGroup>
+              <option value="">Selecione o motivo...</option>
+              <option value="ENQUADRAMENTO">Enquadramento</option>
+              <option value="ALTERACAO_NOMENCLATURA">Alteração de Nomenclatura</option>
+              <option value="PROMOCAO">Promoção</option>
+              <option value="AUMENTO_CARGA_HORARIA">Aumento de Carga Horária</option>
+              <option value="REDUCAO_CARGA_HORARIA">Redução de Carga Horária</option>
+              <option value="MERITO">Mérito</option>
+              <option value="CORRECAO_SALARIO">Correção de Salário</option>
+            </select>
           </div>
 
           {/* Contrato */}

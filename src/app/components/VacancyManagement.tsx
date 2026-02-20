@@ -1568,13 +1568,20 @@ function VagaCard({
               {abaSelecionada === 'respondidas' && (() => {
                 const isMovimentacao = (vaga as any)._source === 'MOVIMENTACAO';
                 const tipoMov = (vaga as any).tipo_movimentacao as string | undefined;
+                const MOTIVO_LABEL: Record<string, string> = {
+                  ENQUADRAMENTO: 'Enquadramento',
+                  ALTERACAO_NOMENCLATURA: 'Alt. Nomenclatura',
+                  PROMOCAO: 'Promoção',
+                  AUMENTO_CARGA_HORARIA: 'Aumento CH',
+                  REDUCAO_CARGA_HORARIA: 'Redução CH',
+                  MERITO: 'Mérito',
+                  CORRECAO_SALARIO: 'Correção Salário',
+                };
                 const label = isMovimentacao
-                  ? (tipoMov === 'PROMOCAO' ? 'Promoção' : 'Transferência')
+                  ? (tipoMov ? MOTIVO_LABEL[tipoMov] ?? tipoMov : 'Movimentação')
                   : tipoOrigem === 'DEMISSAO' ? 'Demissão' : 'Afastamento';
                 const color = isMovimentacao
-                  ? (tipoMov === 'PROMOCAO'
-                      ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
-                      : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400')
+                  ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                   : tipoOrigem === 'DEMISSAO'
                     ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
                     : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400';
