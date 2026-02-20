@@ -1,4 +1,4 @@
-import { Search, ChevronDown, ChevronUp, CheckCircle, Clock, AlertTriangle, Loader2, Users, Calendar, AlertCircle, TrendingUp, UserX, UserCheck, ChevronsUpDown, Check, UserPlus, Archive, ArchiveRestore } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, CheckCircle, Clock, AlertTriangle, Loader2, Users, Calendar, AlertCircle, TrendingUp, UserX, UserCheck, ChevronsUpDown, Check, UserPlus, Archive, ArchiveRestore, Trash2 } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Card, CardContent } from './ui/card';
@@ -16,7 +16,7 @@ import { Checkbox } from './ui/checkbox';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { useGestaoVagas } from '@/app/hooks/useGestaoVagas';
 import { useFantasiaFilter } from '@/app/hooks/useFantasiaFilter';
-import { buscarFuncionarioPorCpf, buscarFuncionarioPorNome, buscarSugestoesSubstitutos } from '@/app/services/demissoesService';
+import { buscarFuncionarioPorCpf, buscarFuncionarioPorNome, buscarSugestoesSubstitutos, excluirVagaMovimentacao } from '@/app/services/demissoesService';
 import { FuncionarioProfile } from './FuncionarioProfile';
 import { useTlpData } from '@/app/hooks/useTlpData';
 import { StatusBadge } from './StatusBadge';
@@ -251,8 +251,28 @@ export function VacancyManagement() {
   const pendentesEf = useMemo(() => applyDateFilter(ordenarVagas(filtrarVagas(vagasPendentesEfetivacao, tlpData, fantasias))), [filtrarVagas, ordenarVagas, vagasPendentesEfetivacao, tlpData, fantasias, applyDateFilter]);
   const afastamentos = useMemo(() => applyDateFilter(ordenarVagas(filtrarVagas(afastamentosPendentes, tlpData, fantasias))), [filtrarVagas, ordenarVagas, afastamentosPendentes, tlpData, fantasias, applyDateFilter]);
 
-  // Usar vagasEmAberto diretamente do hook - não filtrar localmente
-  const vagasEmAberto = vagasEmAbertoFromHook;
+  // Filtrar vagasEmAberto com busca, contrato e filtro SP (campos têm nomes diferentes)
+  const vagasEmAberto = useMemo(() => {
+    const normalize = (s: string) =>
+      (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const termoBusca = normalize(busca);
+    return vagasEmAbertoFromHook.filter((vaga) => {
+      const matchBusca = !busca.trim() ||
+        normalize(vaga.cargo_saiu || '').includes(termoBusca) ||
+        normalize(vaga.quem_saiu || '').includes(termoBusca) ||
+        normalize(vaga.centro_custo || '').includes(termoBusca);
+      const matchContrato = selectedFantasia === 'todos' || vaga.cnpj === selectedFantasia;
+      let nomeContratoAtual: string | null = null;
+      if (vaga.cnpj && fantasias) {
+        const f = (fantasias as any[]).find(item => item.cnpj === vaga.cnpj);
+        if (f) nomeContratoAtual = f.display_name || f.nome_fantasia;
+      }
+      const matchContratosSP = apenasContratosSP
+        ? (nomeContratoAtual && CONTRATOS_SP.includes(nomeContratoAtual)) || false
+        : true;
+      return matchBusca && matchContrato && matchContratosSP;
+    });
+  }, [vagasEmAbertoFromHook, busca, selectedFantasia, apenasContratosSP, fantasias, CONTRATOS_SP]);
 
   const vagasFechadas = useMemo(() => {
     const fechadas = respondidas.filter((vaga) => respostas[vaga.id_evento]?.vaga_preenchida === 'SIM');
@@ -323,6 +343,15 @@ export function VacancyManagement() {
       setExpandedId(null);
     } catch (err) {
       console.error('Erro ao arquivar:', err);
+    }
+  };
+
+  const handleExcluirMovimentacao = async (id: number) => {
+    try {
+      await excluirVagaMovimentacao(id);
+      await carregarDados(lotacao === 'TODAS' ? undefined : lotacao, selectedFantasia);
+    } catch (err) {
+      console.error('Erro ao excluir vaga de movimentação:', err);
     }
   };
 
@@ -891,29 +920,41 @@ export function VacancyManagement() {
                       status_evento: 'RESPONDIDO' as const,
                       situacao_origem: '99-Demitido', // itens da view são sempre demissões
                     };
+                    const isMovimentacao = (vaga as any)._source === 'MOVIMENTACAO';
                     return (
-                      <VagaCard
-                        key={vaga.id_evento}
-                        vaga={vagaFormatada}
-                        expandedId={expandedId}
-                        setExpandedId={setExpandedId}
-                        abaSelecionada={abaSelecionada}
-                        respostas={respostas}
-                        formData={formData}
-                        updateFormDataMap={updateFormDataMap}
-                        tlpData={tlpData}
-                        fantasias={fantasias}
-                        loadingProfile={loadingProfile}
-                        setLoadingProfile={setLoadingProfile}
-                        setSelectedProfileFunc={setSelectedProfileFunc}
-                        handleResponder={handleResponder}
-                        handleEfetivar={handleEfetivar}
-                        respondendo={respondendo}
-                        handleUpdateTlpValue={handleUpdateTlpValue}
-                        updatingTlp={updatingTlp}
-                        onAtribuir={handleAtribuirVaga}
-                        onArquivar={handleArquivar}
-                      />
+                      <div key={vaga.id_evento} className="relative">
+                        {isMovimentacao && (
+                          <button
+                            type="button"
+                            onClick={() => handleExcluirMovimentacao(vaga.id_evento)}
+                            title="Excluir vaga de movimentação"
+                            className="absolute top-2 right-2 z-10 p-1.5 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                        <VagaCard
+                          vaga={vagaFormatada}
+                          expandedId={expandedId}
+                          setExpandedId={setExpandedId}
+                          abaSelecionada={abaSelecionada}
+                          respostas={respostas}
+                          formData={formData}
+                          updateFormDataMap={updateFormDataMap}
+                          tlpData={tlpData}
+                          fantasias={fantasias}
+                          loadingProfile={loadingProfile}
+                          setLoadingProfile={setLoadingProfile}
+                          setSelectedProfileFunc={setSelectedProfileFunc}
+                          handleResponder={handleResponder}
+                          handleEfetivar={handleEfetivar}
+                          respondendo={respondendo}
+                          handleUpdateTlpValue={handleUpdateTlpValue}
+                          updatingTlp={updatingTlp}
+                          onAtribuir={handleAtribuirVaga}
+                          onArquivar={handleArquivar}
+                        />
+                      </div>
                     );
                   })}
                   {afastamentosEmAberto.map((vaga) => (

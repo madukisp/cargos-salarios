@@ -683,3 +683,11 @@ export async function buscarSugestoesSubstitutos(termo: string, nomeFantasia?: s
     return [];
   }
 }
+
+export async function excluirVagaMovimentacao(id: number): Promise<void> {
+  const { error } = await supabase
+    .from('vagas_movimentacao')
+    .delete()
+    .eq('id', id);
+  if (error) throw new Error(error.message);
+}

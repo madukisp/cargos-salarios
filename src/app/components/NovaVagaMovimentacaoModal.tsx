@@ -12,6 +12,7 @@ interface Funcionario {
   cargo: string;
   carga_horaria_semanal: string | null;
   escala: string | null;
+  centro_custo: string | null;
 }
 
 interface OpcoesContrato {
@@ -49,12 +50,11 @@ export function NovaVagaMovimentacaoModal({
   const [manualEscala, setManualEscala] = useState('');
   const [loadingOpcoes, setLoadingOpcoes] = useState(false);
 
-  const [loadingCentros, setLoadingCentros] = useState(false);
   const [loadingFuncionarios, setLoadingFuncionarios] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Centros de custo ao trocar contrato
+  // Ao trocar contrato: carrega todos os funcionários ativos + centros de custo + opções
   useEffect(() => {
     if (!selectedCnpj) {
       setCentrosCusto([]);
@@ -64,69 +64,46 @@ export function NovaVagaMovimentacaoModal({
       setOpcoesContrato({ cargos: [], escalas: [], cargasHorarias: [] });
       return;
     }
-    setLoadingCentros(true);
-    supabase
-      .from('oris_funcionarios')
-      .select('centro_custo')
-      .eq('cnpj', selectedCnpj)
-      .eq('situacao', '01-ATIVO')
-      .then(({ data }) => {
-        const unique = Array.from(
-          new Set((data || []).map((d: any) => d.centro_custo).filter(Boolean))
-        ).sort() as string[];
-        setCentrosCusto(unique);
-        setLoadingCentros(false);
-      });
-  }, [selectedCnpj]);
-
-  // Opções de cargo/escala/carga horária do contrato (para seleção manual)
-  useEffect(() => {
-    if (!selectedCnpj) return;
+    setLoadingFuncionarios(true);
     setLoadingOpcoes(true);
     supabase
       .from('oris_funcionarios')
-      .select('cargo, escala, carga_horaria_semanal')
+      .select('id, nome, cargo, carga_horaria_semanal, escala, centro_custo')
       .eq('cnpj', selectedCnpj)
+      .eq('situacao', '01-ATIVO')
+      .order('nome')
       .then(({ data }) => {
-        const rows = data || [];
-        const cargos = Array.from(new Set(rows.map((r: any) => r.cargo).filter(Boolean))).sort() as string[];
-        const escalas = Array.from(new Set(rows.map((r: any) => r.escala).filter(Boolean))).sort() as string[];
+        const rows = (data || []) as Funcionario[];
+        setFuncionarios(rows);
+        setSelectedFuncionario(null);
+        setLoadingFuncionarios(false);
+
+        // Centros de custo únicos
+        const uniqueCentros = Array.from(
+          new Set(rows.map((r) => r.centro_custo).filter(Boolean))
+        ).sort() as string[];
+        setCentrosCusto(uniqueCentros);
+
+        // Opções para dados manuais
+        const cargos = Array.from(new Set(rows.map((r) => r.cargo).filter(Boolean))).sort() as string[];
+        const escalas = Array.from(new Set(rows.map((r) => r.escala).filter(Boolean))).sort() as string[];
         const cargasHorarias = Array.from(
-          new Set(rows.map((r: any) => r.carga_horaria_semanal).filter(Boolean))
+          new Set(rows.map((r) => r.carga_horaria_semanal).filter(Boolean))
         ).sort((a: any, b: any) => Number(a) - Number(b)) as string[];
         setOpcoesContrato({ cargos, escalas, cargasHorarias });
         setLoadingOpcoes(false);
       });
   }, [selectedCnpj]);
 
-  // Funcionários ao trocar centro de custo
-  useEffect(() => {
-    if (!selectedCnpj || !selectedCentroCusto) {
-      setFuncionarios([]);
-      setSelectedFuncionario(null);
-      return;
-    }
-    setLoadingFuncionarios(true);
-    supabase
-      .from('oris_funcionarios')
-      .select('id, nome, cargo, carga_horaria_semanal, escala')
-      .eq('cnpj', selectedCnpj)
-      .eq('centro_custo', selectedCentroCusto)
-      .eq('situacao', '01-ATIVO')
-      .order('nome')
-      .then(({ data }) => {
-        setFuncionarios((data || []) as Funcionario[]);
-        setSelectedFuncionario(null);
-        setLoadingFuncionarios(false);
-      });
-  }, [selectedCnpj, selectedCentroCusto]);
-
-  // Ao selecionar funcionário, pré-preencher os campos manuais com os valores dele
+  // Ao selecionar funcionário, pré-preencher campos manuais e centro de custo
   useEffect(() => {
     if (selectedFuncionario) {
       setManualCargo(selectedFuncionario.cargo || '');
       setManualCargaHoraria(selectedFuncionario.carga_horaria_semanal || '');
       setManualEscala(selectedFuncionario.escala || '');
+      if (selectedFuncionario.centro_custo) {
+        setSelectedCentroCusto(selectedFuncionario.centro_custo);
+      }
     }
   }, [selectedFuncionario]);
 
@@ -139,11 +116,14 @@ export function NovaVagaMovimentacaoModal({
     }
   }, [dadosManuais]);
 
-  const filteredFuncionarios = buscaFuncionario.trim()
-    ? funcionarios.filter((f) =>
-        f.nome.toLowerCase().includes(buscaFuncionario.toLowerCase())
-      )
-    : funcionarios;
+  const normalize = (s: string) =>
+    (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  const filteredFuncionarios = funcionarios.filter((f) => {
+    const matchCentro = !selectedCentroCusto || f.centro_custo === selectedCentroCusto;
+    const matchBusca = !buscaFuncionario.trim() || normalize(f.nome).includes(normalize(buscaFuncionario));
+    return matchCentro && matchBusca;
+  });
 
   // Dados efetivos que serão salvos
   const cargoFinal = dadosManuais ? manualCargo : selectedFuncionario?.cargo ?? '';
@@ -272,65 +252,54 @@ export function NovaVagaMovimentacaoModal({
             </select>
           </div>
 
-          {/* Centro de Custo */}
+          {/* Funcionário — aparece assim que o contrato é selecionado */}
           {selectedCnpj && (
-            <div>
-              <Label className="text-xs font-bold uppercase text-slate-500 mb-1.5 block">
-                Centro de Custo / Unidade
-              </Label>
-              {loadingCentros ? (
-                <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
-                  <Loader2 size={14} className="animate-spin" /> Carregando unidades...
-                </div>
-              ) : (
-                <select
-                  className="w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 dark:text-slate-100 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400"
-                  value={selectedCentroCusto}
-                  onChange={(e) => {
-                    setSelectedCentroCusto(e.target.value);
-                    setSelectedFuncionario(null);
-                    setBuscaFuncionario('');
-                    setDadosManuais(false);
-                  }}
-                >
-                  <option value="">Selecione o centro de custo...</option>
-                  {centrosCusto.map((cc) => (
-                    <option key={cc} value={cc}>{cc}</option>
-                  ))}
-                </select>
-              )}
-            </div>
-          )}
-
-          {/* Funcionário */}
-          {selectedCentroCusto && (
             <div>
               <Label className="text-xs font-bold uppercase text-slate-500 mb-1.5 block">
                 Funcionário que Será Movimentado
               </Label>
-              <div className="relative mb-2">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <Input
-                  placeholder="Filtrar por nome..."
-                  value={buscaFuncionario}
+
+              {/* Filtros: busca por nome + centro de custo opcional */}
+              <div className="flex gap-2 mb-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <Input
+                    placeholder="Buscar por nome..."
+                    value={buscaFuncionario}
+                    onChange={(e) => {
+                      setBuscaFuncionario(e.target.value);
+                      setSelectedFuncionario(null);
+                      setDadosManuais(false);
+                    }}
+                    className="pl-9 h-9"
+                  />
+                </div>
+                <select
+                  className="border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-slate-800 dark:text-slate-100 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400 min-w-0 max-w-[180px] truncate"
+                  value={selectedCentroCusto}
                   onChange={(e) => {
-                    setBuscaFuncionario(e.target.value);
+                    setSelectedCentroCusto(e.target.value);
                     setSelectedFuncionario(null);
                     setDadosManuais(false);
                   }}
-                  className="pl-9 h-9"
-                />
+                >
+                  <option value="">Todos os centros</option>
+                  {centrosCusto.map((cc) => (
+                    <option key={cc} value={cc}>{cc}</option>
+                  ))}
+                </select>
               </div>
+
               {loadingFuncionarios ? (
                 <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
                   <Loader2 size={14} className="animate-spin" /> Carregando funcionários...
                 </div>
               ) : (
-                <div className="border border-slate-200 dark:border-slate-700 rounded-lg max-h-40 overflow-y-auto">
+                <div className="border border-slate-200 dark:border-slate-700 rounded-lg max-h-44 overflow-y-auto">
                   {filteredFuncionarios.length === 0 ? (
                     <div className="flex flex-col items-center py-5 text-slate-400">
                       <Users size={22} className="mb-1" />
-                      <p className="text-sm">Nenhum funcionário ativo encontrado.</p>
+                      <p className="text-sm">Nenhum funcionário encontrado.</p>
                     </div>
                   ) : (
                     filteredFuncionarios.map((f) => (
@@ -346,6 +315,7 @@ export function NovaVagaMovimentacaoModal({
                         <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{f.nome}</p>
                         <p className="text-xs text-slate-500">
                           {f.cargo}
+                          {f.centro_custo && ` · ${f.centro_custo}`}
                           {f.carga_horaria_semanal && ` · ${f.carga_horaria_semanal}h`}
                           {f.escala && ` · ${f.escala}`}
                         </p>
