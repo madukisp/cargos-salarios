@@ -53,7 +53,7 @@ export function NovaVagaMovimentacaoModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Ao trocar contrato: carrega todos os funcionários ativos + centros de custo + opções
+  // Ao trocar contrato: carrega centros de custo + opções com limite maior
   useEffect(() => {
     if (!selectedCnpj) {
       setCentrosCusto([]);
@@ -63,19 +63,16 @@ export function NovaVagaMovimentacaoModal({
       setOpcoesContrato({ cargos: [], escalas: [], cargasHorarias: [] });
       return;
     }
-    setLoadingFuncionarios(true);
     setLoadingOpcoes(true);
+    // Carrega com limite alto para capturar todos os registros
     supabase
       .from('oris_funcionarios')
       .select('id, nome, cargo, carga_horaria_semanal, escala, centro_custo')
       .eq('cnpj', selectedCnpj)
       .eq('situacao', '01-ATIVO')
-      .order('nome')
+      .limit(20000)
       .then(({ data }) => {
         const rows = (data || []) as Funcionario[];
-        setFuncionarios(rows);
-        setSelectedFuncionario(null);
-        setLoadingFuncionarios(false);
 
         // Centros de custo únicos
         const uniqueCentros = Array.from(
@@ -93,6 +90,47 @@ export function NovaVagaMovimentacaoModal({
         setLoadingOpcoes(false);
       });
   }, [selectedCnpj]);
+
+  // Quando a busca muda: faz query dinâmica no Supabase
+  useEffect(() => {
+    if (!selectedCnpj) {
+      setFuncionarios([]);
+      return;
+    }
+
+    if (!buscaFuncionario.trim()) {
+      // Se não há busca, carrega tudo com limite
+      setLoadingFuncionarios(true);
+      supabase
+        .from('oris_funcionarios')
+        .select('id, nome, cargo, carga_horaria_semanal, escala, centro_custo')
+        .eq('cnpj', selectedCnpj)
+        .eq('situacao', '01-ATIVO')
+        .limit(20000)
+        .order('nome')
+        .then(({ data }) => {
+          setFuncionarios((data || []) as Funcionario[]);
+          setLoadingFuncionarios(false);
+        });
+      return;
+    }
+
+    // Se há busca, faz query filtrada no banco
+    const searchTerm = buscaFuncionario.trim().toUpperCase();
+    setLoadingFuncionarios(true);
+    supabase
+      .from('oris_funcionarios')
+      .select('id, nome, cargo, carga_horaria_semanal, escala, centro_custo')
+      .eq('cnpj', selectedCnpj)
+      .eq('situacao', '01-ATIVO')
+      .ilike('nome', `%${searchTerm}%`)
+      .limit(100)
+      .order('nome')
+      .then(({ data }) => {
+        setFuncionarios((data || []) as Funcionario[]);
+        setLoadingFuncionarios(false);
+      });
+  }, [selectedCnpj, buscaFuncionario]);
 
   // Ao selecionar funcionário, pré-preencher campos manuais e centro de custo
   useEffect(() => {
@@ -115,13 +153,9 @@ export function NovaVagaMovimentacaoModal({
     }
   }, [dadosManuais]);
 
-  const normalize = (s: string) =>
-    (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
+  // Filtra apenas por centro de custo (busca já é feita no Supabase)
   const filteredFuncionarios = funcionarios.filter((f) => {
-    const matchCentro = !selectedCentroCusto || f.centro_custo === selectedCentroCusto;
-    const matchBusca = !buscaFuncionario.trim() || normalize(f.nome).includes(normalize(buscaFuncionario));
-    return matchCentro && matchBusca;
+    return !selectedCentroCusto || f.centro_custo === selectedCentroCusto;
   });
 
   // Dados efetivos que serão salvos
