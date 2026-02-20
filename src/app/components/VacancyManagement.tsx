@@ -1086,7 +1086,9 @@ export function VacancyManagement() {
       <NovaVagaMovimentacaoModal
         open={modalMovimentacaoOpen}
         onOpenChange={setModalMovimentacaoOpen}
-        fantasias={fantasias}
+        fantasias={apenasContratosSP
+          ? fantasias.filter(f => CONTRATOS_SP.some(sp => f.display_name?.includes(sp) || f.nome_fantasia?.includes(sp)))
+          : fantasias}
         onSaved={() => carregarDados(lotacao === 'TODAS' ? undefined : lotacao, selectedFantasia)}
       />
     </div>
