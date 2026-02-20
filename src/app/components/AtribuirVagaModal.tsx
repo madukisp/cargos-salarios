@@ -15,6 +15,14 @@ interface AtribuirVagaModalProps {
         cargo_saiu: string;
         dias_em_aberto: number;
         cnpj: string;
+        // Optional fields for event creation
+        _id_funcionario?: number;
+        _needs_creation?: boolean;
+        data_evento?: string;
+        situacao_origem?: string;
+        nome?: string;
+        cargo?: string;
+        lotacao?: string;
     } | null;
 }
 
@@ -33,7 +41,15 @@ export function AtribuirVagaModal({ open, onOpenChange, vaga }: AtribuirVagaModa
         atribuir({
             id_evento: vaga.id_evento,
             id_analista: parseInt(selectedAnalistaId),
-            cnpj: vaga.cnpj || ""
+            cnpj: vaga.cnpj || "",
+            // Passar campos extras para a criação sob demanda
+            _id_funcionario: vaga._id_funcionario,
+            _needs_creation: vaga._needs_creation,
+            data_evento: vaga.data_evento,
+            situacao_origem: vaga.situacao_origem,
+            nome: vaga.nome,
+            cargo: vaga.cargo,
+            lotacao: vaga.lotacao
         }, {
             onSuccess: () => {
                 toast.success("Vaga atribuída com sucesso!");

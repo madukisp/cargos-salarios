@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Download, Search, Settings, X, GripVertical, Eye, EyeOff, ArrowUp, ArrowDown, Filter, ChevronDown } from 'lucide-react';
-import { useOrisFuncionarios, useOrisFantasias } from '../hooks/useOrisFuncionarios';
+import { useOrisFuncionarios, useOrisFantasias, useOrisCentrosCusto, useOrisCargos } from '../hooks/useOrisFuncionarios';
 import { getVisibleColumnFields, getColumnLabels, getOrderedColumns } from '@/lib/columns.config';
 import { getFormattedValue } from '@/lib/column-formatters';
 import { FuncionarioProfile } from './FuncionarioProfile';
@@ -13,13 +13,17 @@ export function Oris() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'ativos' | 'demitidos'>('todos');
   const [selectedFantasias, setSelectedFantasias] = useState<Set<string>>(new Set());
+  const [selectedCentrosCusto, setSelectedCentrosCusto] = useState<Set<string>>(new Set());
+  const [selectedCargos, setSelectedCargos] = useState<Set<string>>(new Set());
 
   // Passar filtros para o hook
   const { data, columns: initialColumns, loading, error, totalCount } = useOrisFuncionarios({
     searchNome,
     searchTerm,
     statusFilter,
-    fantasias: Array.from(selectedFantasias)
+    fantasias: Array.from(selectedFantasias),
+    centrosCusto: Array.from(selectedCentrosCusto),
+    cargos: Array.from(selectedCargos)
   });
 
   const [columns, setColumns] = useState<string[]>([]);
@@ -29,6 +33,8 @@ export function Oris() {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [showFantasiaFilter, setShowFantasiaFilter] = useState(false);
+  const [showCentroCustoFilter, setShowCentroCustoFilter] = useState(false);
+  const [showCargoFilter, setShowCargoFilter] = useState(false);
   const [selectedFuncionario, setSelectedFuncionario] = useState<any | null>(null);
 
   // Obter colunas configuradas (memoizado para evitar infinite loop)
@@ -36,6 +42,12 @@ export function Oris() {
 
   // Obter lista única de fantasias usando o novo hook
   const uniqueFantasias = useOrisFantasias();
+
+  // Obter centros de custo filtrados pelos contratos selecionados
+  const availableCentrosCusto = useOrisCentrosCusto(Array.from(selectedFantasias));
+
+  // Obter cargos filtrados pelos contratos e centros de custo selecionados
+  const availableCargos = useOrisCargos(Array.from(selectedFantasias), Array.from(selectedCentrosCusto));
 
   // Carregar preferências do localStorage e configuração de colunas
   useEffect(() => {
@@ -118,6 +130,33 @@ export function Oris() {
       newFantasias.add(fantasia);
     }
     setSelectedFantasias(newFantasias);
+    // Limpar centros de custo e cargos selecionados quando mudar os contratos
+    setSelectedCentrosCusto(new Set());
+    setSelectedCargos(new Set());
+  };
+
+  // Toggle centro de custo selecionado
+  const toggleCentroCusto = (cc: string) => {
+    const newCC = new Set(selectedCentrosCusto);
+    if (newCC.has(cc)) {
+      newCC.delete(cc);
+    } else {
+      newCC.add(cc);
+    }
+    setSelectedCentrosCusto(newCC);
+    // Limpar cargos selecionados quando mudar os centros de custo
+    setSelectedCargos(new Set());
+  };
+
+  // Toggle cargo selecionado
+  const toggleCargo = (cargo: string) => {
+    const newCargos = new Set(selectedCargos);
+    if (newCargos.has(cargo)) {
+      newCargos.delete(cargo);
+    } else {
+      newCargos.add(cargo);
+    }
+    setSelectedCargos(newCargos);
   };
 
   // Toggle visibilidade de coluna
@@ -238,8 +277,8 @@ export function Oris() {
           <button
             onClick={() => setStatusFilter('todos')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${statusFilter === 'todos'
-                ? 'bg-blue-600 dark:bg-blue-700 text-white'
-                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+              ? 'bg-blue-600 dark:bg-blue-700 text-white'
+              : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
               }`}
           >
             Todos
@@ -247,8 +286,8 @@ export function Oris() {
           <button
             onClick={() => setStatusFilter('ativos')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${statusFilter === 'ativos'
-                ? 'bg-green-600 dark:bg-green-700 text-white'
-                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+              ? 'bg-green-600 dark:bg-green-700 text-white'
+              : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
               }`}
           >
             ✅ Ativos
@@ -256,8 +295,8 @@ export function Oris() {
           <button
             onClick={() => setStatusFilter('demitidos')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${statusFilter === 'demitidos'
-                ? 'bg-red-600 dark:bg-red-700 text-white'
-                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+              ? 'bg-red-600 dark:bg-red-700 text-white'
+              : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
               }`}
           >
             ❌ Demitidos
@@ -288,8 +327,8 @@ export function Oris() {
                     key={fantasia}
                     onClick={() => toggleFantasia(fantasia)}
                     className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${selectedFantasias.has(fantasia)
-                        ? 'bg-blue-600 dark:bg-blue-700 text-white'
-                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:border-blue-500 dark:hover:border-blue-500'
+                      ? 'bg-blue-600 dark:bg-blue-700 text-white'
+                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:border-blue-500 dark:hover:border-blue-500'
                       }`}
                   >
                     {fantasia}
@@ -313,6 +352,118 @@ export function Oris() {
             </div>
           )}
         </div>
+
+        {/* Filtro Centro de Custo */}
+        {selectedFantasias.size > 0 && (
+          <div className="space-y-2">
+            <button
+              onClick={() => setShowCentroCustoFilter(!showCentroCustoFilter)}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+            >
+              <Filter className="w-4 h-4" />
+              Filtrar por Centro de Custo
+              {selectedCentrosCusto.size > 0 && (
+                <span className="ml-2 px-2 py-0.5 bg-purple-600 text-white text-xs rounded-full">
+                  {selectedCentrosCusto.size}
+                </span>
+              )}
+              <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${showCentroCustoFilter ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showCentroCustoFilter && (
+              <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2">
+                {availableCentrosCusto.length === 0 ? (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Carregando centros de custo...</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {availableCentrosCusto.map((cc) => (
+                      <button
+                        key={cc}
+                        onClick={() => toggleCentroCusto(cc)}
+                        className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${selectedCentrosCusto.has(cc)
+                          ? 'bg-purple-600 dark:bg-purple-700 text-white'
+                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:border-purple-500 dark:hover:border-purple-500'
+                          }`}
+                      >
+                        {cc}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2 pt-2">
+                  <button
+                    onClick={() => setSelectedCentrosCusto(new Set(availableCentrosCusto))}
+                    className="text-xs px-2 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors"
+                  >
+                    Selecionar Todos
+                  </button>
+                  <button
+                    onClick={() => setSelectedCentrosCusto(new Set())}
+                    className="text-xs px-2 py-1 bg-slate-400 dark:bg-slate-600 text-white rounded hover:bg-slate-500 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    Limpar Filtro
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Filtro Cargo */}
+        {selectedFantasias.size > 0 && (
+          <div className="space-y-2">
+            <button
+              onClick={() => setShowCargoFilter(!showCargoFilter)}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+            >
+              <Filter className="w-4 h-4" />
+              Filtrar por Cargo
+              {selectedCargos.size > 0 && (
+                <span className="ml-2 px-2 py-0.5 bg-teal-600 text-white text-xs rounded-full">
+                  {selectedCargos.size}
+                </span>
+              )}
+              <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${showCargoFilter ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showCargoFilter && (
+              <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2">
+                {availableCargos.length === 0 ? (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Carregando cargos...</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {availableCargos.map((cargo) => (
+                      <button
+                        key={cargo}
+                        onClick={() => toggleCargo(cargo)}
+                        className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${selectedCargos.has(cargo)
+                          ? 'bg-teal-600 dark:bg-teal-700 text-white'
+                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:border-teal-500 dark:hover:border-teal-500'
+                          }`}
+                      >
+                        {cargo}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2 pt-2">
+                  <button
+                    onClick={() => setSelectedCargos(new Set(availableCargos))}
+                    className="text-xs px-2 py-1 bg-teal-600 text-white rounded hover:bg-teal-700 transition-colors"
+                  >
+                    Selecionar Todos
+                  </button>
+                  <button
+                    onClick={() => setSelectedCargos(new Set())}
+                    className="text-xs px-2 py-1 bg-slate-400 dark:bg-slate-600 text-white rounded hover:bg-slate-500 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    Limpar Filtro
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Busca Geral */}
         <div className="relative">
@@ -367,8 +518,8 @@ export function Oris() {
                         onDrop={() => handleDrop(col)}
                         onClick={() => handleSort(col)}
                         className={`px-4 py-3 text-left font-medium uppercase tracking-wider border border-slate-200 dark:border-slate-700 whitespace-nowrap select-none transition-colors ${isSorted
-                            ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                            : 'bg-slate-50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer'
+                          ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                          : 'bg-slate-50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer'
                           }`}
                         title="Clique para ordenar, arraste para reordenar"
                       >
@@ -441,6 +592,12 @@ export function Oris() {
         )}
         {selectedFantasias.size > 0 && (
           <p className="mt-1">Contratos selecionados: {selectedFantasias.size}</p>
+        )}
+        {selectedCentrosCusto.size > 0 && (
+          <p className="mt-1">Centros de custo selecionados: {selectedCentrosCusto.size}</p>
+        )}
+        {selectedCargos.size > 0 && (
+          <p className="mt-1">Cargos selecionados: {selectedCargos.size}</p>
         )}
         {searchTerm && (
           <p className="mt-1">Busca geral: {searchTerm}</p>

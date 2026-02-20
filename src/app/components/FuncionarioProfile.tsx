@@ -95,7 +95,12 @@ export function FuncionarioProfile({ funcionario, onClose }: FuncionarioProfileP
                 <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-1">
                   {funcionario.nome}
                 </h1>
-                <p className="text-lg text-slate-600 dark:text-slate-400">{funcionario.cargo}</p>
+                <p className="text-lg text-slate-600 dark:text-slate-400">
+                  {funcionario.id && (
+                    <span className="text-sm text-slate-400 dark:text-slate-500 mr-2">ID: {funcionario.id} •</span>
+                  )}
+                  {funcionario.cargo}
+                </p>
               </div>
             </div>
 
@@ -103,8 +108,8 @@ export function FuncionarioProfile({ funcionario, onClose }: FuncionarioProfileP
             <div className="mb-6">
               <span
                 className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${funcionario.situacao === '01-ATIVO'
-                    ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                    : 'bg-gray-100 dark:bg-gray-900/30 text-gray-700 dark:text-gray-400'
+                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                  : 'bg-gray-100 dark:bg-gray-900/30 text-gray-700 dark:text-gray-400'
                   }`}
               >
                 {funcionario.situacao}

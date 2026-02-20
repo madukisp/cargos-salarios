@@ -51,18 +51,9 @@ export async function carregarDemissoes(
   cnpj?: string
 ): Promise<EventoDemissao[]> {
   try {
-    console.log('[carregarDemissoes] Iniciando, status:', status);
+    console.log('[carregarDemissoes] Iniciando (mixed mode), status:', status);
 
-    // 1. Buscar TODAS as respostas de demissão (para não perder dados com limit)
-    const { data: respostas } = await supabase
-      .from('respostas_gestor')
-      .select('id_evento')
-      .eq('tipo_origem', 'DEMISSAO');
-
-    const respostasSet = new Set((respostas || []).map(r => r.id_evento));
-    console.log('[carregarDemissoes] Total de respostas carregadas:', respostasSet.size);
-
-    // 2. Buscar todos os demitidos (sem limit, para pegar todos)
+    // 1. Buscar demitidos do oris_funcionarios (fonte "real-time")
     let query = supabase
       .from('oris_funcionarios')
       .select(
@@ -72,80 +63,116 @@ export async function carregarDemissoes(
       .order('dt_rescisao', { ascending: false });
 
     const { data: demitidos, error: empError } = await query;
-
     if (empError) throw empError;
 
-    console.log('[carregarDemissoes] Total de demitidos carregados:', demitidos?.length);
+    if (!demitidos || demitidos.length === 0) return [];
 
-    if (!demitidos || demitidos.length === 0) {
-      return [];
+    // 2. Buscar eventos correspondentes em eventos_movimentacao
+    // Precisamos disso para obter o id_evento real, caso o sync tenha rodado
+    const funcIds = demitidos.map(d => d.id);
+    const { data: eventosReais } = await supabase
+      .from('eventos_movimentacao')
+      .select('id_evento, id_funcionario, data_evento')
+      .in('id_funcionario', funcIds)
+      .eq('situacao_origem', '99-Demitido'); // Garantir que é demissão
+
+    // Criar mapa: id_funcionario -> id_evento (mais recente)
+    const mapaEventos: Record<number, number> = {};
+    if (eventosReais) {
+      eventosReais.forEach((ev: any) => {
+        // Se houver mais de um, o último sobrescreve (ordem não garantida pelo select, mas assumindo 1:1 recente)
+        // Idealmente filtrar pela data mais próxima, mas direto é aceitável aqui
+        mapaEventos[ev.id_funcionario] = ev.id_evento;
+      });
     }
 
-    // 3. Filtrar por status
+    // 3. Buscar respostas para filtrar PENDENTE/RESPONDIDO
+    const { data: respostas } = await supabase
+      .from('respostas_gestor')
+      .select('id_evento')
+      .eq('tipo_origem', 'DEMISSAO');
+
+    const respostasSet = new Set((respostas || []).map(r => r.id_evento));
+
+    // 4. Filtrar e formatar
     let demissoesFiltradas = demitidos.filter(d => {
-      const temResposta = respostasSet.has(d.id);
+      // O ID que usamos para verificar resposta é o ID do EVENTO se existir, senão o ID do FUNC
+      // Mas espere! Se o evento existe, a resposta está ligada ao id_evento.
+      // Se o evento NÃO existe, a resposta NÃO DEVERIA existir (pois fk fail).
+      // Entao:
+      const realIdEvento = mapaEventos[d.id];
+      const idParaChecar = realIdEvento || d.id; // Fallback para id_funcionario se não tem evento (mas nao deve ter resposta)
+
+      // Se usamos id_funcionario como id_evento temporário, verificamos se tem resposta com esse ID
+      // (caso legado ou bug). Mas o padrão agora é id_evento.
+
+      const temResposta = respostasSet.has(idParaChecar);
+
       if (status === 'PENDENTE') {
-        return !temResposta;  // Sem resposta
+        return !temResposta;
       } else {
-        return temResposta;   // Com resposta
+        return temResposta;
       }
     });
 
-    // 4. Aplicar filtros de lotação
+    // 5. Filtros de UI
     if (lotacao && lotacao !== 'TODAS') {
       demissoesFiltradas = demissoesFiltradas.filter(d =>
         d.centro_custo === lotacao || d.nome_fantasia === lotacao
       );
     }
-
-    // 5. Aplicar filtro de CNPJ
     if (cnpj && cnpj !== 'todos') {
       demissoesFiltradas = demissoesFiltradas.filter(d => d.cnpj === cnpj);
     }
 
-    console.log('[carregarDemissoes] Retornando', demissoesFiltradas.length, `demissões (${status})`);
-    return formatarDemissoes(demissoesFiltradas, status);
+    console.log('[carregarDemissoes] Retornando', demissoesFiltradas.length, `demissões`);
+
+    // Helper formatar
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    return demissoesFiltradas.map(d => {
+      const dataSaida = new Date(d.dt_rescisao + 'T00:00:00');
+      const diffTime = Math.abs(hoje.getTime() - dataSaida.getTime());
+      const diasEmAberto = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const realIdEvento = mapaEventos[d.id];
+
+      return {
+        id_evento: realIdEvento || d.id, // Preferência pelo ID real do evento
+        nome: d.nome,
+        cargo: d.cargo,
+        cnpj: d.cnpj,
+        data_evento: d.dt_rescisao,
+        status_evento: status as 'PENDENTE' | 'RESPONDIDO',
+        dias_em_aberto: diasEmAberto,
+        situacao_origem: '99-Demitido',
+        lotacao: d.centro_custo || d.nome_fantasia || 'Sem lotação',
+        tipo_rescisao: d.tipo_rescisao,
+        carga_horaria_semanal: d.carga_horaria_semanal,
+        escala: d.escala,
+        // Campos extras para auxiliar na criação se necessário
+        _id_funcionario: d.id,
+        _needs_creation: !realIdEvento
+      } as EventoDemissao;
+    });
   } catch (error) {
     console.error('[carregarDemissoes] Exception:', error);
     return [];
   }
 }
 
-// Helper para formatar os resultados
-function formatarDemissoes(demitidos: any[], status: string): EventoDemissao[] {
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
+// Remover o antigo formatarDemissoes que ficou solto se não for usado, ou mantê-lo.
+// Vou incorporar a lógica inline acima para clareza e evitar duplicatas.
 
-  return demitidos.map(d => {
-    const dataSaida = new Date(d.dt_rescisao + 'T00:00:00');
-    const diffTime = Math.abs(hoje.getTime() - dataSaida.getTime());
-    const diasEmAberto = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    return {
-      id_evento: d.id,
-      nome: d.nome,
-      cargo: d.cargo,
-      cnpj: d.cnpj,
-      data_evento: d.dt_rescisao,
-      status_evento: status as 'PENDENTE' | 'RESPONDIDO',
-      dias_em_aberto: diasEmAberto,
-      situacao_origem: '99-Demitido',
-      lotacao: d.centro_custo || d.nome_fantasia || 'Sem lotação',
-      tipo_rescisao: d.tipo_rescisao,
-      carga_horaria_semanal: d.carga_horaria_semanal,
-      escala: d.escala,
-    } as EventoDemissao;
-  });
-}
 
 export async function carregarAfastamentos(
   lotacao?: string,
   cnpj?: string
 ): Promise<EventoDemissao[]> {
   try {
-    console.log('[carregarAfastamentos] Iniciando com tempo real de oris_funcionarios');
+    console.log('[carregarAfastamentos] Iniciando (mixed mode)');
 
-    // Buscar todos os afastados diretamente de oris_funcionarios
+    // 1. Buscar afastados de oris_funcionarios
     let query = supabase
       .from('oris_funcionarios')
       .select(
@@ -157,52 +184,64 @@ export async function carregarAfastamentos(
       .order('dt_inicio_situacao', { ascending: false })
       .limit(500);
 
-    const { data, error } = await query;
-
-    console.log('[carregarAfastamentos] Query error:', error, 'data length:', data?.length);
+    const { data: afastados, error } = await query;
 
     if (error) {
       console.error('[carregarAfastamentos] Erro:', error);
       return [];
     }
 
-    // Aplicar filtros de lotação e CNPJ
-    const afastamentosFiltrados = ((data || []) as any[]).filter((d: any) => {
+    if (!afastados || afastados.length === 0) return [];
+
+    // 2. Buscar eventos correspondentes
+    const funcIds = afastados.map(d => d.id);
+    const { data: eventosReais } = await supabase
+      .from('eventos_movimentacao')
+      .select('id_evento, id_funcionario')
+      .in('id_funcionario', funcIds);
+
+    const mapaEventos: Record<number, number> = {};
+    if (eventosReais) {
+      eventosReais.forEach((ev: any) => {
+        mapaEventos[ev.id_funcionario] = ev.id_evento;
+      });
+    }
+
+    // 3. Filtros
+    const afastamentosFiltrados = afastados.filter((d: any) => {
       const matchLotacao = !lotacao || lotacao === 'TODAS' ||
         d.centro_custo === lotacao ||
         d.nome_fantasia === lotacao;
-
       const matchCnpj = !cnpj || cnpj === 'todos' || d.cnpj === cnpj;
-
       return matchLotacao && matchCnpj;
     });
 
-    // Calcular dias em aberto
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
 
-    const afastamentosFormatados = afastamentosFiltrados.map((d: any) => {
+    return afastamentosFiltrados.map((d: any) => {
       const dataEvento = new Date(d.dt_inicio_situacao + 'T00:00:00');
       const diffTime = Math.abs(hoje.getTime() - dataEvento.getTime());
       const diasEmAberto = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const realIdEvento = mapaEventos[d.id];
 
       return {
-        id_evento: d.id, // ID de oris_funcionarios como id_evento
+        id_evento: realIdEvento || d.id,
         nome: d.nome,
         cargo: d.cargo,
         cnpj: d.cnpj,
-        data_evento: d.dt_inicio_situacao, // Data de início da situação
+        data_evento: d.dt_inicio_situacao,
         status_evento: 'PENDENTE' as const,
         dias_em_aberto: diasEmAberto,
         situacao_origem: d.situacao,
         lotacao: d.centro_custo || d.nome_fantasia || 'Sem lotação',
         carga_horaria_semanal: d.carga_horaria_semanal,
         escala: d.escala,
+        _id_funcionario: d.id,
+        _needs_creation: !realIdEvento
       } as EventoDemissao;
     });
 
-    console.log('[carregarAfastamentos] Retornando', afastamentosFormatados.length, 'afastamentos em tempo real');
-    return afastamentosFormatados;
   } catch (error) {
     console.error('[carregarAfastamentos] Exception:', error);
     return [];

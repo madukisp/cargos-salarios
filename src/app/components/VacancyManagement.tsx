@@ -973,7 +973,15 @@ export function VacancyManagement() {
           quem_saiu: selectedVagaForAtribuicao.nome,
           cargo_saiu: selectedVagaForAtribuicao.cargo,
           dias_em_aberto: selectedVagaForAtribuicao.dias_em_aberto || 0,
-          cnpj: selectedVagaForAtribuicao.cnpj
+          cnpj: selectedVagaForAtribuicao.cnpj,
+          // Extra fields for event creation
+          _id_funcionario: selectedVagaForAtribuicao._id_funcionario,
+          _needs_creation: selectedVagaForAtribuicao._needs_creation,
+          data_evento: selectedVagaForAtribuicao.data_evento,
+          situacao_origem: selectedVagaForAtribuicao.situacao_origem,
+          nome: selectedVagaForAtribuicao.nome,
+          cargo: selectedVagaForAtribuicao.cargo,
+          lotacao: selectedVagaForAtribuicao.lotacao
         } : null}
       />
     </div>
