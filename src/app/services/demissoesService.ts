@@ -13,10 +13,10 @@ export interface VagaEmAberto {
   id_funcionario: number;
   carga_horaria_semanal?: string | null;
   escala?: string | null;
+  situacao_atual?: string | null; // Situação real do funcionário (vem de oris_funcionarios.situacao)
   // Identifica registros vindos de vagas_movimentacao
   _source?: 'MOVIMENTACAO';
   tipo_movimentacao?: string;
-  situacao_atual?: string | null;
 }
 
 export interface EventoDemissao {
@@ -64,7 +64,7 @@ export async function carregarDemissoes(
     let query = supabase
       .from('oris_funcionarios')
       .select(
-        'id,nome,cargo,cnpj,dt_rescisao,tipo_rescisao,carga_horaria_semanal,escala,centro_custo,nome_fantasia'
+        'id,nome,cargo,cnpj,dt_rescisao,tipo_rescisao,carga_horaria_semanal,escala,centro_custo,nome_fantasia,situacao'
       )
       .eq('situacao', '99-Demitido')
       .order('dt_rescisao', { ascending: false });
@@ -152,7 +152,7 @@ export async function carregarDemissoes(
         data_evento: d.dt_rescisao,
         status_evento: status as 'PENDENTE' | 'RESPONDIDO',
         dias_em_aberto: diasEmAberto,
-        situacao_origem: '99-Demitido',
+        situacao_origem: d.situacao || '99-Demitido', // Usar situação real do banco
         lotacao: d.centro_custo || d.nome_fantasia || 'Sem lotação',
         tipo_rescisao: d.tipo_rescisao,
         carga_horaria_semanal: d.carga_horaria_semanal,
@@ -608,16 +608,16 @@ export async function carregarVagasEmAberto(
 
     const vagas = (data || []) as VagaEmAberto[];
 
-    // Enriquecer com carga_horaria_semanal e escala do oris_funcionarios
+    // Enriquecer com carga_horaria_semanal, escala e situacao do oris_funcionarios
     const ids = vagas.map(v => v.id_funcionario).filter(Boolean);
     if (ids.length > 0) {
       const { data: orisData } = await supabase
         .from('oris_funcionarios')
-        .select('id, carga_horaria_semanal, escala')
+        .select('id, carga_horaria_semanal, escala, situacao')
         .in('id', ids);
 
       if (orisData && orisData.length > 0) {
-        const mapaOris: Record<number, { carga_horaria_semanal?: string; escala?: string }> = {};
+        const mapaOris: Record<number, { carga_horaria_semanal?: string; escala?: string; situacao?: string }> = {};
         orisData.forEach((o: any) => { mapaOris[o.id] = o; });
 
         vagas.forEach(v => {
@@ -625,6 +625,10 @@ export async function carregarVagasEmAberto(
           if (oris) {
             v.carga_horaria_semanal = oris.carga_horaria_semanal ?? null;
             v.escala = oris.escala ?? null;
+            // Adicionar situacao_atual se não existe (para vagas regulares)
+            if (!('situacao_atual' in v)) {
+              (v as any).situacao_atual = oris.situacao ?? null;
+            }
           }
         });
       }

@@ -1004,7 +1004,7 @@ export function VacancyManagement() {
                       status_evento: 'RESPONDIDO' as const,
                       situacao_origem: isMovimentacao
                         ? ((vaga as any).situacao_atual ?? 'Movimentação')
-                        : '99-Demitido',
+                        : ((vaga as any).situacao_atual ?? '99-Demitido'), // Usar situação real do banco
                     };
                     return (
                       <div key={vaga.id_evento} className="relative">
