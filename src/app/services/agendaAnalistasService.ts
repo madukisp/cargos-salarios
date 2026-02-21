@@ -11,6 +11,8 @@ export interface VagaAtribuida {
   lotacao: string;
   cnpj: string;
   data_atribuicao: string;
+  data_abertura_vaga?: string;
+  data_fechamento_vaga?: string;
   vaga_preenchida?: string;
   pendente_efetivacao?: boolean;
 }
@@ -161,6 +163,8 @@ export const carregarAgendaAnalistas = async (): Promise<AnalistaComVagas[]> => 
             lotacao: evento.lotacao || '-',
             cnpj: vaga.cnpj || '-',
             data_atribuicao: vaga.data_atribuicao || '-',
+            data_abertura_vaga: resposta?.data_abertura_vaga || undefined,
+            data_fechamento_vaga: resposta?.data_fechamento_vaga || undefined,
             vaga_preenchida: resposta?.vaga_preenchida,
             pendente_efetivacao: resposta?.pendente_efetivacao,
           };

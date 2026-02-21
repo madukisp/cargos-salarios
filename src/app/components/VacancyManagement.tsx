@@ -890,32 +890,45 @@ export function VacancyManagement() {
                           <span className="w-3 h-3 rounded-full bg-blue-500"></span>
                           Vagas em Aberto ({vagasEmAberto.length})
                         </h4>
-                        {vagasEmAberto.map((vaga) => (
-                          <VagaCard
-                            key={vaga.id_evento}
-                            vaga={vaga}
-                            expandedId={expandedId}
-                            setExpandedId={setExpandedId}
-                            abaSelecionada="respondidas"
-                            respostas={respostas}
-                            formData={formData}
-                            updateFormDataMap={updateFormDataMap}
-                            tlpData={tlpData}
-                            fantasias={fantasias}
-                            loadingProfile={loadingProfile}
-                            setLoadingProfile={setLoadingProfile}
-                            setSelectedProfileFunc={setSelectedProfileFunc}
-                            handleResponder={handleResponder}
-                            handleEfetivar={handleEfetivar}
-                            respondendo={respondendo}
-                            handleUpdateTlpValue={handleUpdateTlpValue}
-                            updatingTlp={updatingTlp}
-                            onAtribuir={handleAtribuirVaga}
-                            onArquivar={handleArquivar}
-                            erroFechamento={erroFechamento}
-                            setErroFechamento={setErroFechamento}
-                          />
-                        ))}
+                        {vagasEmAberto.map((vaga) => {
+                          const isMovimentacao = (vaga as any)._source === 'MOVIMENTACAO';
+                          const vagaFormatada = {
+                            ...vaga,
+                            cargo: vaga.cargo_saiu || 'Cargo não informado',
+                            nome: vaga.quem_saiu || 'Sem nome',
+                            lotacao: vaga.centro_custo || '-',
+                            status_evento: 'RESPONDIDO' as const,
+                            situacao_origem: isMovimentacao
+                              ? ((vaga as any).situacao_atual ?? 'Movimentação')
+                              : ((vaga as any).situacao_atual ?? '99-Demitido'),
+                          };
+                          return (
+                            <VagaCard
+                              key={vaga.id_evento}
+                              vaga={vagaFormatada}
+                              expandedId={expandedId}
+                              setExpandedId={setExpandedId}
+                              abaSelecionada="respondidas"
+                              respostas={respostas}
+                              formData={formData}
+                              updateFormDataMap={updateFormDataMap}
+                              tlpData={tlpData}
+                              fantasias={fantasias}
+                              loadingProfile={loadingProfile}
+                              setLoadingProfile={setLoadingProfile}
+                              setSelectedProfileFunc={setSelectedProfileFunc}
+                              handleResponder={handleResponder}
+                              handleEfetivar={handleEfetivar}
+                              respondendo={respondendo}
+                              handleUpdateTlpValue={handleUpdateTlpValue}
+                              updatingTlp={updatingTlp}
+                              onAtribuir={handleAtribuirVaga}
+                              onArquivar={handleArquivar}
+                              erroFechamento={erroFechamento}
+                              setErroFechamento={setErroFechamento}
+                            />
+                          );
+                        })}
                       </div>
                     )}
 
@@ -1233,6 +1246,7 @@ export function VacancyManagement() {
           ? fantasias.filter(f => CONTRATOS_SP.some(sp => f.display_name?.includes(sp) || f.nome_fantasia?.includes(sp)))
           : fantasias}
         onSaved={() => carregarDados(lotacao === 'TODAS' ? undefined : lotacao, selectedFantasia)}
+        onAtribuir={handleAtribuirVaga}
       />
     </div>
   );
@@ -1705,7 +1719,16 @@ function VagaCard({
     }
   };
 
-
+  // Efeito para pré-preencher dados de vagas de movimentação manual
+  useEffect(() => {
+    const isMovimentacao = (vaga as any)._source === 'MOVIMENTACAO';
+    if (isMovimentacao && !formData[vaga.id_evento]?.data_abertura_vaga) {
+      updateFormDataMap(vaga.id_evento, {
+        abriu_vaga: true,
+        data_abertura_vaga: (vaga as any).data_abertura_vaga
+      });
+    }
+  }, [vaga.id_evento, (vaga as any)._source, (vaga as any).data_abertura_vaga, formData, updateFormDataMap]);
 
   return (
     <Card key={vaga.id_evento} className={`mb-3 overflow-hidden border-slate-200 dark:border-slate-800 transition-all hover:shadow-md ${alertaDataSuspeita ? 'border-l-4 border-l-yellow-400' : isPendenteEf ? 'border-l-4 border-l-amber-500' : ''}`}>

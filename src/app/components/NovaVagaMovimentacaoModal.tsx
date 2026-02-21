@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Search, Loader2, UserPlus, Users, AlertTriangle, PenLine } from 'lucide-react';
+import { X, Search, Loader2, UserPlus, Users, AlertTriangle, PenLine, Calendar } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Label } from './ui/label';
 import { Input } from './ui/input';
@@ -25,6 +25,16 @@ interface NovaVagaMovimentacaoModalProps {
   onOpenChange: (open: boolean) => void;
   fantasias: { cnpj: string; display_name?: string; nome_fantasia?: string }[];
   onSaved: () => void;
+  onAtribuir?: (vagaData: {
+    id_evento: number;
+    quem_saiu: string;
+    cargo_saiu: string;
+    dias_em_aberto: number;
+    cnpj: string;
+    nome: string;
+    cargo: string;
+    lotacao: string;
+  }) => void;
 }
 
 export function NovaVagaMovimentacaoModal({
@@ -32,6 +42,7 @@ export function NovaVagaMovimentacaoModal({
   onOpenChange,
   fantasias,
   onSaved,
+  onAtribuir,
 }: NovaVagaMovimentacaoModalProps) {
   const [selectedCnpj, setSelectedCnpj] = useState('');
   const [centrosCusto, setCentrosCusto] = useState<string[]>([]);
@@ -40,6 +51,7 @@ export function NovaVagaMovimentacaoModal({
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [selectedFuncionario, setSelectedFuncionario] = useState<Funcionario | null>(null);
   const [tipoMovimentacao, setTipoMovimentacao] = useState('');
+  const [dataAbertura, setDataAbertura] = useState('');
 
   // Dados manuais
   const [dadosManuais, setDadosManuais] = useState(false);
@@ -64,7 +76,6 @@ export function NovaVagaMovimentacaoModal({
       return;
     }
     setLoadingOpcoes(true);
-    // Carrega com limite alto para capturar todos os registros
     supabase
       .from('oris_funcionarios')
       .select('id, nome, cargo, carga_horaria_semanal, escala, centro_custo')
@@ -74,13 +85,11 @@ export function NovaVagaMovimentacaoModal({
       .then(({ data }) => {
         const rows = (data || []) as Funcionario[];
 
-        // Centros de custo únicos
         const uniqueCentros = Array.from(
           new Set(rows.map((r) => r.centro_custo).filter(Boolean))
         ).sort() as string[];
         setCentrosCusto(uniqueCentros);
 
-        // Opções para dados manuais
         const cargos = Array.from(new Set(rows.map((r) => r.cargo).filter(Boolean))).sort() as string[];
         const escalas = Array.from(new Set(rows.map((r) => r.escala).filter(Boolean))).sort() as string[];
         const cargasHorarias = Array.from(
@@ -99,7 +108,6 @@ export function NovaVagaMovimentacaoModal({
     }
 
     if (!buscaFuncionario.trim()) {
-      // Se não há busca, carrega tudo com limite
       setLoadingFuncionarios(true);
       supabase
         .from('oris_funcionarios')
@@ -115,7 +123,6 @@ export function NovaVagaMovimentacaoModal({
       return;
     }
 
-    // Se há busca, faz query filtrada no banco
     const searchTerm = buscaFuncionario.trim().toUpperCase();
     setLoadingFuncionarios(true);
     supabase
@@ -132,15 +139,14 @@ export function NovaVagaMovimentacaoModal({
       });
   }, [selectedCnpj, buscaFuncionario]);
 
-  // Ao selecionar funcionário, pré-preencher campos manuais e centro de custo
+  // Ao selecionar funcionário, pré-preencher campos manuais
   useEffect(() => {
     if (selectedFuncionario) {
       setManualCargo(selectedFuncionario.cargo || '');
       setManualCargaHoraria(selectedFuncionario.carga_horaria_semanal || '');
       setManualEscala(selectedFuncionario.escala || '');
-      if (selectedFuncionario.centro_custo) {
-        setSelectedCentroCusto(selectedFuncionario.centro_custo);
-      }
+      // Não alteramos selectedCentroCusto automaticamente para não
+      // bloquear a busca caso o usuário queira trocar de funcionário
     }
   }, [selectedFuncionario]);
 
@@ -172,6 +178,10 @@ export function NovaVagaMovimentacaoModal({
       setError('Selecione o motivo da movimentação.');
       return;
     }
+    if (!dataAbertura) {
+      setError('Informe a data de abertura da vaga.');
+      return;
+    }
     if (dadosManuais && !cargoFinal) {
       setError('Selecione o cargo para continuar.');
       return;
@@ -179,7 +189,7 @@ export function NovaVagaMovimentacaoModal({
     setSaving(true);
     setError(null);
     try {
-      const { error: insertError } = await supabase
+      const { data: inserted, error: insertError } = await supabase
         .from('vagas_movimentacao')
         .insert({
           cnpj: selectedCnpj,
@@ -190,11 +200,29 @@ export function NovaVagaMovimentacaoModal({
           carga_horaria_semanal: cargaHorariaFinal,
           escala: escalaFinal,
           tipo_movimentacao: tipoMovimentacao,
-          data_abertura: new Date().toISOString().split('T')[0],
+          data_abertura: dataAbertura,
           status: 'ABERTA',
-        });
+        })
+        .select()
+        .single();
       if (insertError) throw insertError;
       onSaved();
+      if (onAtribuir && inserted) {
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+        const dataAb = new Date(inserted.data_abertura + 'T00:00:00');
+        const diasEmAberto = Math.max(0, Math.ceil((hoje.getTime() - dataAb.getTime()) / (1000 * 60 * 60 * 24)));
+        onAtribuir({
+          id_evento: inserted.id,
+          quem_saiu: inserted.nome_funcionario,
+          cargo_saiu: inserted.cargo,
+          dias_em_aberto: diasEmAberto,
+          cnpj: inserted.cnpj,
+          nome: inserted.nome_funcionario,
+          cargo: inserted.cargo,
+          lotacao: inserted.centro_custo,
+        });
+      }
       onOpenChange(false);
       resetForm();
     } catch (err) {
@@ -210,6 +238,7 @@ export function NovaVagaMovimentacaoModal({
     setBuscaFuncionario('');
     setSelectedFuncionario(null);
     setTipoMovimentacao('');
+    setDataAbertura('');
     setDadosManuais(false);
     setManualCargo('');
     setManualCargaHoraria('');
@@ -306,6 +335,7 @@ export function NovaVagaMovimentacaoModal({
                     onChange={(e) => {
                       setBuscaFuncionario(e.target.value);
                       setSelectedFuncionario(null);
+                      setSelectedCentroCusto(''); // limpa filtro de centro para busca livre
                       setDadosManuais(false);
                     }}
                     className="pl-9 h-9"
@@ -342,12 +372,11 @@ export function NovaVagaMovimentacaoModal({
                     filteredFuncionarios.map((f) => (
                       <div
                         key={f.id}
-                        onClick={() => { setSelectedFuncionario(f); setDadosManuais(false); }}
-                        className={`px-3 py-2 cursor-pointer transition-colors border-b last:border-b-0 border-slate-100 dark:border-slate-800 ${
-                          selectedFuncionario?.id === f.id
-                            ? 'bg-purple-50 dark:bg-purple-900/20 border-l-2 border-l-purple-400'
-                            : 'hover:bg-slate-50 dark:hover:bg-slate-800'
-                        }`}
+                        onClick={() => { setSelectedFuncionario(f); setDadosManuais(false); if (f.centro_custo) setSelectedCentroCusto(f.centro_custo); }}
+                        className={`px-3 py-2 cursor-pointer transition-colors border-b last:border-b-0 border-slate-100 dark:border-slate-800 ${selectedFuncionario?.id === f.id
+                          ? 'bg-purple-50 dark:bg-purple-900/20 border-l-2 border-l-purple-400'
+                          : 'hover:bg-slate-50 dark:hover:bg-slate-800'
+                          }`}
                       >
                         <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{f.nome}</p>
                         <p className="text-xs text-slate-500">
@@ -360,6 +389,31 @@ export function NovaVagaMovimentacaoModal({
                     ))
                   )}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Data de abertura — aparece após clicar em um funcionário na lista */}
+          {selectedFuncionario && (
+            <div>
+              <Label className="text-xs font-bold uppercase text-slate-500 mb-1.5 block">
+                <span className="flex items-center gap-1.5">
+                  <Calendar size={12} />
+                  Data de Abertura da Vaga <span className="text-red-500">*</span>
+                </span>
+              </Label>
+              <Input
+                type="date"
+                value={dataAbertura}
+                onChange={(e) => setDataAbertura(e.target.value)}
+                max={new Date().toISOString().split('T')[0]}
+                placeholder="Selecione a data"
+                className="h-9 text-sm"
+              />
+              {!dataAbertura && (
+                <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1 font-medium">
+                  ⚠ Obrigatório — informe a data de abertura para continuar.
+                </p>
               )}
             </div>
           )}
@@ -500,7 +554,7 @@ export function NovaVagaMovimentacaoModal({
           </button>
           <button
             onClick={handleSave}
-            disabled={!selectedFuncionario || saving}
+            disabled={!selectedFuncionario || !dataAbertura || saving}
             className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors"
           >
             {saving && <Loader2 size={14} className="animate-spin" />}

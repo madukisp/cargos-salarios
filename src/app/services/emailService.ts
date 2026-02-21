@@ -44,11 +44,7 @@ export async function enviarNotificacaoVaga(dados: VagaNotificationData): Promis
  * Calcula o URL da aplicação (baseado no ambiente)
  */
 export function obterUrlAplicacao(): string {
-    // Em desenvolvimento: http://localhost:5173
-    // Em produção: Usar a URL atual ou fallback
-    if (typeof window !== 'undefined') {
-        const origin = window.location.origin
-        return origin
-    }
-    return 'http://localhost:5173'
+    // Forçar sempre a URL de produção para os emails, 
+    // independente de onde a ação é disparada.
+    return 'https://analistas-recrutamento.vercel.app';
 }

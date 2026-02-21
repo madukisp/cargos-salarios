@@ -60,7 +60,64 @@ export async function carregarDemissoes(
   try {
     console.log('[carregarDemissoes] Iniciando (mixed mode), status:', status);
 
-    // 1. Buscar demitidos do oris_funcionarios (fonte "real-time")
+    // --- Caminho RESPONDIDO: usa eventos_gestao_vagas_public como fonte primária ---
+    // Evita o limite de 1.000 linhas do Supabase ao varrer oris_funcionarios (8.992 demitidos)
+    if (status === 'RESPONDIDO') {
+      let evQuery = supabase
+        .from('eventos_gestao_vagas_public')
+        .select('id_evento,nome,cargo,cnpj,data_evento,status_evento,dias_em_aberto,situacao_origem,lotacao')
+        .eq('status_evento', 'RESPONDIDO')
+        .eq('situacao_origem', '99-Demitido')
+        .order('data_evento', { ascending: false });
+
+      if (lotacao && lotacao !== 'TODAS') {
+        evQuery = evQuery.eq('lotacao', lotacao);
+      }
+      if (cnpj && cnpj !== 'todos') {
+        evQuery = evQuery.eq('cnpj', cnpj);
+      }
+
+      const { data: eventos, error: evError } = await evQuery;
+      if (evError) throw evError;
+      if (!eventos || eventos.length === 0) return [];
+
+      // Enriquecer com tipo_rescisao, carga_horaria_semanal, escala do oris_funcionarios
+      const nomes = eventos.map((e: any) => e.nome).filter(Boolean);
+      let mapaDetalhes: Record<string, any> = {};
+      if (nomes.length > 0) {
+        const { data: orisData } = await supabase
+          .from('oris_funcionarios')
+          .select('nome,tipo_rescisao,carga_horaria_semanal,escala')
+          .in('nome', nomes);
+        (orisData || []).forEach((o: any) => { mapaDetalhes[o.nome] = o; });
+      }
+
+      console.log('[carregarDemissoes] RESPONDIDO via eventos_gestao_vagas_public:', eventos.length);
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      return eventos.map((e: any) => {
+        const dataSaida = new Date(e.data_evento + 'T00:00:00');
+        const diasEmAberto = Math.ceil(Math.abs(hoje.getTime() - dataSaida.getTime()) / (1000 * 60 * 60 * 24));
+        const det = mapaDetalhes[e.nome] || {};
+        return {
+          id_evento: e.id_evento,
+          nome: e.nome,
+          cargo: e.cargo,
+          cnpj: e.cnpj,
+          data_evento: e.data_evento,
+          status_evento: 'RESPONDIDO' as const,
+          dias_em_aberto: diasEmAberto,
+          situacao_origem: e.situacao_origem || '99-Demitido',
+          lotacao: e.lotacao || 'Sem lotação',
+          tipo_rescisao: det.tipo_rescisao || null,
+          carga_horaria_semanal: det.carga_horaria_semanal || null,
+          escala: det.escala || null,
+        } as EventoDemissao;
+      });
+    }
+
+    // --- Caminho PENDENTE: varre oris_funcionarios para achar demitidos sem evento/resposta ---
+    // 1. Buscar demitidos recentes do oris_funcionarios
     let query = supabase
       .from('oris_funcionarios')
       .select(
@@ -75,51 +132,32 @@ export async function carregarDemissoes(
     if (!demitidos || demitidos.length === 0) return [];
 
     // 2. Buscar eventos correspondentes em eventos_movimentacao
-    // Precisamos disso para obter o id_evento real, caso o sync tenha rodado
     const funcIds = demitidos.map(d => d.id);
     const { data: eventosReais } = await supabase
       .from('eventos_movimentacao')
       .select('id_evento, id_funcionario, data_evento')
       .in('id_funcionario', funcIds)
-      .eq('situacao_origem', '99-Demitido'); // Garantir que é demissão
+      .eq('situacao_origem', '99-Demitido');
 
-    // Criar mapa: id_funcionario -> id_evento (mais recente)
     const mapaEventos: Record<number, number> = {};
     if (eventosReais) {
       eventosReais.forEach((ev: any) => {
-        // Se houver mais de um, o último sobrescreve (ordem não garantida pelo select, mas assumindo 1:1 recente)
-        // Idealmente filtrar pela data mais próxima, mas direto é aceitável aqui
         mapaEventos[ev.id_funcionario] = ev.id_evento;
       });
     }
 
-    // 3. Buscar respostas para filtrar PENDENTE/RESPONDIDO
+    // 3. Buscar respostas para identificar pendentes (sem resposta)
     const { data: respostas } = await supabase
       .from('respostas_gestor')
-      .select('id_evento')
-      .eq('tipo_origem', 'DEMISSAO');
+      .select('id_evento');
 
     const respostasSet = new Set((respostas || []).map(r => r.id_evento));
 
-    // 4. Filtrar e formatar
+    // 4. Filtrar apenas os que NÃO têm resposta (PENDENTE)
     let demissoesFiltradas = demitidos.filter(d => {
-      // O ID que usamos para verificar resposta é o ID do EVENTO se existir, senão o ID do FUNC
-      // Mas espere! Se o evento existe, a resposta está ligada ao id_evento.
-      // Se o evento NÃO existe, a resposta NÃO DEVERIA existir (pois fk fail).
-      // Entao:
       const realIdEvento = mapaEventos[d.id];
-      const idParaChecar = realIdEvento || d.id; // Fallback para id_funcionario se não tem evento (mas nao deve ter resposta)
-
-      // Se usamos id_funcionario como id_evento temporário, verificamos se tem resposta com esse ID
-      // (caso legado ou bug). Mas o padrão agora é id_evento.
-
-      const temResposta = respostasSet.has(idParaChecar);
-
-      if (status === 'PENDENTE') {
-        return !temResposta;
-      } else {
-        return temResposta;
-      }
+      const idParaChecar = realIdEvento || d.id;
+      return !respostasSet.has(idParaChecar);
     });
 
     // 5. Filtros de UI
@@ -132,9 +170,8 @@ export async function carregarDemissoes(
       demissoesFiltradas = demissoesFiltradas.filter(d => d.cnpj === cnpj);
     }
 
-    console.log('[carregarDemissoes] Retornando', demissoesFiltradas.length, `demissões`);
+    console.log('[carregarDemissoes] PENDENTE:', demissoesFiltradas.length);
 
-    // Helper formatar
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
 
@@ -145,19 +182,18 @@ export async function carregarDemissoes(
       const realIdEvento = mapaEventos[d.id];
 
       return {
-        id_evento: realIdEvento || d.id, // Preferência pelo ID real do evento
+        id_evento: realIdEvento || d.id,
         nome: d.nome,
         cargo: d.cargo,
         cnpj: d.cnpj,
         data_evento: d.dt_rescisao,
-        status_evento: status as 'PENDENTE' | 'RESPONDIDO',
+        status_evento: 'PENDENTE' as const,
         dias_em_aberto: diasEmAberto,
-        situacao_origem: d.situacao || '99-Demitido', // Usar situação real do banco
+        situacao_origem: d.situacao || '99-Demitido',
         lotacao: d.centro_custo || d.nome_fantasia || 'Sem lotação',
         tipo_rescisao: d.tipo_rescisao,
         carga_horaria_semanal: d.carga_horaria_semanal,
         escala: d.escala,
-        // Campos extras para auxiliar na criação se necessário
         _id_funcionario: d.id,
         _needs_creation: !realIdEvento
       } as EventoDemissao;

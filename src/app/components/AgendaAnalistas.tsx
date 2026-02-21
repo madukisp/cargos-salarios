@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Card, CardContent } from './ui/card';
 import {
   Select,
@@ -20,6 +20,8 @@ import {
   Briefcase,
   Trash2,
   X,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { useAgendaAnalistas } from '@/app/hooks/useAgendaAnalistas';
 import { formatarData } from '@/lib/column-formatters';
@@ -34,6 +36,7 @@ interface FiltrosSalvos {
   busca?: string;
   ano?: string;
   mes?: string;
+  ordenacao?: string;
 }
 
 const carregarFiltros = (): FiltrosSalvos | null => {
@@ -97,9 +100,18 @@ export function AgendaAnalistas() {
   const [busca, setBusca] = useState<string>(filtrosSalvos?.busca ?? '');
   const [selectedYear, setSelectedYear] = useState<string>(filtrosSalvos?.ano ?? 'TODOS');
   const [selectedMonth, setSelectedMonth] = useState<string>(filtrosSalvos?.mes ?? 'TODOS');
+  const [ordenacao, setOrdenacao] = useState<string>(filtrosSalvos?.ordenacao ?? 'antigas');
   const [expandidos, setExpandidos] = useState<Set<number>>(new Set());
   const [removendo, setRemovendo] = useState<string | null>(null);
   const [vagaSelecionada, setVagaSelecionada] = useState<(VagaAtribuida & { nomeAnalista: string; cargoAnalista: string }) | null>(null);
+  const [copiado, setCopiado] = useState<number | null>(null);
+
+  const copiarNome = useCallback((e: React.MouseEvent, nome: string, idEvento: number) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(nome);
+    setCopiado(idEvento);
+    setTimeout(() => setCopiado(null), 2000);
+  }, []);
 
   const handleSalvarFiltros = (filtros: FiltrosSalvos) => {
     salvarFiltros(filtros);
@@ -176,15 +188,36 @@ export function AgendaAnalistas() {
       result = result.filter(a => a.vagas.length > 0);
     }
 
-    // Recalcular contadores com base nas vagas filtradas
-    return result.map(a => ({
-      ...a,
-      totalVagas: a.vagas.length,
-      vagasEmAberto: a.vagas.filter(v => v.vaga_preenchida !== 'SIM').length,
-      vagasFechadas: a.vagas.filter(v => v.vaga_preenchida === 'SIM').length,
-      vagasCriticas: a.vagas.filter(v => v.vaga_preenchida !== 'SIM' && v.dias_reais >= 45).length,
-    }));
-  }, [analistas, buscaAnalista, statusFiltro, busca, selectedYear, selectedMonth]);
+    // Recalcular contadores com base nas vagas filtradas e Aplicar Ordenação
+    return result.map(a => {
+      const vagasOrdenadas = [...a.vagas].sort((v1, v2) => {
+        // Sempre mantém vagas abertas no topo se não estiverem preenchidas
+        const aAberta = v1.vaga_preenchida !== 'SIM' ? 0 : 1;
+        const bAberta = v2.vaga_preenchida !== 'SIM' ? 0 : 1;
+        if (aAberta !== bAberta) return aAberta - bAberta;
+
+        if (ordenacao === 'alfabetica') {
+          return v1.nome_funcionario.localeCompare(v2.nome_funcionario);
+        } else if (ordenacao === 'abertura') {
+          const dateA = v1.data_abertura_vaga ? new Date(v1.data_abertura_vaga).getTime() : 0;
+          const dateB = v2.data_abertura_vaga ? new Date(v2.data_abertura_vaga).getTime() : 0;
+          return dateB - dateA; // Mais recentes primeiro
+        } else {
+          // Default: Antigas primeiro (mesmo comportamento do service)
+          return v2.dias_reais - v1.dias_reais;
+        }
+      });
+
+      return {
+        ...a,
+        vagas: vagasOrdenadas,
+        totalVagas: a.vagas.length,
+        vagasEmAberto: a.vagas.filter(v => v.vaga_preenchida !== 'SIM').length,
+        vagasFechadas: a.vagas.filter(v => v.vaga_preenchida === 'SIM').length,
+        vagasCriticas: a.vagas.filter(v => v.vaga_preenchida !== 'SIM' && v.dias_reais >= 45).length,
+      };
+    });
+  }, [analistas, buscaAnalista, statusFiltro, busca, selectedYear, selectedMonth, ordenacao]);
 
   // Atualizar filtros salvos quando mudam
   const handleBuscaAnalistaChange = (valor: string) => {
@@ -209,7 +242,12 @@ export function AgendaAnalistas() {
 
   const handleMonthChange = (valor: string) => {
     setSelectedMonth(valor);
-    handleSalvarFiltros({ analista: buscaAnalista, status: statusFiltro, busca, ano: selectedYear, mes: valor });
+    handleSalvarFiltros({ analista: buscaAnalista, status: statusFiltro, busca, ano: selectedYear, mes: valor, ordenacao });
+  };
+
+  const handleOrdenacaoChange = (valor: string) => {
+    setOrdenacao(valor);
+    handleSalvarFiltros({ analista: buscaAnalista, status: statusFiltro, busca, ano: selectedYear, mes: selectedMonth, ordenacao: valor });
   };
 
   if (error) {
@@ -394,6 +432,23 @@ export function AgendaAnalistas() {
               </Select>
             </div>
 
+            {/* Ordenação */}
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Ordenar Vagas por
+              </label>
+              <Select value={ordenacao} onValueChange={handleOrdenacaoChange}>
+                <SelectTrigger className="bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="antigas">Mais antigas primeiro</SelectItem>
+                  <SelectItem value="abertura">Data de abertura (Recentes)</SelectItem>
+                  <SelectItem value="alfabetica">Nome do funcionário (A-Z)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Limpar filtros de período */}
             {(selectedYear !== 'TODOS' || selectedMonth !== 'TODOS') && (
               <div className="flex items-end">
@@ -502,9 +557,21 @@ export function AgendaAnalistas() {
                             <div className="flex-1">
                               <div className="flex items-start gap-3">
                                 <div className="flex-1">
-                                  <h4 className="font-medium text-slate-900 dark:text-slate-100">
-                                    {vaga.nome_funcionario}
-                                  </h4>
+                                  <div className="flex items-center gap-1.5">
+                                    <h4 className="font-medium text-slate-900 dark:text-slate-100">
+                                      {vaga.nome_funcionario}
+                                    </h4>
+                                    <button
+                                      onClick={(e) => copiarNome(e, vaga.nome_funcionario, vaga.id_evento)}
+                                      title="Copiar nome"
+                                      className="p-1 rounded text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                                    >
+                                      {copiado === vaga.id_evento
+                                        ? <Check className="w-3.5 h-3.5 text-green-500" />
+                                        : <Copy className="w-3.5 h-3.5" />
+                                      }
+                                    </button>
+                                  </div>
                                   <p className="text-sm text-slate-600 dark:text-slate-400">
                                     {vaga.cargo_vaga}
                                   </p>
@@ -525,9 +592,21 @@ export function AgendaAnalistas() {
                                       </Badge>
                                     )}
                                   </div>
-                                  <p className="text-xs text-slate-500 dark:text-slate-500 mt-2">
-                                    Atribuída em: {formatarData(vaga.data_atribuicao)}
-                                  </p>
+                                  <div className="flex flex-wrap gap-x-4 mt-2">
+                                    <p className="text-xs text-slate-500 dark:text-slate-500">
+                                      Atribuída em: {formatarData(vaga.data_atribuicao)}
+                                    </p>
+                                    {vaga.data_abertura_vaga && (
+                                      <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                                        Abertura da vaga: {formatarData(vaga.data_abertura_vaga)}
+                                      </p>
+                                    )}
+                                    {vaga.data_fechamento_vaga && (
+                                      <p className="text-xs text-green-600 dark:text-green-400 font-medium">
+                                        Fechamento da vaga: {formatarData(vaga.data_fechamento_vaga)}
+                                      </p>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </div>

@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Briefcase, FileText, Settings, Building2, ChevronLeft, ChevronRight, Table, Calendar, Edit } from 'lucide-react';
+import { LayoutDashboard, Users, Briefcase, FileText, Settings, Building2, ChevronLeft, ChevronRight, Table, Calendar, Edit, BarChart2 } from 'lucide-react';
 import { useSidebar } from './SidebarContext';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -15,6 +15,7 @@ export function Sidebar() {
 
     { path: '/consulta-funcionarios', label: 'Pesquisa', icon: Users },
     { path: '/oris', label: 'Planilha Oris', icon: Table },
+    { path: '/base-bi', label: 'Base BI RH', icon: BarChart2 },
     { path: '/requisitions', label: 'Requisições', icon: FileText },
   ];
 

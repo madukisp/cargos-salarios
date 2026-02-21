@@ -14,6 +14,7 @@ import { SidebarProvider, useSidebar } from './components/SidebarContext';
 import { useAuth } from './hooks/useAuth';
 import { Settings } from './components/Settings';
 import { AgendaAnalistas } from './components/AgendaAnalistas';
+import { BaseBI } from './components/BaseBI';
 import { NotificationProvider } from './contexts/NotificationContext';
 
 function AppContent() {
@@ -52,6 +53,7 @@ function AppContent() {
             <Route path="/requisitions" element={<Requisitions />} />
             <Route path="/database" element={<DatabaseDemo />} />
             <Route path="/oris" element={<Oris />} />
+            <Route path="/base-bi" element={<BaseBI />} />
             <Route path="/consulta-funcionarios" element={<EmployeeSearch />} />
             <Route path="/configuracoes" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
