@@ -702,7 +702,7 @@ export function VagaDetalhesModal({ vaga, onClose, onVagaFechada }: VagaDetalhes
               )}
 
               {/* Status e Timing */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className={`grid grid-cols-1 gap-4 ${detalhes.resposta?.data_fechamento_vaga ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
                 <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
                   <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mb-2">Status</p>
                   {vagaFechada ? (
@@ -720,6 +720,24 @@ export function VagaDetalhesModal({ vaga, onClose, onVagaFechada }: VagaDetalhes
                   <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mb-2">Data do Evento</p>
                   <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">{formatarData(vaga.data_evento)}</p>
                 </div>
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+                  <p className="text-xs text-blue-700 dark:text-blue-400 font-medium mb-2">Data de Abertura da Vaga</p>
+                  {(vaga.data_abertura_vaga || detalhes.resposta?.data_abertura_vaga) ? (
+                    <p className="text-lg font-semibold text-blue-900 dark:text-blue-100">
+                      {formatarData(vaga.data_abertura_vaga || detalhes.resposta?.data_abertura_vaga)}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-slate-400 dark:text-slate-500 italic">Não informada</p>
+                  )}
+                </div>
+                {detalhes.resposta?.data_fechamento_vaga && (
+                  <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-700">
+                    <p className="text-xs text-green-700 dark:text-green-400 font-medium mb-2">Data de Fechamento da Vaga</p>
+                    <p className="text-lg font-semibold text-green-900 dark:text-green-100">
+                      {formatarData(detalhes.resposta.data_fechamento_vaga)}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Timeline */}

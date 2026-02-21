@@ -64,42 +64,56 @@ export function AtribuirVagaModal({ open, onOpenChange, vaga }: AtribuirVagaModa
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                    <DialogTitle>Atribuir Vaga a Analista</DialogTitle>
-                    <DialogDescription>
+            <DialogContent className="sm:max-w-lg overflow-hidden border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl">
+                <DialogHeader className="px-6 pt-6">
+                    <DialogTitle className="text-xl font-bold text-slate-900 dark:text-slate-100 uppercase tracking-tight">Atribuir Vaga a Analista</DialogTitle>
+                    <DialogDescription className="text-slate-500 dark:text-slate-400">
                         Selecione o analista responsável por esta vaga.
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid gap-4 py-4">
+                <div className="p-6 space-y-4 max-w-full overflow-x-hidden">
                     <div className="space-y-2">
-                        <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400 ml-1">
                             Vaga em Aberto
                         </label>
                         {vaga ? (
-                            <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-700 text-sm space-y-1">
-                                <p><span className="font-semibold">Quem saiu:</span> {vaga.quem_saiu}</p>
-                                <p><span className="font-semibold">Cargo:</span> {vaga.cargo_saiu}</p>
-                                <p><span className="font-semibold">Dias em aberto:</span> {vaga.dias_em_aberto} dias</p>
+                            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 text-sm space-y-2 w-full shadow-sm overflow-hidden">
+                                <div className="flex gap-2">
+                                    <span className="font-bold text-slate-500 dark:text-slate-400 flex-shrink-0 uppercase text-[10px] mt-0.5">Quem saiu:</span>
+                                    <span className="text-slate-900 dark:text-slate-100 font-medium break-words overflow-hidden">{vaga.quem_saiu}</span>
+                                </div>
+                                <div className="flex gap-2">
+                                    <span className="font-bold text-slate-500 dark:text-slate-400 flex-shrink-0 uppercase text-[10px] mt-0.5">Cargo:</span>
+                                    <span className="text-slate-800 dark:text-slate-200 break-words overflow-hidden">{vaga.cargo_saiu}</span>
+                                </div>
+                                <div className="flex gap-2 pt-1 border-t border-slate-200 dark:border-slate-700 mt-2">
+                                    <span className="font-bold text-slate-500 dark:text-slate-400 flex-shrink-0 uppercase text-[10px] mt-0.5">Dias em aberto:</span>
+                                    <span className="text-purple-600 dark:text-purple-400 font-bold">{vaga.dias_em_aberto} dias</span>
+                                </div>
                             </div>
                         ) : (
-                            <div className="text-sm text-destructive">Nenhuma vaga selecionada.</div>
+                            <div className="text-sm text-destructive italic p-4 border border-dashed rounded-xl bg-red-50/50 dark:bg-red-900/10">
+                                Nenhuma vaga selecionada.
+                            </div>
                         )}
                     </div>
 
                     <div className="space-y-2">
-                        <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                            Analista
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">
+                            Analista Responsável
                         </label>
                         <Select value={selectedAnalistaId} onValueChange={setSelectedAnalistaId} disabled={isLoadingAnalistas}>
-                            <SelectTrigger>
+                            <SelectTrigger className="w-full h-11 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
                                 <SelectValue placeholder={isLoadingAnalistas ? "Carregando..." : "Selecione o analista"} />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent className="max-h-52 overflow-y-auto w-[var(--radix-select-trigger-width)]">
                                 {analistas?.map((analista) => (
                                     <SelectItem key={analista.id} value={analista.id.toString()}>
-                                        {analista.nome} - {analista.cargo}
+                                        <div className="flex flex-col py-0.5">
+                                            <span className="font-medium">{analista.nome}</span>
+                                            <span className="text-[10px] text-slate-500">{analista.cargo}</span>
+                                        </div>
                                     </SelectItem>
                                 ))}
                             </SelectContent>
@@ -107,11 +121,11 @@ export function AtribuirVagaModal({ open, onOpenChange, vaga }: AtribuirVagaModa
                     </div>
                 </div>
 
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isAtribuindo}>
+                <DialogFooter className="p-6 bg-slate-50/50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 flex gap-2">
+                    <Button variant="ghost" className="flex-1" onClick={() => onOpenChange(false)} disabled={isAtribuindo}>
                         Cancelar
                     </Button>
-                    <Button onClick={handleConfirm} disabled={isAtribuindo || !vaga || !selectedAnalistaId}>
+                    <Button onClick={handleConfirm} className="flex-1 bg-purple-600 hover:bg-purple-700 text-white" disabled={isAtribuindo || !vaga || !selectedAnalistaId}>
                         {isAtribuindo && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         Confirmar Atribuição
                     </Button>

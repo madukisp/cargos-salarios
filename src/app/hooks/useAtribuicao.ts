@@ -92,10 +92,31 @@ export function useAtribuirVaga() {
                     .eq('id_evento', idEventoFinal)
                     .single();
 
-                if (vagaView) {
+                // 1ª tentativa: vagas de movimentação manual (tem IDs que podem colidir com a view)
+                console.log('[EMAIL DEBUG] Tentando vagas_movimentacao primeiro...');
+                const { data: vagaMov } = await supabase
+                    .from('vagas_movimentacao')
+                    .select('nome_funcionario, cargo, data_abertura')
+                    .eq('id', idEventoFinal)
+                    .maybeSingle();
+
+                if (vagaMov) {
+                    const diffTime = Math.abs(new Date().getTime() - new Date(vagaMov.data_abertura).getTime());
+                    const dias = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    vaga = {
+                        nome: vagaMov.nome_funcionario,
+                        cargo: vagaMov.cargo,
+                        data_evento: vagaMov.data_abertura,
+                        dias_em_aberto: dias,
+                    };
+                    console.log('[EMAIL DEBUG] Vaga encontrada em vagas_movimentacao:', vaga);
+                } else if (vagaView) {
+                    // 2ª tentativa: view pública (demissões/afastamentos)
                     vaga = vagaView;
+                    console.log('[EMAIL DEBUG] Vaga encontrada na view pública:', vaga);
                 } else {
-                    console.log('[EMAIL DEBUG] Vaga não encontrada na view (pode ser delay). Tentando raw...', vagaError);
+                    // 3ª tentativa: eventos_movimentacao direto
+                    console.log('[EMAIL DEBUG] Tentando eventos_movimentacao...', vagaError);
                     const { data: vagaRaw } = await supabase
                         .from('eventos_movimentacao')
                         .select('nome, cargo, data_evento')
@@ -106,6 +127,7 @@ export function useAtribuirVaga() {
                         const diffTime = Math.abs(new Date().getTime() - new Date(vagaRaw.data_evento).getTime());
                         const dias = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                         vaga = { ...vagaRaw, dias_em_aberto: dias };
+                        console.log('[EMAIL DEBUG] Vaga encontrada em eventos_movimentacao:', vaga);
                     }
                 }
 
@@ -128,7 +150,8 @@ export function useAtribuirVaga() {
                         funcionario_saiu: vaga.nome || '-',
                         cargo_saiu: vaga.cargo || '-',
                         // Formatar a data para exibição (dd/mm/aaaa)
-                        data_abertura_vaga: new Date(vaga.data_evento).toLocaleDateString('pt-BR'),
+                        // Adicionamos T00:00:00 para evitar que o fuso horário local retroceda o dia em 1
+                        data_abertura_vaga: new Date(vaga.data_evento + 'T00:00:00').toLocaleDateString('pt-BR'),
                         dias_em_aberto: vaga.dias_em_aberto || 0,
                         app_url: `${urlApp}` // Link geral para o app
                     });
