@@ -1,4 +1,4 @@
-import { Search, ChevronDown, ChevronUp, CheckCircle, Clock, AlertTriangle, Loader2, Users, Calendar, AlertCircle, TrendingUp, UserX, UserCheck, ChevronsUpDown, Check, UserPlus, Archive, ArchiveRestore, Trash2 } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, CheckCircle, Clock, AlertTriangle, Loader2, Users, Calendar, AlertCircle, TrendingUp, UserX, UserCheck, ChevronsUpDown, Check, UserPlus, Archive, ArchiveRestore, Trash2, Copy } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Card, CardContent } from './ui/card';
@@ -1573,6 +1573,31 @@ function VagaCard({
   const currentResp = respostas[vaga.id_evento] || {};
   const currentForm = formData[vaga.id_evento] || {};
 
+  // Função para copiar texto com fallback
+  const copyToClipboard = (text: string) => {
+    if (!text) return;
+    try {
+      // Tenta usar a API moderna
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text);
+      } else {
+        // Fallback para ambientes não-HTTPS ou navegadores antigos
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-999999px';
+        textarea.style.top = '-999999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+    } catch (err) {
+      console.error('Erro ao copiar:', err);
+    }
+  };
+
   // Fun helper to get value with priority: formData > respostas > default
   // Typed as any to allow flexibility with keys
   const getVal = (key: string, defaultVal: any = null) => {
@@ -1796,34 +1821,72 @@ function VagaCard({
             </div>
             {mostrarSubstituto ? (
               <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
-                  <UserX className="w-4 h-4" />
-                  {vaga.nome || 'Sem nome'}
+                <div className="flex items-center text-sm text-red-600 dark:text-red-400">
+                  <UserX className="w-4 h-4 mr-1" />
+                  <span>{vaga.nome || 'Sem nome'}</span>
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      copyToClipboard(vaga.nome || '');
+                    }}
+                    title="Copiar nome"
+                    className="ml-0.5 p-0.5 hover:bg-red-100 dark:hover:bg-red-900/40 rounded transition-colors"
+                    type="button"
+                  >
+                    <Copy className="w-3 h-3" />
+                  </button>
                 </div>
                 {nomeSubstitutoDisplay && (
-                  <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-                    <UserCheck className="w-4 h-4" />
-                    {nomeSubstitutoDisplay}
+                  <div className="flex items-center text-sm text-green-600 dark:text-green-400">
+                    <UserCheck className="w-4 h-4 mr-1" />
+                    <span>{nomeSubstitutoDisplay}</span>
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        copyToClipboard(nomeSubstitutoDisplay || '');
+                      }}
+                      title="Copiar nome"
+                      className="ml-0.5 p-0.5 hover:bg-green-100 dark:hover:bg-green-900/40 rounded transition-colors"
+                      type="button"
+                    >
+                      <Copy className="w-3 h-3" />
+                    </button>
                   </div>
                 )}
               </div>
             ) : (
               <div className="space-y-1">
-                <span
-                  role="button"
-                  tabIndex={0}
-                  className="text-sm text-blue-600 dark:text-blue-400 font-medium hover:underline cursor-pointer transition-colors flex items-center gap-1 text-left"
-                  onClick={handleVerPerfilClicado}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
+                <div className="flex items-center text-left">
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className="text-sm text-blue-600 dark:text-blue-400 font-medium hover:underline cursor-pointer transition-colors inline-flex items-center gap-0.5"
+                    onClick={handleVerPerfilClicado}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleVerPerfilClicado(e as any);
+                      }
+                    }}
+                  >
+                    {vaga.nome || 'Sem nome'}
+                    {loadingProfile && <Loader2 className="w-3 h-3 animate-spin" />}
+                  </span>
+                  <button
+                    onClick={(e) => {
                       e.preventDefault();
-                      handleVerPerfilClicado(e as any);
-                    }
-                  }}
-                >
-                  {vaga.nome || 'Sem nome'}
-                  {loadingProfile && <Loader2 className="w-3 h-3 animate-spin inline ml-1" />}
-                </span>
+                      e.stopPropagation();
+                      copyToClipboard(vaga.nome || '');
+                    }}
+                    title="Copiar nome"
+                    className="ml-0.5 p-0.5 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded transition-colors"
+                    type="button"
+                  >
+                    <Copy className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                  </button>
+                </div>
                 {mostrarSituacao && vaga.situacao_origem && (
                   <div className={`text-xs ${vaga.situacao_origem === '01-ATIVO' ? 'text-green-600 dark:text-green-400 font-medium' : 'text-slate-500 dark:text-slate-400'}`}>
                     {vaga.situacao_origem}
@@ -2085,17 +2148,33 @@ function VagaCard({
                       })()}
                     </div>
                     <div>
-                      <Label htmlFor={`substituto-${vaga.id_evento}`} className="text-sm">
+                      <Label htmlFor={`substituto-${vaga.id_evento}`} className="text-sm mb-2 block">
                         Nome do Substituto
                       </Label>
-                      <FuncionarioCombobox
-                        value={nomeCandidato}
-                        onChange={(val) => updateFormDataMap(vaga.id_evento, { nome_candidato: val })}
-                        cargoAlvo={vaga.cargo}
-                        lotacaoAlvo={vaga.lotacao}
-                        nomeFantasiaAlvo={nomeContrato || undefined}
-                        cnpjAlvo={vaga.cnpj}
-                      />
+                      <div className="relative">
+                        <FuncionarioCombobox
+                          value={nomeCandidato}
+                          onChange={(val) => updateFormDataMap(vaga.id_evento, { nome_candidato: val })}
+                          cargoAlvo={vaga.cargo}
+                          lotacaoAlvo={vaga.lotacao}
+                          nomeFantasiaAlvo={nomeContrato || undefined}
+                          cnpjAlvo={vaga.cnpj}
+                        />
+                        {nomeCandidato && (
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              copyToClipboard(nomeCandidato);
+                            }}
+                            title="Copiar nome do substituto"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
+                            type="button"
+                          >
+                            <Copy className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
