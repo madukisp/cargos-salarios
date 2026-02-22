@@ -37,9 +37,17 @@ const calcularDiasReais = (
   dias_em_aberto: number
 ): number => {
   if (data_abertura_vaga && data_fechamento_vaga) {
-    const abertura = new Date(data_abertura_vaga);
-    const fechamento = new Date(data_fechamento_vaga);
+    // Vaga fechada: dias entre abertura e fechamento
+    const abertura = new Date(data_abertura_vaga + 'T00:00:00');
+    const fechamento = new Date(data_fechamento_vaga + 'T00:00:00');
     return Math.floor((fechamento.getTime() - abertura.getTime()) / (1000 * 60 * 60 * 24));
+  }
+  if (data_abertura_vaga) {
+    // Vaga ainda aberta: dias entre abertura e hoje
+    const abertura = new Date(data_abertura_vaga + 'T00:00:00');
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    return Math.floor((hoje.getTime() - abertura.getTime()) / (1000 * 60 * 60 * 24));
   }
   return dias_em_aberto;
 };
@@ -74,46 +82,64 @@ export const carregarAgendaAnalistas = async (): Promise<AnalistaComVagas[]> => 
     // Buscar IDs únicos de analistas
     const idAnalistaUnicos = [...new Set(vagasData.map(v => v.id_analista))];
 
-    // Buscar detalhes dos analistas
-    const { data: analistasData, error: analistasError } = await supabase
-      .from('oris_funcionarios')
-      .select('id, nome, cargo')
-      .in('id', idAnalistaUnicos)
-      .order('nome', { ascending: true });
-
-    if (analistasError) {
-      throw new Error(`Erro ao buscar analistas: ${analistasError.message}`);
+    // Buscar detalhes dos analistas em blocos
+    const analistasData: any[] = [];
+    if (idAnalistaUnicos.length > 0) {
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < idAnalistaUnicos.length; i += CHUNK_SIZE) {
+        const chunk = idAnalistaUnicos.slice(i, i + CHUNK_SIZE);
+        const { data, error } = await supabase
+          .from('oris_funcionarios')
+          .select('id, nome, cargo')
+          .in('id', chunk);
+        
+        if (error) throw new Error(`Erro ao buscar analistas: ${error.message}`);
+        if (data) analistasData.push(...data);
+      }
     }
+    // Ordenar manualmente após o fetch chunked
+    analistasData.sort((a, b) => a.nome.localeCompare(b.nome));
 
     // Buscar IDs únicos de eventos
     const idEventosUnicos = [...new Set(vagasData.map(v => v.id_evento))];
 
-    // Buscar detalhes dos eventos
-    const { data: eventosData, error: eventosError } = await supabase
-      .from('eventos_gestao_vagas_public')
-      .select(`
-        id_evento,
-        nome,
-        cargo,
-        data_evento,
-        dias_em_aberto,
-        situacao_origem,
-        lotacao
-      `)
-      .in('id_evento', idEventosUnicos);
-
-    if (eventosError) {
-      throw new Error(`Erro ao buscar eventos: ${eventosError.message}`);
+    // Buscar detalhes dos eventos em blocos
+    const eventosData: any[] = [];
+    if (idEventosUnicos.length > 0) {
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < idEventosUnicos.length; i += CHUNK_SIZE) {
+        const chunk = idEventosUnicos.slice(i, i + CHUNK_SIZE);
+        const { data, error } = await supabase
+          .from('eventos_gestao_vagas_public')
+          .select(`
+            id_evento,
+            nome,
+            cargo,
+            data_evento,
+            dias_em_aberto,
+            situacao_origem,
+            lotacao
+          `)
+          .in('id_evento', chunk);
+        
+        if (error) throw new Error(`Erro ao buscar eventos: ${error.message}`);
+        if (data) eventosData.push(...data);
+      }
     }
 
-    // Buscar respostas do gestor para informações adicionais
-    const { data: respostasData, error: respostasError } = await supabase
-      .from('respostas_gestor')
-      .select('*')
-      .in('id_evento', idEventosUnicos);
-
-    if (respostasError) {
-      console.warn('Erro ao buscar respostas do gestor:', respostasError);
+    // Buscar respostas do gestor em blocos
+    const respostasData: any[] = [];
+    if (idEventosUnicos.length > 0) {
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < idEventosUnicos.length; i += CHUNK_SIZE) {
+        const chunk = idEventosUnicos.slice(i, i + CHUNK_SIZE);
+        const { data } = await supabase
+          .from('respostas_gestor')
+          .select('*')
+          .in('id_evento', chunk);
+        
+        if (data) respostasData.push(...data);
+      }
     }
 
     // Mapear eventos por ID
@@ -152,7 +178,7 @@ export const carregarAgendaAnalistas = async (): Promise<AnalistaComVagas[]> => 
             dias_em_aberto
           );
 
-          return {
+          const vagaAtribuida: VagaAtribuida = {
             id_evento: vaga.id_evento,
             nome_funcionario: evento.nome || '-',
             cargo_vaga: evento.cargo || '-',
@@ -168,6 +194,8 @@ export const carregarAgendaAnalistas = async (): Promise<AnalistaComVagas[]> => 
             vaga_preenchida: resposta?.vaga_preenchida,
             pendente_efetivacao: resposta?.pendente_efetivacao,
           };
+          
+          return vagaAtribuida;
         })
         .filter((v): v is VagaAtribuida => v !== null)
         .sort((a, b) => {
@@ -221,6 +249,47 @@ export const desatribuirVaga = async (idEvento: number, idAnalista: number): Pro
     }
   } catch (error) {
     console.error('Erro em desatribuirVaga:', error);
+    throw error;
+  }
+};
+
+/**
+ * Reatribuir uma vaga para outro analista
+ */
+export const reatribuirVaga = async (
+  idEvento: number,
+  idAnalistaAtual: number,
+  idAnalistaNovo: number,
+  cnpj: string
+): Promise<void> => {
+  try {
+    // Desatribuir do analista atual
+    const { error: deleteError } = await supabase
+      .from('vagas_analista')
+      .delete()
+      .eq('id_evento', idEvento)
+      .eq('id_analista', idAnalistaAtual);
+
+    if (deleteError) {
+      throw new Error(`Erro ao desatribuir vaga do analista atual: ${deleteError.message}`);
+    }
+
+    // Atribuir ao novo analista
+    const { error: insertError } = await supabase
+      .from('vagas_analista')
+      .insert({
+        id_evento: idEvento,
+        id_analista: idAnalistaNovo,
+        cnpj: cnpj,
+        data_atribuicao: new Date().toISOString().split('T')[0],
+        ativo: true,
+      });
+
+    if (insertError) {
+      throw new Error(`Erro ao atribuir vaga ao novo analista: ${insertError.message}`);
+    }
+  } catch (error) {
+    console.error('Erro em reatribuirVaga:', error);
     throw error;
   }
 };

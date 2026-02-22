@@ -9,6 +9,7 @@ export interface VagaNotificationData {
     cargo_saiu: string
     data_abertura_vaga: string
     dias_em_aberto: number
+    unidade?: string
     app_url: string
 }
 

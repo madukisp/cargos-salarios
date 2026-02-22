@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import {
   carregarAgendaAnalistas,
   desatribuirVaga,
+  reatribuirVaga,
   AnalistaComVagas,
 } from '@/app/services/agendaAnalistasService';
 
@@ -56,6 +57,20 @@ export function useAgendaAnalistas() {
     }
   }, []);
 
+  const trocarAnalista = useCallback(async (idEvento: number, idAnalistaAtual: number, idAnalistaNovo: number, cnpj: string) => {
+    try {
+      await reatribuirVaga(idEvento, idAnalistaAtual, idAnalistaNovo, cnpj);
+      // Recarregar dados completos após reatribuição
+      const dados = await carregarAgendaAnalistas();
+      setAnalistas(dados);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erro ao trocar analista';
+      setError(errorMessage);
+      console.error('Erro ao trocar analista:', err);
+      throw err;
+    }
+  }, []);
+
   // Carregar dados ao montar o componente
   useEffect(() => {
     carregarDados();
@@ -73,6 +88,7 @@ export function useAgendaAnalistas() {
     error,
     carregarDados,
     removerVaga,
+    trocarAnalista,
     totalAnalistas,
     totalVagas,
     totalVagasEmAberto,

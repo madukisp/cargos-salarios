@@ -49,5 +49,4 @@ export function useCnpjTableInfo() {
 
 // Log para desenvolvedor
 if (typeof window !== 'undefined') {
-  console.log('💡 Para debugar a tabela cnpj, use: import { useCnpjTableInfo } from "@/hooks/useTableInfo"; const { samples, columns } = useCnpjTableInfo(); console.log(columns, samples);');
 }

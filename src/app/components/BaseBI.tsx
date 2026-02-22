@@ -107,8 +107,31 @@ function LinhaDetalhesModal({ row, headers, onClose }: {
 }) {
   const [copiado, setCopiado] = useState(false);
 
+  // Define a ordem de prioridade para exibição das colunas no modal
+  const prioridade = [
+    'ANALISTA RESPONSÁVEL PELO PROCESSO',
+    'NOME - COLABORADOR',
+    'DATA ABERTURA DA VAGA',
+    'SUBSTITUIDO POR ',
+    'DATA DE FECHAMENTO VAGA EM SELEÇÃO',
+    'UNIDADE',
+    'FUNÇÃO',
+    'MOTIVO DO DESLIGAMENTO'
+  ];
+
+  // Ordena os headers: primeiro os da lista de prioridade, depois o restante em ordem alfabética
+  const sortedHeaders = [...headers].sort((a, b) => {
+    const idxA = prioridade.findIndex(p => norm(a).includes(norm(p)));
+    const idxB = prioridade.findIndex(p => norm(b).includes(norm(p)));
+
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return a.localeCompare(b);
+  });
+
   const copiarTudo = () => {
-    const texto = headers
+    const texto = sortedHeaders
       .map(h => `${h.padEnd(40, ' ')}: ${String(row[h] ?? '')}`)
       .join('\n');
     navigator.clipboard.writeText(texto);
@@ -139,7 +162,7 @@ function LinhaDetalhesModal({ row, headers, onClose }: {
         </div>
         <div className="overflow-y-auto flex-1 p-6">
           <div className="bg-slate-900 dark:bg-slate-950 rounded-lg p-5 font-mono text-sm space-y-1.5">
-            {headers.map((h) => {
+            {sortedHeaders.map((h) => {
               const valor = String(row[h] ?? '');
               const vazio = valor.trim() === '';
               return (
@@ -352,23 +375,23 @@ export function BaseBI() {
   const filtrosAtivos = Object.entries(filtrosColuna).filter(([, v]) => v.trim() !== '');
   const rowsFiltrados = sheet
     ? sheet.rows.filter(row => {
-        if (termoBusca && !Object.values(row).some(v => String(v).toLowerCase().includes(termoBusca))) return false;
-        for (const [col, val] of filtrosAtivos) {
-          const headerReal = mapeamentoColunas[col] ?? col;
-          if (!String(row[headerReal] ?? '').toLowerCase().includes(val.toLowerCase().trim())) return false;
-        }
-        return true;
-      })
+      if (termoBusca && !Object.values(row).some(v => String(v).toLowerCase().includes(termoBusca))) return false;
+      for (const [col, val] of filtrosAtivos) {
+        const headerReal = mapeamentoColunas[col] ?? col;
+        if (!String(row[headerReal] ?? '').toLowerCase().includes(val.toLowerCase().trim())) return false;
+      }
+      return true;
+    })
     : [];
 
   const rowsOrdenados = sort
     ? [...rowsFiltrados].sort((a, b) => {
-        const va = String(a[sort.key] ?? ''), vb = String(b[sort.key] ?? '');
-        const num = (s: string) => parseFloat(s.replace(/[^\d.,-]/g, '').replace(',', '.'));
-        const na = num(va), nb = num(vb);
-        const cmp = !isNaN(na) && !isNaN(nb) ? na - nb : va.localeCompare(vb, 'pt-BR');
-        return sort.dir === 'asc' ? cmp : -cmp;
-      })
+      const va = String(a[sort.key] ?? ''), vb = String(b[sort.key] ?? '');
+      const num = (s: string) => parseFloat(s.replace(/[^\d.,-]/g, '').replace(',', '.'));
+      const na = num(va), nb = num(vb);
+      const cmp = !isNaN(na) && !isNaN(nb) ? na - nb : va.localeCompare(vb, 'pt-BR');
+      return sort.dir === 'asc' ? cmp : -cmp;
+    })
     : rowsFiltrados;
 
   const totalPaginas = Math.ceil(rowsOrdenados.length / LINHAS_POR_PAGINA);
@@ -489,11 +512,10 @@ export function BaseBI() {
                 <button
                   key={aba}
                   onClick={() => trocarAba(aba)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    aba === sheet.abaSelecionada
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${aba === sheet.abaSelecionada
                       ? 'bg-green-600 text-white'
                       : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-                  }`}
+                    }`}
                 >
                   {aba}
                 </button>
@@ -568,9 +590,8 @@ export function BaseBI() {
                           setFiltrosColuna(prev => ({ ...prev, [col]: e.target.value }));
                           setPagina(1);
                         }}
-                        className={`pr-7 text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-600 ${
-                          filtrosColuna[col] ? 'border-green-400 dark:border-green-600 ring-1 ring-green-300 dark:ring-green-700' : ''
-                        } ${!existeNaAba ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        className={`pr-7 text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-600 ${filtrosColuna[col] ? 'border-green-400 dark:border-green-600 ring-1 ring-green-300 dark:ring-green-700' : ''
+                          } ${!existeNaAba ? 'opacity-40 cursor-not-allowed' : ''}`}
                       />
                       {filtrosColuna[col] && (
                         <button
@@ -604,11 +625,10 @@ export function BaseBI() {
                         onDragEnd={fimDragCol}
                         onClick={() => handleSort(col)}
                         title="Arraste para reorganizar"
-                        className={`px-3 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap cursor-grab active:cursor-grabbing select-none transition-colors ${
-                          dragSobreIdx === idx
+                        className={`px-3 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap cursor-grab active:cursor-grabbing select-none transition-colors ${dragSobreIdx === idx
                             ? 'bg-green-100 dark:bg-green-900/40 border-l-2 border-green-500'
                             : 'hover:bg-slate-100 dark:hover:bg-slate-800'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center gap-1">{col}<SortIcon col={col} /></div>
                       </th>

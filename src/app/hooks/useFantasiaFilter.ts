@@ -19,9 +19,7 @@ export function useFantasiaFilter() {
   // Carregar contrato selecionado do localStorage ao montar
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    console.log('[useFantasiaFilter] localStorage STORAGE_KEY:', STORAGE_KEY, 'value:', saved);
     if (saved) {
-      console.log('[useFantasiaFilter] Restaurando de localStorage:', saved);
       setSelectedFantasia(saved);
     }
   }, []);

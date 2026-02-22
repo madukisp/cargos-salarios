@@ -28,13 +28,11 @@ export function useAtribuirVaga() {
             // Se realIdEvento for retornado (porque foi criado ou corrigido), usa-o. Senão usa o original.
             const idEventoFinal = typeof realIdEvento === 'number' ? realIdEvento : variables.id_evento;
 
-            console.log('[EMAIL DEBUG] Iniciando envio de email após atribuição. ID Evento:', idEventoFinal, 'ID Analista:', variables.id_analista);
             queryClient.invalidateQueries({ queryKey: ['vagas-em-aberto'] });
 
             // Buscar dados do analista e da vaga para enviar email
             try {
                 // 1. Buscar dados do analista
-                console.log('[EMAIL DEBUG] Buscando dados do analista...');
                 let analista = null;
 
                 // Tenta buscar o email na tabela de credenciais (onde o usuário disse que está)
@@ -75,28 +73,37 @@ export function useAtribuirVaga() {
                 }
 
                 if (!analista || !analista.email) {
-                    console.error('[EMAIL DEBUG] Analista não encontrado ou sem email válido:', { credenciais, analistaOris, errorCredenciais, errorOris });
+                    console.error('Analista sem email, atribuição não notificada:', { credenciais, analistaOris, errorCredenciais, errorOris });
                     return;
                 }
 
 
-                console.log('[EMAIL DEBUG] Analista encontrado:', analista);
 
                 // 2. Buscar dados da vaga
-                console.log('[EMAIL DEBUG] Buscando dados da vaga com ID:', idEventoFinal);
                 // Tenta buscar na view pública primeiro
                 let vaga = null;
                 const { data: vagaView, error: vagaError } = await supabase
                     .from('eventos_gestao_vagas_public')
-                    .select('nome, cargo, dias_em_aberto, data_evento')
+                    .select('nome, cargo, dias_em_aberto, data_evento, lotacao')
                     .eq('id_evento', idEventoFinal)
                     .single();
 
+                // Verificar se a vaga já foi preenchida
+                let vagaFoiPreenchida = false;
+                const { data: resposta } = await supabase
+                    .from('respostas_gestor')
+                    .select('vaga_preenchida')
+                    .eq('id_evento', idEventoFinal)
+                    .maybeSingle();
+
+                if (resposta?.vaga_preenchida === 'SIM') {
+                    vagaFoiPreenchida = true;
+                }
+
                 // 1ª tentativa: vagas de movimentação manual (tem IDs que podem colidir com a view)
-                console.log('[EMAIL DEBUG] Tentando vagas_movimentacao primeiro...');
                 const { data: vagaMov } = await supabase
                     .from('vagas_movimentacao')
-                    .select('nome_funcionario, cargo, data_abertura')
+                    .select('nome_funcionario, cargo, data_abertura, centro_custo')
                     .eq('id', idEventoFinal)
                     .maybeSingle();
 
@@ -108,15 +115,16 @@ export function useAtribuirVaga() {
                         cargo: vagaMov.cargo,
                         data_evento: vagaMov.data_abertura,
                         dias_em_aberto: dias,
+                        unidade: vagaMov.centro_custo
                     };
-                    console.log('[EMAIL DEBUG] Vaga encontrada em vagas_movimentacao:', vaga);
                 } else if (vagaView) {
                     // 2ª tentativa: view pública (demissões/afastamentos)
-                    vaga = vagaView;
-                    console.log('[EMAIL DEBUG] Vaga encontrada na view pública:', vaga);
+                    vaga = {
+                        ...vagaView,
+                        unidade: vagaView.lotacao
+                    };
                 } else {
                     // 3ª tentativa: eventos_movimentacao direto
-                    console.log('[EMAIL DEBUG] Tentando eventos_movimentacao...', vagaError);
                     const { data: vagaRaw } = await supabase
                         .from('eventos_movimentacao')
                         .select('nome, cargo, data_evento')
@@ -126,45 +134,43 @@ export function useAtribuirVaga() {
                     if (vagaRaw) {
                         const diffTime = Math.abs(new Date().getTime() - new Date(vagaRaw.data_evento).getTime());
                         const dias = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                        vaga = { ...vagaRaw, dias_em_aberto: dias };
-                        console.log('[EMAIL DEBUG] Vaga encontrada em eventos_movimentacao:', vaga);
+                        vaga = { 
+                            ...vagaRaw, 
+                            dias_em_aberto: dias,
+                            unidade: '-' 
+                        };
                     }
                 }
 
                 if (vagaError && !vaga) {
-                    console.error('[EMAIL DEBUG] Erro ao buscar vaga em ambas as fontes:', vagaError);
+                    console.error('Erro ao buscar dados da vaga para notificação:', vagaError);
                 } else {
-                    console.log('[EMAIL DEBUG] Dados da vaga:', vaga);
                 }
 
                 if (analista && vaga && analista.email) {
-                    console.log('[EMAIL DEBUG] Preparando envio de email...');
-                    const urlApp = obterUrlAplicacao();
+                    // Apenas enviar email se a vaga ainda está em aberto
+                    if (vagaFoiPreenchida) {
+                    } else {
+                        const urlApp = obterUrlAplicacao();
 
-
-                    const result = await enviarNotificacaoVaga({
-                        type: 'atribuicao',
-                        analista_email: analista.email,
-                        analista_nome: analista.nome,
-                        analista_cargo: analista.cargo,
-                        funcionario_saiu: vaga.nome || '-',
-                        cargo_saiu: vaga.cargo || '-',
-                        // Formatar a data para exibição (dd/mm/aaaa)
-                        // Adicionamos T00:00:00 para evitar que o fuso horário local retroceda o dia em 1
-                        data_abertura_vaga: new Date(vaga.data_evento + 'T00:00:00').toLocaleDateString('pt-BR'),
-                        dias_em_aberto: vaga.dias_em_aberto || 0,
-                        app_url: `${urlApp}` // Link geral para o app
-                    });
-                    console.log('[EMAIL DEBUG] Resultado do envio:', result);
-                } else {
-                    console.warn('[EMAIL DEBUG] Dados incompletos para envio de email:', {
-                        temAnalista: !!analista,
-                        temVaga: !!vaga,
-                        temEmail: analista?.email ? 'SIM' : 'NÃO'
-                    });
+                        const result = await enviarNotificacaoVaga({
+                            type: 'atribuicao',
+                            analista_email: analista.email,
+                            analista_nome: analista.nome,
+                            analista_cargo: analista.cargo,
+                            funcionario_saiu: vaga.nome || '-',
+                            cargo_saiu: vaga.cargo || '-',
+                            // Formatar a data para exibição (dd/mm/aaaa)
+                            // Adicionamos T00:00:00 para evitar que o fuso horário local retroceda o dia em 1
+                            data_abertura_vaga: new Date(vaga.data_evento + 'T00:00:00').toLocaleDateString('pt-BR'),
+                            dias_em_aberto: vaga.dias_em_aberto || 0,
+                            unidade: vaga.unidade || '-',
+                            app_url: `${urlApp}` // Link geral para o app
+                        });
+                    }
                 }
             } catch (err) {
-                console.error('[EMAIL DEBUG] Erro ao enviar email de atribuição:', err);
+                console.error('Erro ao enviar email de atribuição:', err);
                 // Não falha a operação principal se o email falhar
             }
         }

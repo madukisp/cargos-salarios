@@ -1,4 +1,4 @@
-import { Search, ChevronDown, ChevronUp, CheckCircle, Clock, AlertTriangle, Loader2, Users, Calendar, AlertCircle, TrendingUp, UserX, UserCheck, ChevronsUpDown, Check, UserPlus, Archive, ArchiveRestore, Trash2, Copy } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, CheckCircle, Clock, AlertTriangle, Loader2, Users, Calendar, AlertCircle, TrendingUp, UserX, UserCheck, ChevronsUpDown, Check, UserPlus, Archive, ArchiveRestore, Trash2, Copy, SearchX, Undo2, X } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Card, CardContent } from './ui/card';
@@ -66,6 +66,7 @@ export function VacancyManagement() {
     vagasPendentesEfetivacao,
     afastamentosPendentes,
     vagasEmAberto: vagasEmAbertoFromHook,
+    vagasNaoEncontradas: vagasNaoEncontradasFromHook,
     respostas,
     lotacoes: lotacoesFromHook,
     loading,
@@ -75,11 +76,13 @@ export function VacancyManagement() {
     efetivar,
     vagasArquivadas,
     arquivar,
-  } = useGestaoVagas();
+    marcarNaoEncontrada,
+  } = useGestaoVagas() as any;
 
   const { data: tlpData, updateTlp } = useTlpData();
   const [updatingTlp, setUpdatingTlp] = useState<string | null>(null);
   const [erroFechamento, setErroFechamento] = useState<number | null>(null);
+  const [erroSalvar, setErroSalvar] = useState<Record<number, string>>({});
 
   const {
     fantasias,
@@ -257,7 +260,7 @@ export function VacancyManagement() {
     const normalize = (s: string) =>
       (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const termoBusca = normalize(busca);
-    return vagasEmAbertoFromHook.filter((vaga) => {
+    return vagasEmAbertoFromHook.filter((vaga: any) => {
       const matchBusca = !busca.trim() ||
         normalize(vaga.cargo_saiu || '').includes(termoBusca) ||
         normalize(vaga.quem_saiu || '').includes(termoBusca) ||
@@ -275,29 +278,29 @@ export function VacancyManagement() {
     });
   }, [vagasEmAbertoFromHook, busca, selectedFantasia, apenasContratosSP, fantasias, CONTRATOS_SP]);
 
-  // Vagas efetivamente preenchidas com candidato — exige substituto registrado
+  // Vagas efetivamente preenchidas
   const vagasFechadas = useMemo(() => {
-    return respondidas.filter((vaga) => {
+    return respondidas.filter((vaga: any) => {
       const resp = respostas[vaga.id_evento];
-      return resp?.vaga_preenchida === 'SIM' && (resp?.id_substituto || resp?.nome_candidato);
+      return resp?.vaga_preenchida === 'SIM';
     });
   }, [respondidas, respostas]);
 
-  // Respondidos onde não houve abertura de vaga (abriu_vaga=false ou null, sem candidato)
+  // Respondidos onde não houve abertura de vaga (abriu_vaga=false ou null) - NÃO preenchida
   const vagasSemAbertura = useMemo(() => {
-    return respondidas.filter((vaga) => {
+    return respondidas.filter((vaga: any) => {
       const resp = respostas[vaga.id_evento];
-      const isEmAberto = resp?.abriu_vaga === true && resp?.vaga_preenchida !== 'SIM';
-      const isPreenchida = resp?.vaga_preenchida === 'SIM';
-      return !isEmAberto && !isPreenchida;
+      const abriuVaga = resp?.abriu_vaga === true;
+      const vagaPreenchida = resp?.vaga_preenchida === 'SIM';
+      return !abriuVaga && !vagaPreenchida;
     });
   }, [respondidas, respostas]);
 
   // Respondidos que abriram vaga mas ainda não foram preenchidos → "Vagas em Aberto"
   // Exclui os que já aparecem em vagasEmAberto (view) para evitar duplicação
   const afastamentosEmAberto = useMemo(() => {
-    const idsNaView = new Set(vagasEmAberto.map((v) => v.id_evento));
-    return respondidas.filter((v) => {
+    const idsNaView = new Set(vagasEmAberto.map((v: any) => v.id_evento));
+    return respondidas.filter((v: any) => {
       const resp = respostas[v.id_evento];
       return resp?.abriu_vaga === true && resp?.vaga_preenchida !== 'SIM' && !idsNaView.has(v.id_evento);
     });
@@ -308,13 +311,18 @@ export function VacancyManagement() {
     [filtrarVagas, ordenarVagas, vagasArquivadas, tlpData, fantasias, applyDateFilter]
   );
 
+  const naoEncontradasFiltradas = useMemo(
+    () => applyDateFilter(ordenarVagas(filtrarVagas(vagasNaoEncontradasFromHook, tlpData, fantasias))),
+    [filtrarVagas, ordenarVagas, vagasNaoEncontradasFromHook, tlpData, fantasias, applyDateFilter]
+  );
+
   // Verificar se há busca ativa
   const temBuscaAtiva = busca.trim().length > 0;
 
   // Agregar todos os resultados quando há busca
   const todosResultadosBusca = useMemo(() => {
     if (!temBuscaAtiva) return [];
-    return [...pendentes, ...afastamentos, ...pendentesEf, ...vagasEmAberto, ...afastamentosEmAberto, ...vagasFechadas, ...arquivadasFiltradas];
+    return [...pendentes, ...afastamentos, ...pendentesEf, ...vagasEmAberto, ...afastamentosEmAberto, ...vagasFechadas, ...arquivadasFiltradas, ...naoEncontradasFiltradas];
   }, [temBuscaAtiva, pendentes, afastamentos, pendentesEf, vagasEmAberto, afastamentosEmAberto, vagasFechadas, arquivadasFiltradas]);
 
 
@@ -330,6 +338,7 @@ export function VacancyManagement() {
       return;
     }
     setErroFechamento(null);
+    setErroSalvar(prev => { const n = { ...prev }; delete n[idEvento]; return n; });
     setRespondendo((prev) => ({ ...prev, [idEvento]: true }));
     try {
       await responder(idEvento, tipoOrigem, dados);
@@ -344,6 +353,8 @@ export function VacancyManagement() {
         setAbaSelecionada('respondidas');
       }
     } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao salvar. Tente novamente.';
+      setErroSalvar(prev => ({ ...prev, [idEvento]: msg }));
       console.error('Erro ao salvar resposta:', err);
     } finally {
       setRespondendo((prev) => ({ ...prev, [idEvento]: false }));
@@ -381,6 +392,14 @@ export function VacancyManagement() {
       setExpandedId(null);
     } catch (err) {
       console.error('Erro ao arquivar:', err);
+    }
+  };
+
+  const handleMarcarNaoEncontrada = async (idEvento: number, tipo: 'DEMISSAO' | 'AFASTAMENTO', status: boolean, observacao?: string) => {
+    try {
+      await marcarNaoEncontrada(idEvento, tipo, status, observacao);
+    } catch (err) {
+      console.error('Erro ao marcar vaga:', err);
     }
   };
 
@@ -492,8 +511,8 @@ export function VacancyManagement() {
                 <SelectContent>
                   <SelectItem value="todos">Todos os Contratos</SelectItem>
                   {fantasias
-                    .filter(f => !apenasContratosSP || CONTRATOS_SP.some(sp => f.display_name?.includes(sp) || f.nome_fantasia?.includes(sp)))
-                    .map((f) => (
+                    .filter((f: any) => !apenasContratosSP || CONTRATOS_SP.some(sp => f.display_name?.includes(sp) || f.nome_fantasia?.includes(sp)))
+                    .map((f: any) => (
                       <SelectItem key={f.cnpj} value={f.cnpj}>
                         {f.display_name}
                       </SelectItem>
@@ -514,8 +533,16 @@ export function VacancyManagement() {
                   placeholder="Ex: João Silva, Médico, UTI..."
                   value={busca}
                   onChange={(e) => setBusca(e.target.value)}
-                  className="pl-10 h-10 border-slate-200 dark:border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  className="pl-10 pr-10 h-10 border-slate-200 dark:border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 />
+                {busca && (
+                  <button
+                    onClick={() => setBusca('')}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
 
@@ -527,7 +554,7 @@ export function VacancyManagement() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {lotacoes.map((l) => (
+                  {lotacoes.map((l: any) => (
                     <SelectItem key={l} value={l}>
                       {l}
                     </SelectItem>
@@ -669,6 +696,13 @@ export function VacancyManagement() {
                 <Archive size={14} /> Canceladas ({arquivadasFiltradas.length})
               </TabsTrigger>
 
+              <TabsTrigger
+                value="nao_encontradas"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-orange-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none px-1 pb-4 text-sm font-semibold flex items-center gap-2"
+              >
+                <SearchX size={14} /> Não Encontradas ({naoEncontradasFiltradas.length})
+              </TabsTrigger>
+
             </TabsList>
 
             <TabsContent value="pendentes" className="space-y-3 mt-0 focusVisible:outline-none">
@@ -697,8 +731,10 @@ export function VacancyManagement() {
                     updatingTlp={updatingTlp}
                     onAtribuir={handleAtribuirVaga}
                     onArquivar={handleArquivar}
+                    onMarcarNaoEncontrada={handleMarcarNaoEncontrada}
                     erroFechamento={erroFechamento}
                     setErroFechamento={setErroFechamento}
+                    erroSalvar={erroSalvar}
                   />
                 ))
               )}
@@ -731,8 +767,10 @@ export function VacancyManagement() {
                     updatingTlp={updatingTlp}
                     onAtribuir={handleAtribuirVaga}
                     onArquivar={handleArquivar}
+                    onMarcarNaoEncontrada={handleMarcarNaoEncontrada}
                     erroFechamento={erroFechamento}
                     setErroFechamento={setErroFechamento}
+                    erroSalvar={erroSalvar}
                   />
                 ))
               )}
@@ -766,6 +804,7 @@ export function VacancyManagement() {
                     onArquivar={handleArquivar}
                     erroFechamento={erroFechamento}
                     setErroFechamento={setErroFechamento}
+                    erroSalvar={erroSalvar}
                   />
                 ))
               )}
@@ -808,6 +847,7 @@ export function VacancyManagement() {
                             onArquivar={handleArquivar}
                             erroFechamento={erroFechamento}
                             setErroFechamento={setErroFechamento}
+                            erroSalvar={erroSalvar}
                           />
                         ))}
                       </div>
@@ -844,6 +884,7 @@ export function VacancyManagement() {
                             onArquivar={handleArquivar}
                             erroFechamento={erroFechamento}
                             setErroFechamento={setErroFechamento}
+                            erroSalvar={erroSalvar}
                           />
                         ))}
                       </div>
@@ -879,6 +920,7 @@ export function VacancyManagement() {
                             onArquivar={handleArquivar}
                             erroFechamento={erroFechamento}
                             setErroFechamento={setErroFechamento}
+                            erroSalvar={erroSalvar}
                           />
                         ))}
                       </div>
@@ -890,7 +932,7 @@ export function VacancyManagement() {
                           <span className="w-3 h-3 rounded-full bg-blue-500"></span>
                           Vagas em Aberto ({vagasEmAberto.length})
                         </h4>
-                        {vagasEmAberto.map((vaga) => {
+                        {vagasEmAberto.map((vaga: any) => {
                           const isMovimentacao = (vaga as any)._source === 'MOVIMENTACAO';
                           const vagaFormatada = {
                             ...vaga,
@@ -926,6 +968,7 @@ export function VacancyManagement() {
                               onArquivar={handleArquivar}
                               erroFechamento={erroFechamento}
                               setErroFechamento={setErroFechamento}
+                              erroSalvar={erroSalvar}
                             />
                           );
                         })}
@@ -963,6 +1006,7 @@ export function VacancyManagement() {
                             onArquivar={handleArquivar}
                             erroFechamento={erroFechamento}
                             setErroFechamento={setErroFechamento}
+                            erroSalvar={erroSalvar}
                           />
                         ))}
                       </div>
@@ -997,6 +1041,9 @@ export function VacancyManagement() {
                             onAtribuir={handleAtribuirVaga}
                             onArquivar={handleArquivar}
                             isArquivada={true}
+                            erroFechamento={erroFechamento}
+                            setErroFechamento={setErroFechamento}
+                            erroSalvar={erroSalvar}
                           />
                         ))}
                       </div>
@@ -1011,9 +1058,8 @@ export function VacancyManagement() {
                 <EmptyState icon={TrendingUp} title="Nenhuma vaga em aberto" description="Eventos que geraram vagas e ainda não foram preenchidas aparecerão aqui." />
               ) : (
                 <>
-                  {vagasEmAberto.map((vaga) => {
+                  {vagasEmAberto.map((vaga: any) => {
                     const isMovimentacao = (vaga as any)._source === 'MOVIMENTACAO';
-                    const tipoMov = (vaga as any).tipo_movimentacao as string | undefined;
                     // Mapear VagaEmAberto para formato esperado por VagaCard
                     const vagaFormatada = {
                       ...vaga,
@@ -1059,6 +1105,7 @@ export function VacancyManagement() {
                           onArquivar={handleArquivar}
                           erroFechamento={erroFechamento}
                           setErroFechamento={setErroFechamento}
+                          erroSalvar={erroSalvar}
                         />
                       </div>
                     );
@@ -1088,6 +1135,7 @@ export function VacancyManagement() {
                       onArquivar={handleArquivar}
                       erroFechamento={erroFechamento}
                       setErroFechamento={setErroFechamento}
+                      erroSalvar={erroSalvar}
                     />
                   ))}
                 </>
@@ -1132,6 +1180,7 @@ export function VacancyManagement() {
                           onArquivar={handleArquivar}
                           erroFechamento={erroFechamento}
                           setErroFechamento={setErroFechamento}
+                          erroSalvar={erroSalvar}
                         />
                       ))}
                     </div>
@@ -1166,6 +1215,7 @@ export function VacancyManagement() {
                           onArquivar={handleArquivar}
                           erroFechamento={erroFechamento}
                           setErroFechamento={setErroFechamento}
+                          erroSalvar={erroSalvar}
                         />
                       ))}
                     </div>
@@ -1201,8 +1251,53 @@ export function VacancyManagement() {
                     onAtribuir={handleAtribuirVaga}
                     onArquivar={handleArquivar}
                     isArquivada={true}
+                    erroFechamento={erroFechamento}
+                    setErroFechamento={setErroFechamento}
+                    erroSalvar={erroSalvar}
                   />
                 ))
+              )}
+            </TabsContent>
+
+            <TabsContent value="nao_encontradas" className="space-y-3 mt-0 focusVisible:outline-none">
+              {naoEncontradasFiltradas.length === 0 ? (
+                <EmptyState icon={SearchX} title="Nenhuma vaga não encontrada" description="Vagas sinalizadas como 'não encontradas' aparecerão aqui para análise de outro analista." />
+              ) : (
+                <>
+                  <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-3 flex items-start gap-2 text-sm text-orange-800 dark:text-orange-300">
+                    <SearchX className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>Estas vagas foram sinalizadas como <strong>não encontradas</strong> por um analista. Outro analista deve investigar e encontrar os dados corretos, ou devolver a vaga para a fila original.</span>
+                  </div>
+                  {naoEncontradasFiltradas.map((vaga) => (
+                    <VagaCard
+                      key={vaga.id_evento}
+                      vaga={vaga}
+                      expandedId={expandedId}
+                      setExpandedId={setExpandedId}
+                      abaSelecionada={abaSelecionada}
+                      respostas={respostas}
+                      formData={formData}
+                      updateFormDataMap={updateFormDataMap}
+                      tlpData={tlpData}
+                      fantasias={fantasias}
+                      loadingProfile={loadingProfile}
+                      setLoadingProfile={setLoadingProfile}
+                      setSelectedProfileFunc={setSelectedProfileFunc}
+                      handleResponder={handleResponder}
+                      handleEfetivar={handleEfetivar}
+                      respondendo={respondendo}
+                      handleUpdateTlpValue={handleUpdateTlpValue}
+                      updatingTlp={updatingTlp}
+                      onAtribuir={handleAtribuirVaga}
+                      onArquivar={handleArquivar}
+                      onMarcarNaoEncontrada={handleMarcarNaoEncontrada}
+                      isNaoEncontrada={true}
+                      erroFechamento={erroFechamento}
+                      setErroFechamento={setErroFechamento}
+                      erroSalvar={erroSalvar}
+                    />
+                  ))}
+                </>
               )}
             </TabsContent>
           </Tabs>
@@ -1398,16 +1493,6 @@ function FuncionarioCombobox({
                     if (lotacaoMatch) score += 50;
                   }
 
-                  // Debug: Log para verificar scoring
-                  if (score >= 3000) {
-                    console.log(`[SCORE ${score}] ${item.nome}`, {
-                      cargo: `"${itemCargoClean}" vs "${cargoAlvoClean}" = ${cargoMatch}`,
-                      lotacao: `"${itemLocalTrabalhoLower || itemCentroLower}" vs "${lotacaoLower}" = ${lotacaoMatch}`,
-                      cnpj: `"${itemCnpjClean}" vs "${cnpjAlvoClean}" = ${cnpjMatch}`,
-                      fantasia: `"${itemFantasiaLower}" vs "${fantasiaAlvoLower}" = ${fantasiaMatch}`,
-                      contratoMatch
-                    });
-                  }
 
                   return score;
                 };
@@ -1530,9 +1615,12 @@ function VagaCard({
   updatingTlp,
   onAtribuir,
   onArquivar,
+  onMarcarNaoEncontrada,
   isArquivada,
+  isNaoEncontrada,
   erroFechamento,
-  setErroFechamento
+  setErroFechamento,
+  erroSalvar
 }: {
   vaga: any;
   mostrarSubstituto?: boolean;
@@ -1555,9 +1643,12 @@ function VagaCard({
   updatingTlp: string | null;
   onAtribuir?: (vaga: any) => void;
   onArquivar?: (id: number, tipo: 'DEMISSAO' | 'AFASTAMENTO', status: boolean) => Promise<void>;
+  onMarcarNaoEncontrada?: (id: number, tipo: 'DEMISSAO' | 'AFASTAMENTO', status: boolean, observacao?: string) => Promise<void>;
   isArquivada?: boolean;
+  isNaoEncontrada?: boolean;
   erroFechamento: number | null;
   setErroFechamento: (id: number | null) => void;
+  erroSalvar?: Record<number, string>;
 }) {
   if (!vaga || !vaga.id_evento) return null;
 
@@ -1569,19 +1660,27 @@ function VagaCard({
   const SlaIcon = sla.icon;
   const tipoOrigem = vaga.situacao_origem === '99-Demitido' ? 'DEMISSAO' : 'AFASTAMENTO';
   const isPendenteEf = abaSelecionada === 'pendentes_ef';
+  const [obsNaoEncontrada, setObsNaoEncontrada] = useState('');
+
+  const [copiado, setCopiado] = useState<string | null>(null);
+
+  // Limpa erro ao expandir/recolher
+  useEffect(() => {
+    if (isExpanded && erroFechamento === vaga.id_evento) {
+      setErroFechamento(null);
+    }
+  }, [isExpanded, vaga.id_evento, erroFechamento, setErroFechamento]);
 
   const currentResp = respostas[vaga.id_evento] || {};
   const currentForm = formData[vaga.id_evento] || {};
 
-  // Função para copiar texto com fallback
-  const copyToClipboard = (text: string) => {
+  // Função para copiar texto com feedback visual
+  const copyWithFeedback = (text: string, fieldId: string) => {
     if (!text) return;
     try {
-      // Tenta usar a API moderna
       if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(text);
       } else {
-        // Fallback para ambientes não-HTTPS ou navegadores antigos
         const textarea = document.createElement('textarea');
         textarea.value = text;
         textarea.style.position = 'fixed';
@@ -1593,6 +1692,8 @@ function VagaCard({
         document.execCommand('copy');
         document.body.removeChild(textarea);
       }
+      setCopiado(fieldId);
+      setTimeout(() => setCopiado(null), 2000);
     } catch (err) {
       console.error('Erro ao copiar:', err);
     }
@@ -1655,6 +1756,12 @@ function VagaCard({
 
   // Determinar status da vaga
   const getStatusBadge = () => {
+    if (isNaoEncontrada) {
+      return {
+        label: 'Não Encontrada',
+        color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
+      };
+    }
     if (abaSelecionada === 'pendentes_ef') {
       return {
         label: 'Efetivação Pendente',
@@ -1756,7 +1863,19 @@ function VagaCard({
   }, [vaga.id_evento, (vaga as any)._source, (vaga as any).data_abertura_vaga, formData, updateFormDataMap]);
 
   return (
-    <Card key={vaga.id_evento} className={`mb-3 overflow-hidden border-slate-200 dark:border-slate-800 transition-all hover:shadow-md ${alertaDataSuspeita ? 'border-l-4 border-l-yellow-400' : isPendenteEf ? 'border-l-4 border-l-amber-500' : ''}`}>
+    <Card
+      key={vaga.id_evento}
+      className={`mb-3 overflow-hidden border-slate-200 dark:border-slate-800 transition-all hover:shadow-md ${erroFechamento === vaga.id_evento
+        ? 'ring-2 ring-red-500 border-red-500 shadow-lg shadow-red-100 dark:shadow-red-900/20'
+        : isNaoEncontrada
+          ? 'border-l-4 border-l-orange-500'
+          : alertaDataSuspeita
+            ? 'border-l-4 border-l-yellow-400'
+            : isPendenteEf
+              ? 'border-l-4 border-l-amber-500'
+              : ''
+        }`}
+    >
       <div
         className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-between"
         onClick={() => setExpandedId(isExpanded ? null : vaga.id_evento)}
@@ -1828,13 +1947,17 @@ function VagaCard({
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      copyToClipboard(vaga.nome || '');
+                      copyWithFeedback(vaga.nome || '', 'nome-saiu');
                     }}
                     title="Copiar nome"
                     className="ml-0.5 p-0.5 hover:bg-red-100 dark:hover:bg-red-900/40 rounded transition-colors"
                     type="button"
                   >
-                    <Copy className="w-3 h-3" />
+                    {copiado === 'nome-saiu' ? (
+                      <Check className="w-3 h-3 text-green-600" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
                   </button>
                 </div>
                 {nomeSubstitutoDisplay && (
@@ -1845,20 +1968,24 @@ function VagaCard({
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        copyToClipboard(nomeSubstitutoDisplay || '');
+                        copyWithFeedback(nomeSubstitutoDisplay || '', 'nome-sub');
                       }}
                       title="Copiar nome"
                       className="ml-0.5 p-0.5 hover:bg-green-100 dark:hover:bg-green-900/40 rounded transition-colors"
                       type="button"
                     >
-                      <Copy className="w-3 h-3" />
+                      {copiado === 'nome-sub' ? (
+                        <Check className="w-3 h-3 text-green-600" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
                     </button>
                   </div>
                 )}
               </div>
             ) : (
               <div className="space-y-1">
-                <div className="flex items-center text-left">
+                <div className="flex items-center text-left flex-wrap gap-x-1.5">
                   <span
                     role="button"
                     tabIndex={0}
@@ -1874,17 +2001,26 @@ function VagaCard({
                     {vaga.nome || 'Sem nome'}
                     {loadingProfile && <Loader2 className="w-3 h-3 animate-spin" />}
                   </span>
+                  {vaga.data_evento && (
+                    <span className="text-xs text-slate-400 dark:text-slate-500 font-normal">
+                      · {tipoOrigem === 'DEMISSAO' ? 'Dem.' : 'Afas.'} {formatarData(vaga.data_evento)}
+                    </span>
+                  )}
                   <button
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      copyToClipboard(vaga.nome || '');
+                      copyWithFeedback(vaga.nome || '', 'nome-default');
                     }}
                     title="Copiar nome"
                     className="ml-0.5 p-0.5 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded transition-colors"
                     type="button"
                   >
-                    <Copy className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                    {copiado === 'nome-default' ? (
+                      <Check className="w-3 h-3 text-green-600" />
+                    ) : (
+                      <Copy className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                    )}
                   </button>
                 </div>
                 {mostrarSituacao && vaga.situacao_origem && (
@@ -2119,29 +2255,23 @@ function VagaCard({
                       <Input
                         type="date"
                         id={`fechamento-${vaga.id_evento}`}
-                        className={`mt-1 ${!dataFechamento
-                          ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
-                          : dataFechamento &&
-                            Math.floor((new Date().getTime() - new Date(dataFechamento + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24)) > 30
-                            ? 'border-amber-400 focus:border-amber-500 focus:ring-amber-500'
-                            : ''
-                          }`}
+                        className={`mt-1 ${!dataFechamento ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : ''}`}
                         value={dataFechamento}
                         onChange={(e) => updateFormDataMap(vaga.id_evento, { data_fechamento_vaga: e.target.value })}
                       />
                       {!dataFechamento && (
                         <p className="text-xs text-red-500 mt-1">Campo obrigatório</p>
                       )}
-                      {dataFechamento && (() => {
-                        const diasPassados = Math.floor(
-                          (new Date().getTime() - new Date(dataFechamento + 'T00:00:00').getTime()) /
+                      {dataFechamento && dataAbertura && (() => {
+                        const diasEntreAberturaEFechamento = Math.floor(
+                          (new Date(dataFechamento + 'T00:00:00').getTime() - new Date(dataAbertura + 'T00:00:00').getTime()) /
                           (1000 * 60 * 60 * 24)
                         );
-                        return diasPassados > 30 ? (
+                        return diasEntreAberturaEFechamento > 180 ? (
                           <div className="mt-1.5 flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2 py-1.5">
                             <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                             <span>
-                              Esta data é de <strong>{diasPassados} dias atrás</strong>. Confirme se o fechamento realmente ocorreu em {new Date(dataFechamento + 'T00:00:00').toLocaleDateString('pt-BR')}.
+                              O intervalo entre abertura e fechamento é de <strong>{diasEntreAberturaEFechamento} dias</strong>. Confirme se o fechamento realmente ocorreu em {new Date(dataFechamento + 'T00:00:00').toLocaleDateString('pt-BR')}.
                             </span>
                           </div>
                         ) : null;
@@ -2165,13 +2295,17 @@ function VagaCard({
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              copyToClipboard(nomeCandidato);
+                              copyWithFeedback(nomeCandidato, 'nome-candidato');
                             }}
                             title="Copiar nome do substituto"
                             className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
                             type="button"
                           >
-                            <Copy className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+                            {copiado === 'nome-candidato' ? (
+                              <Check className="w-4 h-4 text-green-600" />
+                            ) : (
+                              <Copy className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+                            )}
                           </button>
                         )}
                       </div>
@@ -2207,9 +2341,50 @@ function VagaCard({
                 </div>
               </div>
 
+              {/* Seção Não Encontrada */}
+              {onMarcarNaoEncontrada && (isNaoEncontrada ? (
+                <div className="mb-4 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg space-y-2">
+                  <p className="text-xs font-semibold text-orange-800 dark:text-orange-300 flex items-center gap-1">
+                    <SearchX size={13} /> Esta vaga foi sinalizada como não encontrada.
+                  </p>
+                  {respostas[vaga.id_evento]?.observacao_nao_encontrada && (
+                    <p className="text-xs text-orange-700 dark:text-orange-400 italic">
+                      Obs.: {respostas[vaga.id_evento].observacao_nao_encontrada}
+                    </p>
+                  )}
+                  <button
+                    onClick={() => onMarcarNaoEncontrada(vaga.id_evento, tipoOrigem, false)}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded text-xs font-medium transition-colors"
+                    type="button"
+                  >
+                    <Undo2 size={13} /> Devolver para fila original
+                  </button>
+                </div>
+              ) : (
+                <div className="mb-4 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg space-y-2">
+                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                    <SearchX size={13} /> Não conseguiu encontrar esta vaga?
+                  </p>
+                  <textarea
+                    className="w-full p-2 text-xs border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 dark:text-slate-200 resize-none"
+                    rows={2}
+                    placeholder="Descreva o que foi tentado (opcional)..."
+                    value={obsNaoEncontrada}
+                    onChange={(e) => setObsNaoEncontrada(e.target.value)}
+                  />
+                  <button
+                    onClick={() => onMarcarNaoEncontrada(vaga.id_evento, tipoOrigem, true, obsNaoEncontrada || undefined)}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded text-xs font-medium transition-colors"
+                    type="button"
+                  >
+                    <SearchX size={13} /> Sinalizar como Não Encontrada
+                  </button>
+                </div>
+              ))}
+
               <div className="flex gap-3">
                 {/* Botão Arquivar/Desarquivar */}
-                {onArquivar && (
+                {onArquivar && !isNaoEncontrada && (
                   <button
                     onClick={() => onArquivar(vaga.id_evento, tipoOrigem, !isArquivada)}
                     className={`px-4 py-2 ${isArquivada ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-600 hover:bg-slate-700'} text-white rounded font-medium text-sm transition-colors flex items-center gap-2 shadow-sm`}
@@ -2221,7 +2396,7 @@ function VagaCard({
                 )}
 
                 {/* Botão Salvar Resposta (MAIOR) */}
-                {isPendenteEf ? (
+                {isNaoEncontrada ? null : isPendenteEf ? (
                   <button
                     onClick={() => handleEfetivar(vaga.id_evento, tipoOrigem)}
                     disabled={respondendo[vaga.id_evento]}
@@ -2234,16 +2409,23 @@ function VagaCard({
                   <button
                     onClick={() => handleResponder(vaga.id_evento, tipoOrigem)}
                     disabled={respondendo[vaga.id_evento]}
-                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded font-medium text-sm flex items-center justify-center gap-2 shadow-sm transition-colors"
+                    className={`flex-1 px-4 py-2 disabled:opacity-50 text-white rounded font-medium text-sm flex items-center justify-center gap-2 shadow-sm transition-colors ${abaSelecionada === 'fechadas' ? 'bg-slate-500 hover:bg-slate-600' : 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400'}`}
                   >
                     {respondendo[vaga.id_evento] && <Loader2 className="w-4 h-4 animate-spin" />}
-                    {respondendo[vaga.id_evento] ? 'Salvando...' : 'Salvar Resposta'}
+                    {respondendo[vaga.id_evento] ? 'Salvando...' : abaSelecionada === 'fechadas' ? 'Atualizar Fechamento' : 'Salvar Resposta'}
                   </button>
                 )}
 
                 {erroFechamento === vaga.id_evento && (
                   <p className="w-full text-xs text-red-600 font-medium text-center">
                     Informe a data de fechamento da vaga antes de salvar.
+                  </p>
+                )}
+
+                {erroSalvar?.[vaga.id_evento] && (
+                  <p className="w-full text-xs text-red-600 font-medium text-center flex items-center justify-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    Erro ao salvar: {erroSalvar[vaga.id_evento]}
                   </p>
                 )}
 
@@ -2258,7 +2440,7 @@ function VagaCard({
                 )}
 
                 {/* Botão Atribuir */}
-                {onAtribuir && (
+                {onAtribuir && !isNaoEncontrada && (
                   <button
                     onClick={() => onAtribuir(vaga)}
                     className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-sm transition-colors flex items-center gap-2 shadow-sm"

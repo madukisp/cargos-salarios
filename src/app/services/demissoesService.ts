@@ -329,23 +329,30 @@ export async function carregarRespostasLote(
   if (!ids_eventos || ids_eventos.length === 0) return {};
 
   try {
-    const { data, error } = await supabase
-      .from('respostas_gestor')
-      .select('*')
-      .in('id_evento', ids_eventos);
+    const CHUNK_SIZE = 200;
+    const allData: any[] = [];
 
-    if (error) {
-      console.error('Erro ao carregar respostas em lote:', error);
-      return {};
+    for (let i = 0; i < ids_eventos.length; i += CHUNK_SIZE) {
+      const chunk = ids_eventos.slice(i, i + CHUNK_SIZE);
+      const { data, error } = await supabase
+        .from('respostas_gestor')
+        .select('*')
+        .in('id_evento', chunk);
+
+      if (error) {
+        console.error('Erro ao carregar respostas em lote (chunk):', error);
+        continue;
+      }
+      if (data) allData.push(...data);
     }
 
     const mapa: Record<number, RespostaGestor> = {};
-    (data || []).forEach((resp: any) => {
+    allData.forEach((resp: any) => {
       mapa[resp.id_evento] = resp;
     });
 
     // Carregar nomes dos substitutos se houver id_substituto
-    const idsSubstitutos = (data || [])
+    const idsSubstitutos = allData
       .map((resp: any) => resp.id_substituto)
       .filter((id): id is number => id !== null && id !== undefined);
 
@@ -361,19 +368,25 @@ export async function carregarRespostasLote(
       });
 
       // Adicionar nome_substituto aos objetos de resposta
-      (data || []).forEach((resp: any) => {
+      allData.forEach((resp: any) => {
         if (resp.id_substituto && mapaSubstitutos[resp.id_substituto]) {
           mapa[resp.id_evento].nome_candidato = mapaSubstitutos[resp.id_substituto];
         }
       });
     }
 
-    // Carregar analistas atribuídos às vagas
-    const { data: atribuicoes } = await supabase
-      .from('vagas_analista')
-      .select('id_evento, id_analista')
-      .in('id_evento', ids_eventos)
-      .eq('ativo', true);
+    // Carregar analistas atribuídos às vagas (chunked)
+    const atribuicoesAll: any[] = [];
+    for (let i = 0; i < ids_eventos.length; i += CHUNK_SIZE) {
+      const chunk = ids_eventos.slice(i, i + CHUNK_SIZE);
+      const { data: atChunk } = await supabase
+        .from('vagas_analista')
+        .select('id_evento, id_analista')
+        .in('id_evento', chunk)
+        .eq('ativo', true);
+      if (atChunk) atribuicoesAll.push(...atChunk);
+    }
+    const atribuicoes = atribuicoesAll;
 
     if (atribuicoes && atribuicoes.length > 0) {
       const idsAnalistas = [...new Set(atribuicoes.map((a: any) => a.id_analista))];
@@ -908,8 +921,10 @@ export async function excluirVagaMovimentacao(id: number): Promise<void> {
 /**
  * Carrega afastamentos que possuem resposta do gestor, independente do status atual no ORIS.
  * Resolve o problema de vagas fechadas sumirem após refresh quando a pessoa retornou do afastamento.
- * Usa eventos_movimentacao + oris_funcionarios diretamente (igual a carregarAfastamentos)
- * mas sem filtrar pela situacao atual do funcionário.
+ *
+ * Trata dois casos:
+ * A) id_evento é um ID real de eventos_movimentacao → busca via eventos_movimentacao + oris
+ * B) id_evento é o próprio oris.id (fallback quando não há evento) → busca diretamente no oris
  */
 export async function carregarAfastamentosRespondidos(
   lotacao?: string,
@@ -923,16 +938,16 @@ export async function carregarAfastamentosRespondidos(
       .eq('tipo_origem', 'AFASTAMENTO');
 
     if (respError) {
-      console.error('[carregarAfastamentosRespondidos] Erro ao buscar respostas:', respError);
+      console.error('[carregarAfastamentosRespondidos] Erro:', respError);
       return [];
     }
     if (!respostas || respostas.length === 0) return [];
 
     const ids = respostas.map((r: any) => r.id_evento);
-
-    // 2. Buscar eventos em eventos_movimentacao para obter id_funcionario e data_evento
-    const eventosMovData: any[] = [];
     const CHUNK_SIZE = 100;
+
+    // 2. Buscar em eventos_movimentacao (caso A: id real de evento)
+    const eventosMovData: any[] = [];
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
       const chunk = ids.slice(i, i + CHUNK_SIZE);
       const { data } = await supabase
@@ -942,56 +957,95 @@ export async function carregarAfastamentosRespondidos(
       if (data) eventosMovData.push(...data);
     }
 
-    if (eventosMovData.length === 0) return [];
+    // IDs encontrados na tabela de eventos
+    const idsFoundInMov = new Set(eventosMovData.map((e: any) => e.id_evento));
+    // IDs NÃO encontrados = provavelmente são oris.id direto (caso B)
+    const idsNotInMov = ids.filter(id => !idsFoundInMov.has(id));
 
-    // 3. Buscar dados do funcionário no ORIS (qualquer situação — incluindo quem já voltou ao trabalho)
-    const funcIds = [...new Set(eventosMovData.map((e: any) => e.id_funcionario))].filter(Boolean);
-    const orisData: any[] = [];
-    for (let i = 0; i < funcIds.length; i += CHUNK_SIZE) {
-      const chunk = funcIds.slice(i, i + CHUNK_SIZE);
-      const { data } = await supabase
-        .from('oris_funcionarios')
-        .select('id, nome, cargo, cnpj, centro_custo, nome_fantasia, carga_horaria_semanal, escala, situacao')
-        .in('id', chunk);
-      if (data) orisData.push(...data);
-    }
-
-    const mapaOris = new Map(orisData.map((o: any) => [o.id, o]));
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
-
     const result: EventoDemissao[] = [];
-    for (const ev of eventosMovData) {
-      const oris = mapaOris.get(ev.id_funcionario);
-      if (!oris) continue;
 
-      // Aplicar filtros de lotação e CNPJ
-      if (cnpj && cnpj !== 'todos' && oris.cnpj !== cnpj) continue;
-      if (lotacao && lotacao !== 'TODAS' &&
-          oris.centro_custo !== lotacao && oris.nome_fantasia !== lotacao) continue;
+    // --- Caso A: eventos reais via eventos_movimentacao ---
+    if (eventosMovData.length > 0) {
+      const funcIds = [...new Set(eventosMovData.map((e: any) => e.id_funcionario))].filter(Boolean);
+      const orisData: any[] = [];
+      for (let i = 0; i < funcIds.length; i += CHUNK_SIZE) {
+        const chunk = funcIds.slice(i, i + CHUNK_SIZE);
+        const { data } = await supabase
+          .from('oris_funcionarios')
+          .select('id, nome, cargo, cnpj, centro_custo, nome_fantasia, carga_horaria_semanal, escala, situacao')
+          .in('id', chunk);
+        if (data) orisData.push(...data);
+      }
+      const mapaOris = new Map(orisData.map((o: any) => [o.id, o]));
 
-      // Excluir demissões (já carregadas por carregarDemissoes)
-      if (oris.situacao === '99-Demitido') continue;
+      for (const ev of eventosMovData) {
+        const oris = mapaOris.get(ev.id_funcionario);
+        if (!oris) continue;
+        if (cnpj && cnpj !== 'todos' && oris.cnpj !== cnpj) continue;
+        if (lotacao && lotacao !== 'TODAS' &&
+            oris.centro_custo !== lotacao && oris.nome_fantasia !== lotacao) continue;
+        if (oris.situacao === '99-Demitido') continue;
 
-      const dataEvento = ev.data_evento || '';
-      const diffTime = dataEvento
-        ? Math.abs(hoje.getTime() - new Date(dataEvento + 'T00:00:00').getTime())
-        : 0;
-      const diasEmAberto = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const dataEvento = ev.data_evento || '';
+        const dias = dataEvento
+          ? Math.ceil(Math.abs(hoje.getTime() - new Date(dataEvento + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24))
+          : 0;
 
-      result.push({
-        id_evento: ev.id_evento,
-        nome: oris.nome,
-        cargo: oris.cargo,
-        cnpj: oris.cnpj,
-        data_evento: dataEvento,
-        status_evento: 'RESPONDIDO' as const,
-        dias_em_aberto: diasEmAberto,
-        situacao_origem: oris.situacao,
-        lotacao: oris.centro_custo || oris.nome_fantasia || 'Sem lotação',
-        carga_horaria_semanal: oris.carga_horaria_semanal,
-        escala: oris.escala,
-      } as EventoDemissao);
+        result.push({
+          id_evento: ev.id_evento,
+          nome: oris.nome,
+          cargo: oris.cargo,
+          cnpj: oris.cnpj,
+          data_evento: dataEvento,
+          status_evento: 'RESPONDIDO' as const,
+          dias_em_aberto: dias,
+          situacao_origem: oris.situacao,
+          lotacao: oris.centro_custo || oris.nome_fantasia || 'Sem lotação',
+          carga_horaria_semanal: oris.carga_horaria_semanal,
+          escala: oris.escala,
+        } as EventoDemissao);
+      }
+    }
+
+    // --- Caso B: id_evento = oris.id (fallback sem entrada em eventos_movimentacao) ---
+    if (idsNotInMov.length > 0) {
+      const orisDirectData: any[] = [];
+      for (let i = 0; i < idsNotInMov.length; i += CHUNK_SIZE) {
+        const chunk = idsNotInMov.slice(i, i + CHUNK_SIZE);
+        const { data } = await supabase
+          .from('oris_funcionarios')
+          .select('id, nome, cargo, cnpj, dt_inicio_situacao, centro_custo, nome_fantasia, carga_horaria_semanal, escala, situacao')
+          .in('id', chunk);
+        if (data) orisDirectData.push(...data);
+      }
+
+      for (const oris of orisDirectData) {
+        if (cnpj && cnpj !== 'todos' && oris.cnpj !== cnpj) continue;
+        if (lotacao && lotacao !== 'TODAS' &&
+            oris.centro_custo !== lotacao && oris.nome_fantasia !== lotacao) continue;
+        if (oris.situacao === '99-Demitido') continue;
+
+        const dataEvento = oris.dt_inicio_situacao || '';
+        const dias = dataEvento
+          ? Math.ceil(Math.abs(hoje.getTime() - new Date(dataEvento + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24))
+          : 0;
+
+        result.push({
+          id_evento: oris.id, // id_evento = oris.id (o fallback original)
+          nome: oris.nome,
+          cargo: oris.cargo,
+          cnpj: oris.cnpj,
+          data_evento: dataEvento,
+          status_evento: 'RESPONDIDO' as const,
+          dias_em_aberto: dias,
+          situacao_origem: oris.situacao,
+          lotacao: oris.centro_custo || oris.nome_fantasia || 'Sem lotação',
+          carga_horaria_semanal: oris.carga_horaria_semanal,
+          escala: oris.escala,
+        } as EventoDemissao);
+      }
     }
 
     return result;
@@ -999,4 +1053,142 @@ export async function carregarAfastamentosRespondidos(
     console.error('[carregarAfastamentosRespondidos] Exception:', error);
     return [];
   }
+}
+
+// ─── Rastreio de Vaga ──────────────────────────────────────────────────────
+
+export interface RastreioVaga {
+  /** O funcionário saiu e foi substituído por alguém */
+  substituidoPor?: {
+    id?: number;
+    nome: string;
+    cargo: string;
+    dt_admissao?: string | null;
+    tipo_evento: 'DEMISSAO' | 'AFASTAMENTO';
+    vaga_preenchida: string | null;
+    data_fechamento?: string | null;
+  } | null;
+  /** Este funcionário substituiu outra pessoa */
+  substituiuQuem?: {
+    id: number;
+    nome: string;
+    cargo: string;
+    tipo_evento: 'DEMISSAO' | 'AFASTAMENTO';
+    data_fechamento?: string | null;
+  } | null;
+}
+
+export async function buscarRastreioVaga(idFuncionario: number): Promise<RastreioVaga> {
+  const result: RastreioVaga = {};
+
+  try {
+    // ── 1. O funcionário saiu? Buscar qualquer resposta para seus eventos ──
+    // Caso A: buscar via eventos_movimentacao
+    const { data: eventos } = await supabase
+      .from('eventos_movimentacao')
+      .select('id_evento')
+      .eq('id_funcionario', idFuncionario);
+
+    const eventIds: number[] = eventos?.map((e: any) => e.id_evento) ?? [];
+    // Caso B: o próprio id do funcionário pode ser o id_evento
+    if (!eventIds.includes(idFuncionario)) eventIds.push(idFuncionario);
+
+    if (eventIds.length > 0) {
+      // Busca todas as respostas para os eventos (sem filtrar por id_substituto)
+      const { data: respostas } = await supabase
+        .from('respostas_gestor')
+        .select('id_evento, id_substituto, nome_candidato, tipo_origem, vaga_preenchida, data_fechamento_vaga')
+        .in('id_evento', eventIds);
+
+      // Prioriza quem tem id_substituto; fallback para nome_candidato (texto livre)
+      const resposta = respostas?.find(r => r.id_substituto !== null)
+        ?? respostas?.find(r => r.nome_candidato && r.nome_candidato.trim());
+
+      if (resposta) {
+        if (resposta.id_substituto) {
+          const { data: sub } = await supabase
+            .from('oris_funcionarios')
+            .select('id, nome, cargo, dt_admissao')
+            .eq('id', resposta.id_substituto)
+            .maybeSingle();
+
+          if (sub) {
+            result.substituidoPor = {
+              id: sub.id,
+              nome: sub.nome,
+              cargo: sub.cargo,
+              dt_admissao: sub.dt_admissao,
+              tipo_evento: resposta.tipo_origem,
+              vaga_preenchida: resposta.vaga_preenchida,
+              data_fechamento: resposta.data_fechamento_vaga,
+            };
+          }
+        } else if (resposta.nome_candidato) {
+          // Substituto salvo como texto livre — tentar resolver pelo nome em oris_funcionarios
+          const { data: subByName } = await supabase
+            .from('oris_funcionarios')
+            .select('id, nome, cargo, dt_admissao')
+            .ilike('nome', resposta.nome_candidato.trim())
+            .maybeSingle();
+
+          result.substituidoPor = {
+            id: subByName?.id,
+            nome: subByName?.nome ?? resposta.nome_candidato,
+            cargo: subByName?.cargo ?? '-',
+            dt_admissao: subByName?.dt_admissao,
+            tipo_evento: resposta.tipo_origem,
+            vaga_preenchida: resposta.vaga_preenchida,
+            data_fechamento: resposta.data_fechamento_vaga,
+          };
+        }
+      }
+    }
+
+    // ── 2. Este funcionário é substituto de alguém? ──
+    const { data: comoSub } = await supabase
+      .from('respostas_gestor')
+      .select('id_evento, tipo_origem, data_fechamento_vaga')
+      .eq('id_substituto', idFuncionario)
+      .limit(1);
+
+    const subEntry = comoSub?.[0];
+    if (subEntry) {
+      // Tentar resolver o funcionário original via eventos_movimentacao (Caso A)
+      let idOriginal: number | null = null;
+      const { data: evMov } = await supabase
+        .from('eventos_movimentacao')
+        .select('id_funcionario')
+        .eq('id_evento', subEntry.id_evento)
+        .maybeSingle();
+
+      if (evMov) {
+        idOriginal = evMov.id_funcionario;
+      } else {
+        // Caso B: id_evento é o próprio id do funcionário original
+        idOriginal = subEntry.id_evento;
+      }
+
+      if (idOriginal) {
+        const { data: original } = await supabase
+          .from('oris_funcionarios')
+          .select('id, nome, cargo')
+          .eq('id', idOriginal)
+          .maybeSingle();
+
+        if (original) {
+          result.substituiuQuem = {
+            id: original.id,
+            nome: original.nome,
+            cargo: original.cargo,
+            tipo_evento: subEntry.tipo_origem,
+            data_fechamento: subEntry.data_fechamento_vaga,
+          };
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[buscarRastreioVaga] Erro:', err);
+  }
+
+  return result;
 }

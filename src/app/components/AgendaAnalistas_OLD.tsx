@@ -1,4 +1,3 @@
-// Versão limpa para evitar corrupção
 import { useState, useMemo, useCallback } from 'react';
 import { Card, CardContent } from './ui/card';
 import {
@@ -27,7 +26,7 @@ import {
 } from 'lucide-react';
 import { useAgendaAnalistas } from '@/app/hooks/useAgendaAnalistas';
 import { formatarData } from '@/lib/column-formatters';
-import { VagaAtribuida } from '@/app/services/agendaAnalistasService';
+import { AnalistaComVagas, VagaAtribuida } from '@/app/services/agendaAnalistasService';
 import { VagaDetalhesModal } from './VagaDetalhesModal';
 
 const FILTROS_STORAGE_KEY = 'agenda_analistas_filtros';
@@ -795,4 +794,4 @@ export function AgendaAnalistas() {
     );
 }
 
-export default AgendaAnalistas;
+// EOF: END OF FILE -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

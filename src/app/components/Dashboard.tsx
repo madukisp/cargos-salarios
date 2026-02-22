@@ -42,7 +42,6 @@ export function Dashboard() {
 
   // Load data for vagas abertas initially and when selectedFantasia changes
   useEffect(() => {
-    console.log('[Dashboard] carregarDados com selectedFantasia:', selectedFantasia);
     carregarDados(undefined, selectedFantasia);
   }, [selectedFantasia, carregarDados]);
 

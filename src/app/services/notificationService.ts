@@ -34,10 +34,6 @@ export async function inicializarCache(): Promise<void> {
     });
 
     cache.timestamp = Date.now();
-    console.log('[notificationService] Cache inicializado:', {
-      demissoes: cache.demissoes.size,
-      afastamentos: cache.afastamentos.size,
-    });
   } catch (error) {
     console.error('[notificationService] Erro ao inicializar cache:', error);
   }
@@ -98,7 +94,6 @@ export function iniciarMonitoramento(
   if (intervaloAtivo) return () => {};
 
   intervaloAtivo = true;
-  console.log('[notificationService] Monitoramento iniciado');
 
   const intervalo = setInterval(() => {
     verificarNovasNotificacoes(onNovaNotificacao);
@@ -108,7 +103,6 @@ export function iniciarMonitoramento(
   return () => {
     clearInterval(intervalo);
     intervaloAtivo = false;
-    console.log('[notificationService] Monitoramento parado');
   };
 }
 

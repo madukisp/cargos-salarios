@@ -37,13 +37,26 @@ export function useGestaoVagas() {
     setLotacaoAtual(lotacao);
 
     try {
-      const demPendRaw = await carregarDemissoes(lotacao, 'PENDENTE', cnpj);
-      const demRespRaw = await carregarDemissoes(lotacao, 'RESPONDIDO', cnpj);
-      const afastPendRaw = await carregarAfastamentos(lotacao, cnpj);
-      const afastRespRaw = await carregarAfastamentosRespondidos(lotacao, cnpj);
-      const arquivadasRaw = await carregarVagasArquivadas(lotacao, cnpj);
-      const vagasEmAbertoRaw = await carregarVagasEmAberto(lotacao, cnpj);
-      const naoEncontradasRaw = await carregarVagasNaoEncontradas(lotacao, cnpj);
+
+      const results = await Promise.allSettled([
+        carregarDemissoes(lotacao, 'PENDENTE', cnpj),
+        carregarDemissoes(lotacao, 'RESPONDIDO', cnpj),
+        carregarAfastamentos(lotacao, cnpj),
+        carregarAfastamentosRespondidos(lotacao, cnpj),
+        carregarVagasArquivadas(lotacao, cnpj),
+        carregarVagasEmAberto(lotacao, cnpj),
+        carregarVagasNaoEncontradas(lotacao, cnpj),
+        carregarLotacoes(),
+      ]);
+
+      const demPendRaw       = results[0].status === 'fulfilled' ? results[0].value as any[] : [];
+      const demRespRaw       = results[1].status === 'fulfilled' ? results[1].value as any[] : [];
+      const afastPendRaw     = results[2].status === 'fulfilled' ? results[2].value as any[] : [];
+      const afastRespRaw     = results[3].status === 'fulfilled' ? results[3].value as any[] : [];
+      const arquivadasRaw    = results[4].status === 'fulfilled' ? results[4].value as any[] : [];
+      const vagasEmAbertoRaw = results[5].status === 'fulfilled' ? results[5].value as any[] : [];
+      const naoEncontradasRaw= results[6].status === 'fulfilled' ? results[6].value as any[] : [];
+      const lotacoesData     = results[7].status === 'fulfilled' ? results[7].value as string[] : ['TODAS'];
 
       // Combinar e desduplicar eventos
       // afastRespRaw garante que afastamentos com resposta apareçam mesmo se o funcionário já retornou ao trabalho
@@ -62,8 +75,6 @@ export function useGestaoVagas() {
 
       const mapaRespostas = await carregarRespostasLote(idsFull);
       setRespostas(mapaRespostas);
-
-      const lotacoesData = await carregarLotacoes();
 
       // Categorização unificada
       const demPend: EventoDemissao[] = [];

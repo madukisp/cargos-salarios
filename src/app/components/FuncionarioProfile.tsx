@@ -1,12 +1,37 @@
-import { X, Mail, Phone, Briefcase, Building2, MapPin, Calendar, User } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Briefcase, Calendar, User, ArrowRightLeft, Loader2, ExternalLink, ArrowLeft } from 'lucide-react';
 import { getFormattedValue } from '@/lib/column-formatters';
+import { buscarRastreioVaga, RastreioVaga } from '@/app/services/demissoesService';
+import { supabase } from '@/lib/supabase';
 
 interface FuncionarioProfileProps {
   funcionario: any;
   onClose: () => void;
+  onBack?: () => void;
 }
 
-export function FuncionarioProfile({ funcionario, onClose }: FuncionarioProfileProps) {
+export function FuncionarioProfile({ funcionario, onClose, onBack }: FuncionarioProfileProps) {
+  const [rastreio, setRastreio] = useState<RastreioVaga | null>(null);
+  const [loadingRastreio, setLoadingRastreio] = useState(false);
+  const [linkedEmployee, setLinkedEmployee] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (!funcionario?.id) return;
+    setLoadingRastreio(true);
+    buscarRastreioVaga(funcionario.id)
+      .then(r => setRastreio(r))
+      .finally(() => setLoadingRastreio(false));
+  }, [funcionario?.id]);
+
+  const abrirPerfilVinculado = async (id: number) => {
+    const { data } = await supabase
+      .from('oris_funcionarios')
+      .select('id, nome, cpf, cargo, local_de_trabalho, centro_custo, situacao, dt_admissao, nome_fantasia, tipo_funcionario, dt_inicio_situacao, dt_rescisao, dt_nascimento, sexo')
+      .eq('id', id)
+      .maybeSingle();
+    if (data) setLinkedEmployee(data);
+  };
+
   if (!funcionario) return null;
 
   // Gerar avatar com iniciais
@@ -65,11 +90,22 @@ export function FuncionarioProfile({ funcionario, onClose }: FuncionarioProfileP
   ];
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
       <div className="bg-white dark:bg-slate-800 rounded-lg shadow-2xl max-w-2xl w-full my-8">
         {/* Header com Close Button */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Perfil do Colaborador</h2>
+          <div className="flex items-center gap-3">
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" /> Voltar
+              </button>
+            )}
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Perfil do Colaborador</h2>
+          </div>
           <button
             onClick={onClose}
             className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
@@ -143,6 +179,106 @@ export function FuncionarioProfile({ funcionario, onClose }: FuncionarioProfileP
                   </div>
                 </div>
               ))}
+
+              {/* Rastreio de Vaga */}
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-3 pb-2 border-b border-slate-200 dark:border-slate-700 flex items-center gap-2">
+                  <ArrowRightLeft className="w-4 h-4 text-blue-500" />
+                  Rastreio de Vaga
+                </h3>
+
+                {loadingRastreio ? (
+                  <div className="flex items-center gap-2 text-slate-400 text-sm py-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Consultando rastreio...
+                  </div>
+                ) : !rastreio?.substituidoPor && !rastreio?.substituiuQuem ? (
+                  <p className="text-sm text-slate-400 dark:text-slate-500 italic py-2">
+                    Nenhum rastreio de vaga encontrado para este funcionário.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {rastreio?.substituidoPor && (
+                      <div
+                        className={`bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 ${rastreio.substituidoPor.id ? 'cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors' : ''}`}
+                        onClick={() => rastreio.substituidoPor?.id && abrirPerfilVinculado(rastreio.substituidoPor.id)}
+                      >
+                        <p className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-2">
+                          {rastreio.substituidoPor.tipo_evento === 'AFASTAMENTO' ? 'Coberto por' : 'Substituído por'}
+                        </p>
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                              {rastreio.substituidoPor.nome}
+                            </p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                              {rastreio.substituidoPor.cargo}
+                            </p>
+                          </div>
+                          {rastreio.substituidoPor.id && (
+                            <ExternalLink className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 mt-2">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            rastreio.substituidoPor.tipo_evento === 'DEMISSAO'
+                              ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                              : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                          }`}>
+                            {rastreio.substituidoPor.tipo_evento === 'DEMISSAO' ? 'Demissão' : 'Afastamento'}
+                          </span>
+                          {rastreio.substituidoPor.dt_admissao && (
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                              Admissão: {new Date(rastreio.substituidoPor.dt_admissao + 'T00:00:00').toLocaleDateString('pt-BR')}
+                            </span>
+                          )}
+                          {rastreio.substituidoPor.data_fechamento && (
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                              Fechado em {new Date(rastreio.substituidoPor.data_fechamento + 'T00:00:00').toLocaleDateString('pt-BR')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {rastreio?.substituiuQuem && (
+                      <div
+                        className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-4 cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                        onClick={() => abrirPerfilVinculado(rastreio.substituiuQuem!.id)}
+                      >
+                        <p className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-2">
+                          {rastreio.substituiuQuem.tipo_evento === 'AFASTAMENTO' ? 'Cobrindo' : 'Substituiu'}
+                        </p>
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                              {rastreio.substituiuQuem.nome}
+                            </p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                              {rastreio.substituiuQuem.cargo}
+                            </p>
+                          </div>
+                          <ExternalLink className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                        </div>
+                        <div className="flex items-center gap-3 mt-2">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            rastreio.substituiuQuem.tipo_evento === 'DEMISSAO'
+                              ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                              : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                          }`}>
+                            {rastreio.substituiuQuem.tipo_evento === 'DEMISSAO' ? 'Demissão' : 'Afastamento'}
+                          </span>
+                          {rastreio.substituiuQuem.data_fechamento && (
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                              Desde {new Date(rastreio.substituiuQuem.data_fechamento + 'T00:00:00').toLocaleDateString('pt-BR')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -158,5 +294,15 @@ export function FuncionarioProfile({ funcionario, onClose }: FuncionarioProfileP
         </div>
       </div>
     </div>
+
+    {/* Modal aninhado do funcionário vinculado */}
+    {linkedEmployee && (
+      <FuncionarioProfile
+        funcionario={linkedEmployee}
+        onClose={onClose}
+        onBack={() => setLinkedEmployee(null)}
+      />
+    )}
+    </>
   );
 }

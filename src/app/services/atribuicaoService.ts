@@ -80,7 +80,6 @@ export const atribuicaoService = {
 
         // Se marcado explicitamente como necessitando criação ou se suspeitarmos
         if (data._needs_creation && data._id_funcionario) {
-            console.log('Tentando criar evento faltante para id_funcionario:', data._id_funcionario);
             try {
                 // Verificar se já existe
                 const { data: existingEvent } = await supabase
@@ -93,7 +92,6 @@ export const atribuicaoService = {
 
                 if (existingEvent) {
                     realIdEvento = existingEvent.id_evento;
-                    console.log('Evento já existia, ID real:', realIdEvento);
                 } else {
                     // Criar evento
                     const { data: newEvent, error: createError } = await supabase
@@ -116,7 +114,6 @@ export const atribuicaoService = {
                         throw new Error('Falha ao sincronizar evento. Tente novamente mais tarde.');
                     }
                     realIdEvento = newEvent.id_evento;
-                    console.log('Evento criado com sucesso, ID:', realIdEvento);
                 }
             } catch (err) {
                 console.error('Erro na lógica de criação de evento:', err);

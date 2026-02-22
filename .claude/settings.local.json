@@ -19,7 +19,27 @@
       "Bash(npm --version:*)",
       "Bash(npm cache clean:*)",
       "mcp__plugin_supabase_supabase__apply_migration",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(npm run build 2>&1 | tail -50)",
+      "Bash(npm run build 2>&1 | tail -30)",
+      "Bash(node_modules/.bin/tsc --noEmit --skipLibCheck 2>&1 | grep \"AgendaAnalistas\" | head -20)",
+      "Bash(npm run build 2>&1 | head -30)",
+      "Bash(awk 'NR>=735 && NR<=740' /home/pi/rh-system/cargos-salarios/src/app/components/VacancyManagement.tsx)",
+      "Bash(npm run build 2>&1 | tail -20)",
+      "mcp__plugin_supabase_supabase__get_logs",
+      "Bash(npm run build 2>&1 | tail -8)",
+      "Bash(npm run build 2>&1 | tail -5)",
+      "mcp__claude_ai_Vercel__list_teams",
+      "mcp__claude_ai_Vercel__list_projects",
+      "mcp__claude_ai_Vercel__deploy_to_vercel",
+      "Bash(vercel deploy --prod 2>&1)",
+      "Bash(git -c user.email=\"madukisp@gmail.com\" -c user.name=\"madukisp\" add src/app/services/demissoesService.ts src/app/hooks/useGestaoVagas.ts && git -c user.email=\"madukisp@gmail.com\" -c user.name=\"madukisp\" commit -m \"$\\(cat <<'EOF'\nfix: load responded afastamentos independently of current ORIS status\n\nVagas Fechadas for afastamentos were disappearing after page refresh\nwhen the person had returned to work. New carregarAfastamentosRespondidos\nqueries respostas_gestor + eventos_movimentacao + oris_funcionarios\nwithout filtering by current situacao, so answered afastamentos always\nappear in Vagas Fechadas regardless of ORIS status.\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\nEOF\n\\)\" && git push)",
+      "Bash(gh auth status 2>&1)",
+      "Bash(git config --list)",
+      "Bash(npm run build 2>&1 | tail -15)",
+      "Bash(npm run build 2>&1 | tail -12)",
+      "Bash(./node_modules/.bin/tsc --noEmit 2>&1 | head -30)",
+      "Bash(node_modules/.bin/vite build 2>&1 | head -50)"
     ]
   },
   "enabledPlugins": {

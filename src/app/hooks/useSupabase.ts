@@ -238,7 +238,6 @@ export function useRequisitions() {
 export async function initializeDatabase() {
   try {
     await fetchAPI('/init-data', { method: 'POST' });
-    console.log('Database initialized successfully');
   } catch (error) {
     console.error('Failed to initialize database:', error);
   }

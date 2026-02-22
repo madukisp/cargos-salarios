@@ -50,7 +50,6 @@ export function useTlpData() {
 
     const loadData = useCallback(async (unidade?: string) => {
         try {
-            console.log('[loadData] Iniciando com unidade:', unidade);
             setLoading(true);
 
             // Helper to normalize hours
@@ -69,7 +68,6 @@ export function useTlpData() {
                 .neq('situacao', '99-Demitido');
 
             if (empError) throw empError;
-            console.log('[loadData] Funcionários carregados:', allEmployees?.length, 'registros');
 
             // 1. Fetch TLP targets (quadro necessário)
             // Se unidade selecionada, filtra TLP pelos centros de custo dessa unidade
@@ -92,7 +90,6 @@ export function useTlpData() {
 
             const { data: tlpTargets, error: tlpError } = await tlpQuery;
             if (tlpError) throw tlpError;
-            console.log('[loadData] TLP carregado:', tlpTargets?.length, 'registros');
 
             // Use filtered employees for matching
             const employees = unidade && unidade !== 'todas'
@@ -104,7 +101,6 @@ export function useTlpData() {
 
             // Check if we have TLP data
             if (!tlpTargets || tlpTargets.length === 0) {
-                console.warn("No TLP targets found.");
             }
 
             // 4. Group Employees by Unit + Role + Hours
@@ -241,7 +237,6 @@ export function useTlpData() {
                 });
             });
 
-            console.log('[loadData] Processamento completo:', processedData.length, 'itens');
             setData(processedData);
             setError(null);
 

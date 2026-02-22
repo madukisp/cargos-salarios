@@ -18,6 +18,7 @@ interface VagaNotificationData {
   cargo_saiu: string;
   data_abertura_vaga: string;
   dias_em_aberto: number;
+  unidade?: string;
   app_url: string;
 }
 
@@ -47,31 +48,72 @@ serve(async (req) => {
     console.log(`[INFO] Enviando email para ${notificationData.analista_email} via Gmail SMTP`);
 
     const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Olá, ${notificationData.analista_nome}</h2>
-        <p>Uma nova vaga foi atribuída a você no sistema de Gestão de Vagas.</p>
+<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; padding: 10px; color: #1f2937;">
+  <table cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 32px; border-collapse: separate; overflow: hidden; border: 1px solid #e5e7eb;">
+    <tr>
+      <td style="background-color: #1c4482; padding: 35px 20px; text-align: center; border-radius: 32px 32px 0 0;">
+        <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 1px;">GESTÃO DE VAGAS</h1>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding: 40px 30px 20px 30px;">
+        <h2 style="color: #111827; margin: 0 0 15px 0; font-size: 20px; font-weight: 700;">Olá, ${notificationData.analista_nome}</h2>
+        <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin: 0 0 25px 0;">
+          Uma nova vaga foi atribuída a você no sistema. Confira os detalhes abaixo:
+        </p>
         
-        <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
-          <h3 style="margin-top: 0; color: #1f2937;">Detalhes da Vaga</h3>
-          <ul style="list-style: none; padding: 0;">
-            <li style="margin-bottom: 10px;"><strong>Cargo:</strong> ${notificationData.cargo_saiu}</li>
-            <li style="margin-bottom: 10px;"><strong>Vaga Original de:</strong> ${notificationData.funcionario_saiu}</li>
-            <li style="margin-bottom: 10px;"><strong>Data de Abertura:</strong> ${notificationData.data_abertura_vaga}</li>
-            <li style="margin-bottom: 10px;"><strong>Dias em Aberto:</strong> ${notificationData.dias_em_aberto} dias</li>
-          </ul>
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 20px; padding: 25px; margin-bottom: 35px;">
+          <h3 style="margin-top: 0; margin-bottom: 20px; color: #1c4482; font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 800;">Detalhes da Vaga</h3>
+          <table cellpadding="0" cellspacing="0" border="0" width="100%">
+            <tr>
+              <td style="padding-bottom: 15px; color: #64748b; font-size: 13px; font-weight: 600;" width="120">CARGO:</td>
+              <td style="padding-bottom: 15px; color: #1e293b; font-size: 15px; font-weight: 700;">${notificationData.cargo_saiu}</td>
+            </tr>
+            <tr>
+              <td style="padding-bottom: 15px; color: #64748b; font-size: 13px; font-weight: 600;">VAGA DE:</td>
+              <td style="padding-bottom: 15px; color: #1e293b; font-size: 15px;">${notificationData.funcionario_saiu}</td>
+            </tr>
+            <tr>
+              <td style="padding-bottom: 15px; color: #64748b; font-size: 13px; font-weight: 600;">ABERTURA:</td>
+              <td style="padding-bottom: 15px; color: #1e293b; font-size: 15px;">${notificationData.data_abertura_vaga}</td>
+            </tr>
+            ${notificationData.unidade ? `
+            <tr>
+              <td style="padding-bottom: 15px; color: #64748b; font-size: 13px; font-weight: 600;">UNIDADE:</td>
+              <td style="padding-bottom: 15px; color: #1e293b; font-size: 15px;">${notificationData.unidade}</td>
+            </tr>
+            ` : ''}
+            <tr>
+              <td style="color: #64748b; font-size: 13px; font-weight: 600;">TEMPO:</td>
+              <td style="color: #ef4444; font-size: 15px; font-weight: 700;">${notificationData.dias_em_aberto} dias em aberto</td>
+            </tr>
+          </table>
         </div>
 
-        <p>Acesse o sistema para visualizar mais detalhes e iniciar o processo.</p>
-        
-        <a href="${notificationData.app_url}" style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
-          Acessar Minhas Vagas
-        </a>
-        
-        <p style="margin-top: 30px; font-size: 12px; color: #6b7280;">
-          Esta é uma mensagem automática do sistema de Gestão de Vagas.
-        </p>
-      </div>
-    `;
+        <table border="0" cellspacing="0" cellpadding="0" align="center" style="margin-bottom: 20px;">
+          <tr>
+            <td align="center" style="border-radius: 50px;" bgcolor="#1c4482">
+              <a href="${notificationData.app_url}" target="_blank" style="font-size: 16px; font-family: sans-serif; color: #ffffff; text-decoration: none; border-radius: 50px; padding: 16px 50px; border: 1px solid #1c4482; display: inline-block; font-weight: 700; letter-spacing: 0.5px;">
+                Acessar Minhas Vagas
+              </a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td style="background-color: #f9fafb; padding: 25px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9;">
+        Este é um e-mail automático enviado pelo Sistema de Gestão de Vagas.<br>
+        Por favor, não responda a esta mensagem.
+      </td>
+    </tr>
+  </table>
+</div>
+`.replace(/>\s+</g, '><').trim();
+
+    const textContent = `Olá, ${notificationData.analista_nome}\n\nUma nova vaga foi atribuída a você no sistema de Gestão de Vagas.\n\nDetalhes da Vaga:\n- Cargo: ${notificationData.cargo_saiu}\n- Vaga de: ${notificationData.funcionario_saiu}\n- Abertura: ${notificationData.data_abertura_vaga}${notificationData.unidade ? `\n- Unidade: ${notificationData.unidade}` : ''}\n- Tempo: ${notificationData.dias_em_aberto} dias em aberto\n\nAcesse no link: ${notificationData.app_url}`;
+
+
 
     // Conectar ao Gmail SMTP
     const client = new SMTPClient({
@@ -91,7 +133,7 @@ serve(async (req) => {
       from: GMAIL_USER,
       to: notificationData.analista_email,
       subject: `Nova Vaga Atribuída: ${notificationData.cargo_saiu}`,
-      content: "auto",
+      content: textContent,
       html: htmlContent,
     });
 
