@@ -49,6 +49,8 @@ export interface RespostaGestor {
   nao_pertence_unidade?: boolean | null;
   data_fechamento_vaga?: string | null;
   arquivado?: boolean | null;
+  nao_encontrada?: boolean | null;
+  observacao_nao_encontrada?: string | null;
   nome_analista?: string | null;
 }
 
@@ -58,7 +60,6 @@ export async function carregarDemissoes(
   cnpj?: string
 ): Promise<EventoDemissao[]> {
   try {
-    console.log('[carregarDemissoes] Iniciando (mixed mode), status:', status);
 
     // --- Caminho RESPONDIDO: usa eventos_gestao_vagas_public como fonte primária ---
     // Evita o limite de 1.000 linhas do Supabase ao varrer oris_funcionarios (8.992 demitidos)
@@ -81,18 +82,27 @@ export async function carregarDemissoes(
       if (evError) throw evError;
       if (!eventos || eventos.length === 0) return [];
 
-      // Enriquecer com tipo_rescisao, carga_horaria_semanal, escala do oris_funcionarios
+      // Enriquecer com tipo_rescisao, carga_horaria_semanal, escala do oris_funcionarios em blocos de 100 para evitar erro de URL longa
       const nomes = eventos.map((e: any) => e.nome).filter(Boolean);
       let mapaDetalhes: Record<string, any> = {};
+      
       if (nomes.length > 0) {
-        const { data: orisData } = await supabase
-          .from('oris_funcionarios')
-          .select('nome,tipo_rescisao,carga_horaria_semanal,escala')
-          .in('nome', nomes);
-        (orisData || []).forEach((o: any) => { mapaDetalhes[o.nome] = o; });
+        const uniqueNomes = Array.from(new Set(nomes));
+        const CHUNK_SIZE = 100;
+        
+        for (let i = 0; i < uniqueNomes.length; i += CHUNK_SIZE) {
+          const chunk = uniqueNomes.slice(i, i + CHUNK_SIZE);
+          const { data: orisData } = await supabase
+            .from('oris_funcionarios')
+            .select('nome,tipo_rescisao,carga_horaria_semanal,escala')
+            .in('nome', chunk);
+            
+          (orisData || []).forEach((o: any) => { 
+            mapaDetalhes[o.nome] = o; 
+          });
+        }
       }
 
-      console.log('[carregarDemissoes] RESPONDIDO via eventos_gestao_vagas_public:', eventos.length);
       const hoje = new Date();
       hoje.setHours(0, 0, 0, 0);
       return eventos.map((e: any) => {
@@ -131,27 +141,48 @@ export async function carregarDemissoes(
 
     if (!demitidos || demitidos.length === 0) return [];
 
-    // 2. Buscar eventos correspondentes em eventos_movimentacao
+    // 2. Buscar eventos correspondentes em eventos_movimentacao em blocos
     const funcIds = demitidos.map(d => d.id);
-    const { data: eventosReais } = await supabase
-      .from('eventos_movimentacao')
-      .select('id_evento, id_funcionario, data_evento')
-      .in('id_funcionario', funcIds)
-      .eq('situacao_origem', '99-Demitido');
-
     const mapaEventos: Record<number, number> = {};
-    if (eventosReais) {
-      eventosReais.forEach((ev: any) => {
-        mapaEventos[ev.id_funcionario] = ev.id_evento;
-      });
+    
+    if (funcIds.length > 0) {
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < funcIds.length; i += CHUNK_SIZE) {
+        const chunk = funcIds.slice(i, i + CHUNK_SIZE);
+        const { data: eventosReais } = await supabase
+          .from('eventos_movimentacao')
+          .select('id_evento, id_funcionario, data_evento')
+          .in('id_funcionario', chunk)
+          .eq('situacao_origem', '99-Demitido');
+
+        if (eventosReais) {
+          eventosReais.forEach((ev: any) => {
+            mapaEventos[ev.id_funcionario] = ev.id_evento;
+          });
+        }
+      }
     }
 
-    // 3. Buscar respostas para identificar pendentes (sem resposta)
-    const { data: respostas } = await supabase
-      .from('respostas_gestor')
-      .select('id_evento');
+    // 3. Buscar respostas apenas para os eventos dos funcionários em questão
+    // (evitar o limite de 1000 linhas do Supabase buscando tudo)
+    const idsParaVerificar = demitidos.map(d => {
+      const realIdEvento = mapaEventos[d.id];
+      return realIdEvento || d.id;
+    });
 
-    const respostasSet = new Set((respostas || []).map(r => r.id_evento));
+    const respostasSet = new Set<number>();
+    if (idsParaVerificar.length > 0) {
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < idsParaVerificar.length; i += CHUNK_SIZE) {
+        const chunk = idsParaVerificar.slice(i, i + CHUNK_SIZE);
+        const { data: respostas } = await supabase
+          .from('respostas_gestor')
+          .select('id_evento')
+          .in('id_evento', chunk);
+        
+        (respostas || []).forEach(r => respostasSet.add(r.id_evento));
+      }
+    }
 
     // 4. Filtrar apenas os que NÃO têm resposta (PENDENTE)
     let demissoesFiltradas = demitidos.filter(d => {
@@ -170,7 +201,6 @@ export async function carregarDemissoes(
       demissoesFiltradas = demissoesFiltradas.filter(d => d.cnpj === cnpj);
     }
 
-    console.log('[carregarDemissoes] PENDENTE:', demissoesFiltradas.length);
 
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
@@ -204,16 +234,11 @@ export async function carregarDemissoes(
   }
 }
 
-// Remover o antigo formatarDemissoes que ficou solto se não for usado, ou mantê-lo.
-// Vou incorporar a lógica inline acima para clareza e evitar duplicatas.
-
-
 export async function carregarAfastamentos(
   lotacao?: string,
   cnpj?: string
 ): Promise<EventoDemissao[]> {
   try {
-    console.log('[carregarAfastamentos] Iniciando (mixed mode)');
 
     // 1. Buscar afastados de oris_funcionarios
     let query = supabase
@@ -236,18 +261,25 @@ export async function carregarAfastamentos(
 
     if (!afastados || afastados.length === 0) return [];
 
-    // 2. Buscar eventos correspondentes
+    // 2. Buscar eventos correspondentes em blocos
     const funcIds = afastados.map(d => d.id);
-    const { data: eventosReais } = await supabase
-      .from('eventos_movimentacao')
-      .select('id_evento, id_funcionario')
-      .in('id_funcionario', funcIds);
-
     const mapaEventos: Record<number, number> = {};
-    if (eventosReais) {
-      eventosReais.forEach((ev: any) => {
-        mapaEventos[ev.id_funcionario] = ev.id_evento;
-      });
+    
+    if (funcIds.length > 0) {
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < funcIds.length; i += CHUNK_SIZE) {
+        const chunk = funcIds.slice(i, i + CHUNK_SIZE);
+        const { data: eventosReais } = await supabase
+          .from('eventos_movimentacao')
+          .select('id_evento, id_funcionario')
+          .in('id_funcionario', chunk);
+
+        if (eventosReais) {
+          eventosReais.forEach((ev: any) => {
+            mapaEventos[ev.id_funcionario] = ev.id_evento;
+          });
+        }
+      }
     }
 
     // 3. Filtros
@@ -385,13 +417,18 @@ export async function salvarResposta(
     // Extrair apenas os campos que existem na tabela (excluir campos virtuais como nome_analista)
     const { nome_analista, id_resposta, ...dadosTabela } = dados as RespostaGestor & { nome_analista?: string | null; id_resposta?: number };
 
+    // Sanitizar: converter strings vazias para null (evita erro de tipo em colunas date/integer do PostgreSQL)
+    const dadosSanitizados = Object.fromEntries(
+      Object.entries(dadosTabela).map(([k, v]) => [k, v === '' ? null : v])
+    );
+
     const { error } = await supabase
       .from('respostas_gestor')
       .upsert(
         {
+          ...dadosSanitizados,
           id_evento,
           tipo_origem,
-          ...dadosTabela,
           data_resposta: new Date().toISOString().split('T')[0],
           data_fechamento_vaga: dados.vaga_preenchida === 'SIM'
             ? (dados.data_fechamento_vaga || null)
@@ -518,14 +555,20 @@ export async function carregarVagasArquivadas(
     let mapaDetalhes: Record<string, any> = {};
 
     if (nomes.length > 0) {
-      const { data: orisData } = await supabase
-        .from('oris_funcionarios')
-        .select('nome, tipo_rescisao, carga_horaria_semanal, escala')
-        .in('nome', nomes);
+      const uniqueNomes = Array.from(new Set(nomes));
+      const CHUNK_SIZE = 100;
+      
+      for (let i = 0; i < uniqueNomes.length; i += CHUNK_SIZE) {
+        const chunk = uniqueNomes.slice(i, i + CHUNK_SIZE);
+        const { data: orisData } = await supabase
+          .from('oris_funcionarios')
+          .select('nome, tipo_rescisao, carga_horaria_semanal, escala')
+          .in('nome', chunk);
 
-      (orisData || []).forEach((oris: any) => {
-        mapaDetalhes[oris.nome] = oris;
-      });
+        (orisData || []).forEach((oris: any) => {
+          mapaDetalhes[oris.nome] = oris;
+        });
+      }
     }
 
     // Adicionar detalhes aos resultados
@@ -540,6 +583,92 @@ export async function carregarVagasArquivadas(
   } catch (error) {
     console.error('Erro ao carregar vagas arquivadas:', error);
     return [];
+  }
+}
+
+export async function carregarVagasNaoEncontradas(
+  lotacao?: string,
+  cnpj?: string
+): Promise<EventoDemissao[]> {
+  try {
+    const { data: respostas, error: respError } = await supabase
+      .from('respostas_gestor')
+      .select('id_evento')
+      .eq('nao_encontrada', true);
+
+    if (respError) {
+      console.error('Erro ao buscar vagas não encontradas:', respError);
+      return [];
+    }
+
+    if (!respostas || respostas.length === 0) return [];
+
+    const ids = respostas.map(r => r.id_evento);
+
+    let query = supabase
+      .from('eventos_gestao_vagas_public')
+      .select('id_evento,nome,cargo,cnpj,data_evento,status_evento,dias_em_aberto,situacao_origem,lotacao')
+      .in('id_evento', ids)
+      .order('data_evento', { ascending: false });
+
+    if (lotacao && lotacao !== 'TODAS') {
+      query = query.eq('lotacao', lotacao);
+    }
+    if (cnpj && cnpj !== 'todos') {
+      query = query.eq('cnpj', cnpj);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Erro ao carregar detalhes das vagas não encontradas:', error);
+      return [];
+    }
+
+    return (data || []) as EventoDemissao[];
+  } catch (error) {
+    console.error('Erro ao carregar vagas não encontradas:', error);
+    return [];
+  }
+}
+
+export async function marcarVagaNaoEncontrada(
+  id_evento: number,
+  tipo_origem: 'DEMISSAO' | 'AFASTAMENTO',
+  nao_encontrada: boolean,
+  observacao_nao_encontrada?: string
+): Promise<void> {
+  try {
+    const { data: existing, error: fetchError } = await supabase
+      .from('respostas_gestor')
+      .select('id_resposta')
+      .eq('id_evento', id_evento)
+      .eq('tipo_origem', tipo_origem)
+      .maybeSingle();
+
+    if (fetchError) throw fetchError;
+
+    if (existing) {
+      const { error } = await supabase
+        .from('respostas_gestor')
+        .update({ nao_encontrada, observacao_nao_encontrada: observacao_nao_encontrada ?? null })
+        .eq('id_resposta', existing.id_resposta);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from('respostas_gestor')
+        .insert({
+          id_evento,
+          tipo_origem,
+          nao_encontrada,
+          observacao_nao_encontrada: observacao_nao_encontrada ?? null,
+          data_resposta: new Date().toISOString().split('T')[0],
+        });
+      if (error) throw error;
+    }
+  } catch (error) {
+    console.error('Erro ao marcar vaga como não encontrada:', error);
+    throw error;
   }
 }
 
@@ -561,7 +690,6 @@ export async function carregarLotacoes(): Promise<string[]> {
       if (item?.lotacao) lotacoes.add(item.lotacao);
     });
 
-    console.log('[carregarLotacoes] Retornando', lotacoes.size, 'lotações');
     return Array.from(lotacoes).sort();
   } catch (error) {
     console.error('[carregarLotacoes] Exception:', error);
@@ -614,7 +742,6 @@ export async function carregarVagasEmAberto(
   cnpj?: string
 ): Promise<VagaEmAberto[]> {
   try {
-    console.log('[carregarVagasEmAberto] Iniciando com lotacao:', lotacao, 'cnpj:', cnpj);
 
     let query = supabase
       .from('vw_vagas_em_aberto_por_cnpj')
@@ -623,16 +750,11 @@ export async function carregarVagasEmAberto(
 
     // Filtrar por lotação (centro_custo)
     if (lotacao && lotacao !== 'TODAS') {
-      console.log('[carregarVagasEmAberto] Aplicando filtro de lotação:', lotacao);
       query = query.eq('centro_custo', lotacao);
     }
 
-    // Filtrar por CNPJ - SÓ SE NÃO FOR 'todos'
     if (cnpj && cnpj !== 'todos') {
-      console.log('[carregarVagasEmAberto] Aplicando filtro de CNPJ:', cnpj);
       query = query.eq('cnpj', cnpj);
-    } else {
-      console.log('[carregarVagasEmAberto] Sem filtro de CNPJ - carregando todos');
     }
 
     const { data, error } = await query;
@@ -644,30 +766,35 @@ export async function carregarVagasEmAberto(
 
     const vagas = (data || []) as VagaEmAberto[];
 
-    // Enriquecer com carga_horaria_semanal, escala e situacao do oris_funcionarios
+    // Enriquecer com carga_horaria_semanal, escala e situacao do oris_funcionarios em blocos
     const ids = vagas.map(v => v.id_funcionario).filter(Boolean);
+    const mapaOris: Record<number, { carga_horaria_semanal?: string; escala?: string; situacao?: string }> = {};
+    
     if (ids.length > 0) {
-      const { data: orisData } = await supabase
-        .from('oris_funcionarios')
-        .select('id, carga_horaria_semanal, escala, situacao')
-        .in('id', ids);
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+        const chunk = ids.slice(i, i + CHUNK_SIZE);
+        const { data: orisData } = await supabase
+          .from('oris_funcionarios')
+          .select('id, carga_horaria_semanal, escala, situacao')
+          .in('id', chunk);
 
-      if (orisData && orisData.length > 0) {
-        const mapaOris: Record<number, { carga_horaria_semanal?: string; escala?: string; situacao?: string }> = {};
-        orisData.forEach((o: any) => { mapaOris[o.id] = o; });
-
-        vagas.forEach(v => {
-          const oris = mapaOris[v.id_funcionario];
-          if (oris) {
-            v.carga_horaria_semanal = oris.carga_horaria_semanal ?? null;
-            v.escala = oris.escala ?? null;
-            // Adicionar situacao_atual se não existe (para vagas regulares)
-            if (!('situacao_atual' in v)) {
-              (v as any).situacao_atual = oris.situacao ?? null;
-            }
-          }
-        });
+        if (orisData) {
+          orisData.forEach((o: any) => { mapaOris[o.id] = o; });
+        }
       }
+
+      vagas.forEach(v => {
+        const oris = mapaOris[v.id_funcionario];
+        if (oris) {
+          v.carga_horaria_semanal = oris.carga_horaria_semanal ?? null;
+          v.escala = oris.escala ?? null;
+          // Adicionar situacao_atual se não existe (para vagas regulares)
+          if (!('situacao_atual' in v)) {
+            (v as any).situacao_atual = oris.situacao ?? null;
+          }
+        }
+      });
     }
 
     // Buscar vagas de movimentação manual (status ABERTA)
@@ -689,15 +816,19 @@ export async function carregarVagasEmAberto(
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
 
-    // Buscar situacao atual dos funcionários de movimentação
+    // Buscar situacao atual dos funcionários de movimentação em blocos
     const idsFuncMov = (movData || []).map((m: any) => m.id_funcionario).filter(Boolean);
     const mapaSituacao: Record<number, string> = {};
     if (idsFuncMov.length > 0) {
-      const { data: situacaoData } = await supabase
-        .from('oris_funcionarios')
-        .select('id, situacao')
-        .in('id', idsFuncMov);
-      (situacaoData || []).forEach((s: any) => { mapaSituacao[s.id] = s.situacao; });
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < idsFuncMov.length; i += CHUNK_SIZE) {
+        const chunk = idsFuncMov.slice(i, i + CHUNK_SIZE);
+        const { data: situacaoData } = await supabase
+          .from('oris_funcionarios')
+          .select('id, situacao')
+          .in('id', chunk);
+        (situacaoData || []).forEach((s: any) => { mapaSituacao[s.id] = s.situacao; });
+      }
     }
 
     const vagasMovimentacao: VagaEmAberto[] = (movData || []).map((m: any) => {
@@ -725,7 +856,6 @@ export async function carregarVagasEmAberto(
     });
 
     const total = [...vagas, ...vagasMovimentacao];
-    console.log('[carregarVagasEmAberto] Retornando', total.length, 'vagas em aberto');
     return total;
   } catch (error) {
     console.error('[carregarVagasEmAberto] Exception:', error);
@@ -773,4 +903,100 @@ export async function excluirVagaMovimentacao(id: number): Promise<void> {
     .delete()
     .eq('id', id);
   if (error) throw new Error(error.message);
+}
+
+/**
+ * Carrega afastamentos que possuem resposta do gestor, independente do status atual no ORIS.
+ * Resolve o problema de vagas fechadas sumirem após refresh quando a pessoa retornou do afastamento.
+ * Usa eventos_movimentacao + oris_funcionarios diretamente (igual a carregarAfastamentos)
+ * mas sem filtrar pela situacao atual do funcionário.
+ */
+export async function carregarAfastamentosRespondidos(
+  lotacao?: string,
+  cnpj?: string
+): Promise<EventoDemissao[]> {
+  try {
+    // 1. Buscar id_eventos de respostas com tipo_origem='AFASTAMENTO'
+    const { data: respostas, error: respError } = await supabase
+      .from('respostas_gestor')
+      .select('id_evento')
+      .eq('tipo_origem', 'AFASTAMENTO');
+
+    if (respError) {
+      console.error('[carregarAfastamentosRespondidos] Erro ao buscar respostas:', respError);
+      return [];
+    }
+    if (!respostas || respostas.length === 0) return [];
+
+    const ids = respostas.map((r: any) => r.id_evento);
+
+    // 2. Buscar eventos em eventos_movimentacao para obter id_funcionario e data_evento
+    const eventosMovData: any[] = [];
+    const CHUNK_SIZE = 100;
+    for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+      const chunk = ids.slice(i, i + CHUNK_SIZE);
+      const { data } = await supabase
+        .from('eventos_movimentacao')
+        .select('id_evento, id_funcionario, data_evento')
+        .in('id_evento', chunk);
+      if (data) eventosMovData.push(...data);
+    }
+
+    if (eventosMovData.length === 0) return [];
+
+    // 3. Buscar dados do funcionário no ORIS (qualquer situação — incluindo quem já voltou ao trabalho)
+    const funcIds = [...new Set(eventosMovData.map((e: any) => e.id_funcionario))].filter(Boolean);
+    const orisData: any[] = [];
+    for (let i = 0; i < funcIds.length; i += CHUNK_SIZE) {
+      const chunk = funcIds.slice(i, i + CHUNK_SIZE);
+      const { data } = await supabase
+        .from('oris_funcionarios')
+        .select('id, nome, cargo, cnpj, centro_custo, nome_fantasia, carga_horaria_semanal, escala, situacao')
+        .in('id', chunk);
+      if (data) orisData.push(...data);
+    }
+
+    const mapaOris = new Map(orisData.map((o: any) => [o.id, o]));
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const result: EventoDemissao[] = [];
+    for (const ev of eventosMovData) {
+      const oris = mapaOris.get(ev.id_funcionario);
+      if (!oris) continue;
+
+      // Aplicar filtros de lotação e CNPJ
+      if (cnpj && cnpj !== 'todos' && oris.cnpj !== cnpj) continue;
+      if (lotacao && lotacao !== 'TODAS' &&
+          oris.centro_custo !== lotacao && oris.nome_fantasia !== lotacao) continue;
+
+      // Excluir demissões (já carregadas por carregarDemissoes)
+      if (oris.situacao === '99-Demitido') continue;
+
+      const dataEvento = ev.data_evento || '';
+      const diffTime = dataEvento
+        ? Math.abs(hoje.getTime() - new Date(dataEvento + 'T00:00:00').getTime())
+        : 0;
+      const diasEmAberto = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      result.push({
+        id_evento: ev.id_evento,
+        nome: oris.nome,
+        cargo: oris.cargo,
+        cnpj: oris.cnpj,
+        data_evento: dataEvento,
+        status_evento: 'RESPONDIDO' as const,
+        dias_em_aberto: diasEmAberto,
+        situacao_origem: oris.situacao,
+        lotacao: oris.centro_custo || oris.nome_fantasia || 'Sem lotação',
+        carga_horaria_semanal: oris.carga_horaria_semanal,
+        escala: oris.escala,
+      } as EventoDemissao);
+    }
+
+    return result;
+  } catch (error) {
+    console.error('[carregarAfastamentosRespondidos] Exception:', error);
+    return [];
+  }
 }

@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import {
   carregarDemissoes,
   carregarAfastamentos,
+  carregarAfastamentosRespondidos,
   carregarRespostasLote,
   salvarResposta,
   confirmarEfetivacao,
@@ -9,6 +10,8 @@ import {
   carregarVagasArquivadas,
   arquivarVaga,
   carregarVagasEmAberto,
+  carregarVagasNaoEncontradas,
+  marcarVagaNaoEncontrada,
   EventoDemissao,
   RespostaGestor,
   VagaEmAberto,
@@ -20,6 +23,7 @@ export function useGestaoVagas() {
   const [vagasPendentesEfetivacao, setVagasPendentesEfetivacao] = useState<EventoDemissao[]>([]);
   const [afastamentosPendentes, setAfastamentosPendentes] = useState<EventoDemissao[]>([]);
   const [vagasArquivadas, setVagasArquivadas] = useState<EventoDemissao[]>([]);
+  const [vagasNaoEncontradas, setVagasNaoEncontradas] = useState<EventoDemissao[]>([]);
   const [vagasEmAberto, setVagasEmAberto] = useState<VagaEmAberto[]>([]);
   const [respostas, setRespostas] = useState<Record<number, RespostaGestor>>({});
   const [lotacoes, setLotacoes] = useState<string[]>(['TODAS']);
@@ -33,20 +37,17 @@ export function useGestaoVagas() {
     setLotacaoAtual(lotacao);
 
     try {
-      console.log('Fetching demissoes PENDENTE...');
       const demPendRaw = await carregarDemissoes(lotacao, 'PENDENTE', cnpj);
-      console.log('Fetching demissoes RESPONDIDO...');
       const demRespRaw = await carregarDemissoes(lotacao, 'RESPONDIDO', cnpj);
-      console.log('Fetching afastamentos...');
       const afastPendRaw = await carregarAfastamentos(lotacao, cnpj);
-      console.log('Fetching archived vacancies...');
+      const afastRespRaw = await carregarAfastamentosRespondidos(lotacao, cnpj);
       const arquivadasRaw = await carregarVagasArquivadas(lotacao, cnpj);
-      console.log('Fetching vagas em aberto...');
       const vagasEmAbertoRaw = await carregarVagasEmAberto(lotacao, cnpj);
-      console.log('[useGestaoVagas] vagasEmAbertoRaw recebido:', vagasEmAbertoRaw.length, 'items');
+      const naoEncontradasRaw = await carregarVagasNaoEncontradas(lotacao, cnpj);
 
       // Combinar e desduplicar eventos
-      const todosEventosRaw = [...demPendRaw, ...demRespRaw, ...afastPendRaw, ...arquivadasRaw];
+      // afastRespRaw garante que afastamentos com resposta apareçam mesmo se o funcionário já retornou ao trabalho
+      const todosEventosRaw = [...demPendRaw, ...demRespRaw, ...afastPendRaw, ...afastRespRaw, ...arquivadasRaw];
       const seenIds = new Set<number>();
       const todosEventos: EventoDemissao[] = [];
 
@@ -70,18 +71,26 @@ export function useGestaoVagas() {
       const demPendEf: EventoDemissao[] = [];
       const afastPend: EventoDemissao[] = [];
       const arquivadas: EventoDemissao[] = [];
+      const naoEncontradas: EventoDemissao[] = [...naoEncontradasRaw];
 
-      // Helper para checar se está arquivado
+      // Helper para checar se está arquivado ou não encontrado
       const isArquivado = (id: number) => mapaRespostas[id]?.arquivado === true;
+      const isNaoEncontrada = (id: number) => mapaRespostas[id]?.nao_encontrada === true;
+      // IDs já carregados em naoEncontradasRaw para evitar duplicar no carregamento
+      const idsNaoEncontradas = new Set(naoEncontradasRaw.map(e => e.id_evento));
 
       todosEventos.forEach(ev => {
         if (isArquivado(ev.id_evento)) {
           arquivadas.push(ev);
+        } else if (isNaoEncontrada(ev.id_evento) && !idsNaoEncontradas.has(ev.id_evento)) {
+          // Evento marcado como não encontrado mas não carregado via query filtrada (filtro de lotação/cnpj)
+          // Não adiciona em nenhuma outra lista
+        } else if (idsNaoEncontradas.has(ev.id_evento)) {
+          // Já está em naoEncontradas, não duplicar em outras listas
         } else {
           const resp = mapaRespostas[ev.id_evento];
-          // Pendente de efetivação: campo explícito OU vaga marcada como SIM sem substituto
-          const pendenteEf = resp?.pendente_efetivacao === true ||
-            (resp?.vaga_preenchida === 'SIM' && !resp?.id_substituto && !resp?.nome_candidato);
+          // Pendente de efetivação: apenas quando marcado explicitamente
+          const pendenteEf = resp?.pendente_efetivacao === true;
 
           if (pendenteEf) {
             demPendEf.push(ev);
@@ -114,10 +123,10 @@ export function useGestaoVagas() {
       setVagasPendentesEfetivacao(demPendEf);
       setAfastamentosPendentes(afastPend);
       setVagasArquivadas(arquivadas);
+      setVagasNaoEncontradas(naoEncontradas);
       setVagasEmAberto(vagasEmAbertoRaw);
       setLotacoes(lotacoesData || ['TODAS']);
 
-      console.log('[useGestaoVagas] Atualizadas', vagasEmAbertoRaw.length, 'vagas');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao carregar dados';
       setError(msg);
@@ -168,12 +177,29 @@ export function useGestaoVagas() {
     }
   }, [carregarDados, lotacaoAtual]);
 
+  const marcarNaoEncontrada = useCallback(async (
+    id_evento: number,
+    tipo: 'DEMISSAO' | 'AFASTAMENTO',
+    status: boolean,
+    observacao?: string
+  ) => {
+    try {
+      await marcarVagaNaoEncontrada(id_evento, tipo, status, observacao);
+      await carregarDados(lotacaoAtual);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao marcar vaga como não encontrada';
+      setError(msg);
+      throw err;
+    }
+  }, [carregarDados, lotacaoAtual]);
+
   return {
     demissoesPendentes,
     demissoesRespondidas,
     vagasPendentesEfetivacao,
     afastamentosPendentes,
     vagasArquivadas,
+    vagasNaoEncontradas,
     vagasEmAberto,
     respostas,
     lotacoes,
@@ -183,5 +209,6 @@ export function useGestaoVagas() {
     responder,
     efetivar,
     arquivar,
+    marcarNaoEncontrada,
   };
 }
