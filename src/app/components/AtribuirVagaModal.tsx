@@ -4,8 +4,10 @@ import { Button } from "@/app/components/ui/button";
 import { Checkbox } from "@/app/components/ui/checkbox";
 import { toast } from "sonner";
 import { useAnalistas, useAtribuirVaga } from "@/app/hooks/useAtribuicao";
-import { Loader2, Search, UserCheck } from "lucide-react";
+import { Loader2, Search, UserCheck, UserX } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+
+const ANALISTA_INATIVO_ID = -999;
 
 interface AtribuirVagaModalProps {
     open: boolean;
@@ -23,10 +25,13 @@ interface AtribuirVagaModalProps {
         nome?: string;
         cargo?: string;
         lotacao?: string;
+        vaga_preenchida?: string | null;
     } | null;
+    onMarcarInativo?: () => Promise<void>;
+    onAtribuicaoCompleta?: () => void;
 }
 
-export function AtribuirVagaModal({ open, onOpenChange, vaga }: AtribuirVagaModalProps) {
+export function AtribuirVagaModal({ open, onOpenChange, vaga, onMarcarInativo, onAtribuicaoCompleta }: AtribuirVagaModalProps) {
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [jaAtribuidos, setJaAtribuidos] = useState<Set<number>>(new Set());
     const [busca, setBusca] = useState("");
@@ -64,8 +69,20 @@ export function AtribuirVagaModal({ open, onOpenChange, vaga }: AtribuirVagaModa
     const toggleAnalista = (id: number) => {
         setSelectedIds(prev => {
             const next = new Set(prev);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
+            if (id === ANALISTA_INATIVO_ID) {
+                // Selecionar inativo limpa todos os analistas reais
+                if (next.has(ANALISTA_INATIVO_ID)) {
+                    next.delete(ANALISTA_INATIVO_ID);
+                } else {
+                    next.clear();
+                    next.add(ANALISTA_INATIVO_ID);
+                }
+            } else {
+                // Selecionar analista real limpa a opção inativo
+                next.delete(ANALISTA_INATIVO_ID);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+            }
             return next;
         });
     };
@@ -78,6 +95,26 @@ export function AtribuirVagaModal({ open, onOpenChange, vaga }: AtribuirVagaModa
 
     const handleConfirm = async () => {
         if (!vaga) return;
+
+        // Caso: marcar como analista inativo (arquivar a vaga)
+        if (selectedIds.has(ANALISTA_INATIVO_ID)) {
+            if (!onMarcarInativo) {
+                toast.error("Ação não disponível.");
+                return;
+            }
+            setIsAtribuindo(true);
+            try {
+                await onMarcarInativo();
+                onAtribuicaoCompleta?.();
+                toast.success("Vaga arquivada com sucesso.");
+                handleClose();
+            } catch (error: any) {
+                toast.error(`Erro ao arquivar vaga: ${error.message}`);
+            } finally {
+                setIsAtribuindo(false);
+            }
+            return;
+        }
 
         // Apenas analistas novos (não estavam atribuídos antes)
         const novos = Array.from(selectedIds).filter(id => !jaAtribuidos.has(id));
@@ -116,6 +153,7 @@ export function AtribuirVagaModal({ open, onOpenChange, vaga }: AtribuirVagaModa
             }
 
             const plural = novos.length > 1 ? `${novos.length} analistas` : "1 analista";
+            onAtribuicaoCompleta?.();
             toast.success(`Vaga atribuída para ${plural} com sucesso!`);
             handleClose();
         } catch (error: any) {
@@ -138,8 +176,8 @@ export function AtribuirVagaModal({ open, onOpenChange, vaga }: AtribuirVagaModa
                 <div className="p-6 space-y-4 max-w-full overflow-x-hidden">
                     {/* Info da vaga */}
                     <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400 ml-1">
-                            Vaga em Aberto
+                        <label className={`text-[10px] font-bold uppercase tracking-widest ml-1 ${vaga?.vaga_preenchida === 'SIM' ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400'}`}>
+                            {vaga?.vaga_preenchida === 'SIM' ? 'Vaga Fechada' : 'Vaga em Aberto'}
                         </label>
                         {vaga ? (
                             <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 text-sm space-y-2 w-full shadow-sm overflow-hidden">
@@ -197,6 +235,27 @@ export function AtribuirVagaModal({ open, onOpenChange, vaga }: AtribuirVagaModa
 
                         {/* Lista scrollável */}
                         <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-y-auto max-h-52 bg-white dark:bg-slate-800">
+                            {/* Opção especial: Analista Inativo */}
+                            {onMarcarInativo && (
+                                <label
+                                    className={`flex items-center gap-3 px-4 py-3 cursor-pointer border-b border-orange-200 dark:border-orange-800/50 transition-colors ${selectedIds.has(ANALISTA_INATIVO_ID) ? 'bg-orange-50 dark:bg-orange-900/20' : 'hover:bg-orange-50/50 dark:hover:bg-orange-900/10'}`}
+                                >
+                                    <Checkbox
+                                        checked={selectedIds.has(ANALISTA_INATIVO_ID)}
+                                        onCheckedChange={() => toggleAnalista(ANALISTA_INATIVO_ID)}
+                                        className="flex-shrink-0 border-orange-400 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <UserX className="w-4 h-4 text-orange-500 flex-shrink-0" />
+                                            <p className="text-sm font-semibold text-orange-700 dark:text-orange-400 truncate">Analista Inativo</p>
+                                        </div>
+                                        <p className="text-xs text-orange-500/80 dark:text-orange-400/70 truncate">
+                                            Arquivar esta vaga
+                                        </p>
+                                    </div>
+                                </label>
+                            )}
                             {isLoadingAnalistas || loadingAtribuidos ? (
                                 <div className="flex items-center justify-center py-6 text-slate-400 text-sm gap-2">
                                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -245,11 +304,12 @@ export function AtribuirVagaModal({ open, onOpenChange, vaga }: AtribuirVagaModa
                     </Button>
                     <Button
                         onClick={handleConfirm}
-                        className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
-                        disabled={isAtribuindo || !vaga || Array.from(selectedIds).filter(id => !jaAtribuidos.has(id)).length === 0}
+                        className={`flex-1 text-white ${selectedIds.has(ANALISTA_INATIVO_ID) ? 'bg-orange-500 hover:bg-orange-600' : 'bg-purple-600 hover:bg-purple-700'}`}
+                        disabled={isAtribuindo || !vaga || selectedIds.size === 0}
                     >
                         {isAtribuindo && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         {(() => {
+                            if (selectedIds.has(ANALISTA_INATIVO_ID)) return "Arquivar Vaga";
                             const novos = Array.from(selectedIds).filter(id => !jaAtribuidos.has(id)).length;
                             return novos > 1 ? `Atribuir para ${novos} novos` : "Confirmar Atribuição";
                         })()}

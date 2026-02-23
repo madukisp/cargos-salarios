@@ -28,11 +28,19 @@ import {
     ClipboardList,
 } from 'lucide-react';
 import { useAgendaAnalistas } from '@/app/hooks/useAgendaAnalistas';
+import { useFantasiaFilter } from '@/app/hooks/useFantasiaFilter';
 import { formatarData } from '@/lib/column-formatters';
 import { VagaAtribuida } from '@/app/services/agendaAnalistasService';
 import { VagaDetalhesModal } from './VagaDetalhesModal';
 import { AtribuirVagaModal } from './AtribuirVagaModal';
 import { supabase } from '@/lib/supabase';
+
+const CONTRATOS_SP = [
+    'SBCD - PAI ZN',
+    'SBCD - CORPORATIVO',
+    'SBCD - AME CRI ZN',
+    'SBCD - REDE ASSIST. NORTE-SP',
+];
 
 interface VagaSemAtribuicao {
     id_evento: number;
@@ -44,6 +52,8 @@ interface VagaSemAtribuicao {
     situacao_origem: string;
     lotacao: string;
     vaga_preenchida: string | null;
+    data_abertura_vaga: string | null;
+    data_fechamento_vaga: string | null;
 }
 
 const FILTROS_STORAGE_KEY = 'agenda_analistas_filtros';
@@ -84,7 +94,7 @@ function getStatusBadge(diasEmAberto: number) {
     }
 }
 
-export function AgendaAnalistas() {
+function AgendaAnalistas() {
     const {
         analistas,
         loading,
@@ -97,6 +107,19 @@ export function AgendaAnalistas() {
         totalVagasEmAberto,
         totalVagasCriticas,
     } = useAgendaAnalistas();
+
+    const { fantasias } = useFantasiaFilter();
+
+    // CNPJs dos contratos de SP (mesmo filtro do Gestão de Vagas)
+    const cnpjsSP = useMemo(() => {
+        const set = new Set<string>();
+        (fantasias || []).forEach(f => {
+            if (CONTRATOS_SP.includes(f.display_name) || CONTRATOS_SP.includes(f.nome_fantasia)) {
+                set.add(f.cnpj);
+            }
+        });
+        return set;
+    }, [fantasias]);
 
     // Filtros salvos
     const filtrosSalvos = useMemo(() => carregarFiltros(), []);
@@ -138,10 +161,42 @@ export function AgendaAnalistas() {
 
     const copiarNome = useCallback((e: React.MouseEvent, nome: string, idEvento: number) => {
         e.stopPropagation();
-        navigator.clipboard.writeText(nome);
-        setCopiado(idEvento);
-        setTimeout(() => setCopiado(null), 2000);
+        e.preventDefault();
+        const doCopy = () => {
+            setCopiado(idEvento);
+            setTimeout(() => setCopiado(null), 2000);
+        };
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(nome).then(doCopy).catch(() => {
+                // fallback para ambientes sem clipboard API
+                const el = document.createElement('textarea');
+                el.value = nome;
+                el.style.position = 'fixed';
+                el.style.opacity = '0';
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+                doCopy();
+            });
+        } else {
+            const el = document.createElement('textarea');
+            el.value = nome;
+            el.style.position = 'fixed';
+            el.style.opacity = '0';
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+            doCopy();
+        }
     }, []);
+
+    // Vagas sem atribuição filtradas por contratos de SP
+    const vagasSemAtribuicaoSP = useMemo(() => {
+        if (cnpjsSP.size === 0) return vagasSemAtribuicao;
+        return vagasSemAtribuicao.filter(v => cnpjsSP.has(v.cnpj));
+    }, [vagasSemAtribuicao, cnpjsSP]);
 
     const handleSalvarFiltros = (filtros: FiltrosSalvos) => {
         salvarFiltros(filtros);
@@ -244,6 +299,15 @@ export function AgendaAnalistas() {
             result = result.filter(a => a.vagas.length > 0);
         }
 
+        // Filtro por contratos de SP (sempre ativo quando cnpjsSP estiver carregado)
+        if (cnpjsSP.size > 0) {
+            result = result.map(a => ({
+                ...a,
+                vagas: a.vagas.filter(v => cnpjsSP.has(v.cnpj)),
+            }));
+            result = result.filter(a => a.vagas.length > 0);
+        }
+
         // Recalcular contadores com base nas vagas filtradas e Aplicar Ordenação
         return result.map(a => {
             const vagasOrdenadas = [...a.vagas].sort((v1, v2) => {
@@ -273,7 +337,7 @@ export function AgendaAnalistas() {
                 vagasCriticas: a.vagas.filter(v => v.vaga_preenchida !== 'SIM' && v.dias_reais >= 45).length,
             };
         });
-    }, [analistas, buscaAnalista, statusFiltro, busca, selectedYear, selectedMonth, ordenacao]);
+    }, [analistas, buscaAnalista, statusFiltro, busca, selectedYear, selectedMonth, ordenacao, cnpjsSP]);
 
     // Atualizar filtros salvos quando mudam
     const handleBuscaAnalistaChange = (valor: string) => {
@@ -320,17 +384,20 @@ export function AgendaAnalistas() {
             // Exclui: arquivadas, não encontradas e vagasSemAbertura (abriu_vaga=false)
             const { data: respostasAbertas } = await supabase
                 .from('respostas_gestor')
-                .select('id_evento, vaga_preenchida')
+                .select('id_evento, vaga_preenchida, data_abertura_vaga, data_fechamento_vaga')
                 .eq('abriu_vaga', true)
                 .not('arquivado', 'eq', true)
                 .not('nao_encontrada', 'eq', true);
 
-            // Mapa id_evento → vaga_preenchida (último valor ganha em caso de duplicata)
-            const mapaPreenchida = new Map<number, string | null>();
+            // Mapa id_evento → dados da resposta (prefere 'SIM' em caso de duplicata)
+            const mapaRespostas = new Map<number, { vaga_preenchida: string | null; data_abertura_vaga: string | null; data_fechamento_vaga: string | null }>();
             (respostasAbertas || []).forEach((r: any) => {
-                // Prefere 'SIM' se alguma das linhas tiver
-                if (!mapaPreenchida.has(r.id_evento) || r.vaga_preenchida === 'SIM') {
-                    mapaPreenchida.set(r.id_evento, r.vaga_preenchida ?? null);
+                if (!mapaRespostas.has(r.id_evento) || r.vaga_preenchida === 'SIM') {
+                    mapaRespostas.set(r.id_evento, {
+                        vaga_preenchida: r.vaga_preenchida ?? null,
+                        data_abertura_vaga: r.data_abertura_vaga ?? null,
+                        data_fechamento_vaga: r.data_fechamento_vaga ?? null,
+                    });
                 }
             });
 
@@ -380,7 +447,9 @@ export function AgendaAnalistas() {
                     dias_em_aberto: dias,
                     situacao_origem: e.situacao_origem || '-',
                     lotacao: e.lotacao || '-',
-                    vaga_preenchida: mapaPreenchida.get(e.id_evento) ?? null,
+                    vaga_preenchida: mapaRespostas.get(e.id_evento)?.vaga_preenchida ?? null,
+                    data_abertura_vaga: mapaRespostas.get(e.id_evento)?.data_abertura_vaga ?? null,
+                    data_fechamento_vaga: mapaRespostas.get(e.id_evento)?.data_fechamento_vaga ?? null,
                 };
             }).sort((a, b) => b.dias_em_aberto - a.dias_em_aberto);
 
@@ -390,7 +459,52 @@ export function AgendaAnalistas() {
         } finally {
             setLoadingVagasSemAtribuicao(false);
         }
-    }, []);
+    }, [cnpjsSP]);
+
+    const {
+        abertasSemAtribuicao,
+        fechadasSemAtribuicao
+    } = useMemo(() => {
+        const todasAbertas = vagasSemAtribuicaoSP.filter(v => v.vaga_preenchida !== 'SIM');
+        const todasFechadas = vagasSemAtribuicaoSP.filter(v => v.vaga_preenchida === 'SIM');
+
+        const query = (buscaSemAtribuicao || busca).trim().toLowerCase();
+
+        if (!query) {
+            return {
+                abertasSemAtribuicao: todasAbertas,
+                fechadasSemAtribuicao: todasFechadas,
+                totalAbertasSemAtribuicao: todasAbertas.length,
+                totalFechadasSemAtribuicao: todasFechadas.length
+            };
+        }
+
+        const filteredAbertas = todasAbertas.filter(v =>
+            v.nome.toLowerCase().includes(query) ||
+            v.cargo.toLowerCase().includes(query) ||
+            v.lotacao.toLowerCase().includes(query)
+        );
+
+        const filteredFechadas = todasFechadas.filter(v =>
+            v.nome.toLowerCase().includes(query) ||
+            v.cargo.toLowerCase().includes(query) ||
+            v.lotacao.toLowerCase().includes(query)
+        );
+
+        return {
+            abertasSemAtribuicao: filteredAbertas,
+            fechadasSemAtribuicao: filteredFechadas
+        };
+    }, [vagasSemAtribuicaoSP, busca, buscaSemAtribuicao]);
+
+    // Auto-expandir se houver resultados na busca, e recolher se não houver
+    useEffect(() => {
+        const query = (buscaSemAtribuicao || busca).trim();
+        if (query.length >= 3) {
+            setExpandirAbertasSemAtribuicao(abertasSemAtribuicao.length > 0);
+            setExpandirFechadasSemAtribuicao(fechadasSemAtribuicao.length > 0);
+        }
+    }, [busca, buscaSemAtribuicao, abertasSemAtribuicao.length, fechadasSemAtribuicao.length]);
 
     useEffect(() => {
         carregarVagasSemAtribuicao();
@@ -613,12 +727,7 @@ export function AgendaAnalistas() {
 
             {/* Vagas em Aberto sem Atribuição */}
             {(() => {
-                const abertas = vagasSemAtribuicao.filter(v => v.vaga_preenchida !== 'SIM');
-                const abertasFiltradas = abertas.filter(v => {
-                    if (!buscaSemAtribuicao.trim()) return true;
-                    const t = buscaSemAtribuicao.toLowerCase();
-                    return v.nome.toLowerCase().includes(t) || v.cargo.toLowerCase().includes(t) || v.lotacao.toLowerCase().includes(t);
-                });
+                const abertas = abertasSemAtribuicao;
                 return (
                     <Card className="bg-white dark:bg-slate-800 border-amber-200 dark:border-amber-700/50 overflow-hidden">
                         <div
@@ -641,7 +750,7 @@ export function AgendaAnalistas() {
                                     <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
                                 ) : (
                                     <Badge className="bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border-0">
-                                        {abertas.length} vagas
+                                        {abertas.length} {abertas.length === 1 ? 'vaga' : 'vagas'} {(busca || buscaSemAtribuicao).trim() ? 'encontrada(s)' : ''}
                                     </Badge>
                                 )}
                                 {expandirAbertasSemAtribuicao ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
@@ -655,7 +764,7 @@ export function AgendaAnalistas() {
                                     </div>
                                 ) : abertas.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center py-6 text-center">
-                                        <Users className="w-8 h-8 text-green-400 mb-2" />
+                                        <Users className="w-8 h-8 text-amber-400 mb-2" />
                                         <p className="text-sm text-slate-500 dark:text-slate-400">Nenhuma vaga em aberto sem analista</p>
                                     </div>
                                 ) : (
@@ -671,35 +780,46 @@ export function AgendaAnalistas() {
                                                 onClick={e => e.stopPropagation()}
                                             />
                                         </div>
-                                        {abertasFiltradas.length === 0 ? (
-                                            <p className="text-center text-sm text-slate-400 py-3">Nenhuma vaga encontrada.</p>
-                                        ) : (
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                                {abertasFiltradas.map(vaga => {
-                                                    const statusBadge = getStatusBadge(vaga.dias_em_aberto);
-                                                    return (
-                                                        <div key={vaga.id_evento} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg flex items-start justify-between gap-3">
-                                                            <div className="flex-1 min-w-0">
-                                                                <p className="font-medium text-slate-900 dark:text-slate-100 text-sm truncate">{vaga.nome}</p>
-                                                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{vaga.cargo}</p>
-                                                                <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                                                    <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">📍 {vaga.lotacao}</span>
-                                                                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${statusBadge.bg} ${statusBadge.text}`}>
-                                                                        {statusBadge.label} • {vaga.dias_em_aberto}d
-                                                                    </span>
-                                                                </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                            {abertas.map(vaga => {
+                                                const statusBadge = getStatusBadge(vaga.dias_em_aberto);
+                                                return (
+                                                    <div key={vaga.id_evento} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg flex items-start justify-between gap-3">
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-1 min-w-0">
+                                                                <p className="font-medium text-slate-900 dark:text-slate-100 text-sm truncate min-w-0">{vaga.nome}</p>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => copiarNome(e, vaga.nome, vaga.id_evento)}
+                                                                    title="Copiar nome"
+                                                                    className="flex-shrink-0 p-1 rounded text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                                                                >
+                                                                    {copiado === vaga.id_evento ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                                                                </button>
                                                             </div>
-                                                            <button
-                                                                onClick={() => setVagaParaAtribuir(vaga)}
-                                                                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
-                                                            >
-                                                                <UserPlus className="w-3.5 h-3.5" /> Atribuir
-                                                            </button>
+                                                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{vaga.cargo}</p>
+                                                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                                                <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">📍 {vaga.lotacao}</span>
+                                                                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${statusBadge.bg} ${statusBadge.text}`}>
+                                                                    {statusBadge.label} • {vaga.dias_em_aberto}d
+                                                                </span>
+                                                            </div>
+                                                            {vaga.data_abertura_vaga && (
+                                                                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1.5 font-medium">
+                                                                    Abertura: {formatarData(vaga.data_abertura_vaga)}
+                                                                </p>
+                                                            )}
                                                         </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
+                                                        <button
+                                                            onClick={() => setVagaParaAtribuir(vaga)}
+                                                            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                                                        >
+                                                            <UserPlus className="w-3.5 h-3.5" /> Atribuir
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </>
                                 )}
                             </CardContent>
@@ -710,12 +830,7 @@ export function AgendaAnalistas() {
 
             {/* Vagas Fechadas sem Atribuição */}
             {(() => {
-                const fechadas = vagasSemAtribuicao.filter(v => v.vaga_preenchida === 'SIM');
-                const fechadasFiltradas = fechadas.filter(v => {
-                    if (!buscaSemAtribuicao.trim()) return true;
-                    const t = buscaSemAtribuicao.toLowerCase();
-                    return v.nome.toLowerCase().includes(t) || v.cargo.toLowerCase().includes(t) || v.lotacao.toLowerCase().includes(t);
-                });
+                const fechadas = fechadasSemAtribuicao;
                 return (
                     <Card className="bg-white dark:bg-slate-800 border-green-200 dark:border-green-700/50 overflow-hidden">
                         <div
@@ -738,7 +853,7 @@ export function AgendaAnalistas() {
                                     <Loader2 className="w-4 h-4 animate-spin text-green-500" />
                                 ) : (
                                     <Badge className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 border-0">
-                                        {fechadas.length} vagas
+                                        {fechadas.length} {fechadas.length === 1 ? 'vaga' : 'vagas'} {(busca || buscaSemAtribuicao).trim() ? 'encontrada(s)' : ''}
                                     </Badge>
                                 )}
                                 {expandirFechadasSemAtribuicao ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
@@ -768,30 +883,48 @@ export function AgendaAnalistas() {
                                                 onClick={e => e.stopPropagation()}
                                             />
                                         </div>
-                                        {fechadasFiltradas.length === 0 ? (
-                                            <p className="text-center text-sm text-slate-400 py-3">Nenhuma vaga encontrada.</p>
-                                        ) : (
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                                {fechadasFiltradas.map(vaga => (
-                                                    <div key={vaga.id_evento} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg flex items-start justify-between gap-3">
-                                                        <div className="flex-1 min-w-0">
-                                                            <p className="font-medium text-slate-900 dark:text-slate-100 text-sm truncate">{vaga.nome}</p>
-                                                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{vaga.cargo}</p>
-                                                            <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                                                <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">📍 {vaga.lotacao}</span>
-                                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">✓ Fechada</span>
-                                                            </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                            {fechadas.map(vaga => (
+                                                <div key={vaga.id_evento} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg flex items-start justify-between gap-3">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-1 min-w-0">
+                                                            <p className="font-medium text-slate-900 dark:text-slate-100 text-sm truncate min-w-0">{vaga.nome}</p>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => copiarNome(e, vaga.nome, vaga.id_evento)}
+                                                                title="Copiar nome"
+                                                                className="flex-shrink-0 p-1 rounded text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                                                            >
+                                                                {copiado === vaga.id_evento ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                                                            </button>
                                                         </div>
-                                                        <button
-                                                            onClick={() => setVagaParaAtribuir(vaga)}
-                                                            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
-                                                        >
-                                                            <UserPlus className="w-3.5 h-3.5" /> Atribuir
-                                                        </button>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{vaga.cargo}</p>
+                                                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                                            <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">📍 {vaga.lotacao}</span>
+                                                            <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">✓ Fechada</span>
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-x-4 mt-1.5">
+                                                            {vaga.data_abertura_vaga && (
+                                                                <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                                                                    Abertura: {formatarData(vaga.data_abertura_vaga)}
+                                                                </p>
+                                                            )}
+                                                            {vaga.data_fechamento_vaga && (
+                                                                <p className="text-xs text-green-600 dark:text-green-400 font-medium">
+                                                                    Fechamento: {formatarData(vaga.data_fechamento_vaga)}
+                                                                </p>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                ))}
-                                            </div>
-                                        )}
+                                                    <button
+                                                        onClick={() => setVagaParaAtribuir(vaga)}
+                                                        className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                                                    >
+                                                        <UserPlus className="w-3.5 h-3.5" /> Atribuir
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </>
                                 )}
                             </CardContent>
@@ -1099,11 +1232,7 @@ export function AgendaAnalistas() {
             <AtribuirVagaModal
                 open={!!vagaParaAtribuir}
                 onOpenChange={(isOpen) => {
-                    if (!isOpen) {
-                        setVagaParaAtribuir(null);
-                        carregarVagasSemAtribuicao();
-                        carregarDados();
-                    }
+                    if (!isOpen) setVagaParaAtribuir(null);
                 }}
                 vaga={vagaParaAtribuir ? {
                     id_evento: vagaParaAtribuir.id_evento,
@@ -1116,7 +1245,18 @@ export function AgendaAnalistas() {
                     lotacao: vagaParaAtribuir.lotacao,
                     data_evento: vagaParaAtribuir.data_evento,
                     situacao_origem: vagaParaAtribuir.situacao_origem,
+                    vaga_preenchida: vagaParaAtribuir.vaga_preenchida,
                 } : null}
+                onAtribuicaoCompleta={() => {
+                    carregarVagasSemAtribuicao();
+                    carregarDados();
+                }}
+                onMarcarInativo={vagaParaAtribuir ? async () => {
+                    await supabase
+                        .from('respostas_gestor')
+                        .update({ arquivado: true })
+                        .eq('id_evento', vagaParaAtribuir.id_evento);
+                } : undefined}
             />
         </div>
     );

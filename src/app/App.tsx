@@ -13,9 +13,14 @@ import { ThemeProvider } from './components/ThemeProvider';
 import { SidebarProvider, useSidebar } from './components/SidebarContext';
 import { useAuth } from './hooks/useAuth';
 import { Settings } from './components/Settings';
-import { AgendaAnalistas } from './components/AgendaAnalistas';
+import AgendaAnalistas from './components/AgendaAnalistas';
 import { BaseBI } from './components/BaseBI';
 import { NotificationProvider } from './contexts/NotificationContext';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from './components/ui/sonner';
+import { ErrorBoundary } from './components/ErrorBoundary';
+
+const queryClient = new QueryClient();
 
 function AppContent() {
   const { isAuthenticated, loading } = useAuth();
@@ -64,12 +69,6 @@ function AppContent() {
   );
 }
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Toaster } from './components/ui/sonner';
-
-const queryClient = new QueryClient();
-
-import { ErrorBoundary } from './components/ErrorBoundary';
 
 export default function App() {
   return (
