@@ -161,17 +161,17 @@ function LinhaDetalhesModal({ row, headers, onClose }: {
           </div>
         </div>
         <div className="overflow-y-auto flex-1 p-6">
-          <div className="bg-slate-900 dark:bg-slate-950 rounded-lg p-5 font-mono text-sm space-y-1.5">
+          <div className="bg-slate-100 dark:bg-slate-950 rounded-lg p-5 font-mono text-sm space-y-1.5">
             {sortedHeaders.map((h) => {
               const valor = String(row[h] ?? '');
               const vazio = valor.trim() === '';
               return (
                 <div key={h} className="flex gap-2 items-baseline leading-relaxed">
-                  <span className="text-slate-400 dark:text-slate-500 shrink-0 w-64 text-right pr-1 uppercase tracking-wide text-xs">
+                  <span className="text-slate-500 dark:text-slate-400 shrink-0 w-64 text-right pr-1 uppercase tracking-wide text-xs">
                     {h}
                   </span>
-                  <span className="text-green-400 dark:text-green-500 shrink-0">:</span>
-                  <span className={`break-all ${vazio ? 'text-slate-600 italic' : 'text-slate-100'}`}>
+                  <span className="text-emerald-600 dark:text-green-400 shrink-0">:</span>
+                  <span className={`break-all ${vazio ? 'text-slate-400 dark:text-slate-600 italic' : 'text-slate-900 dark:text-slate-100'}`}>
                     {vazio ? '—' : valor}
                   </span>
                 </div>

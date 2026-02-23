@@ -343,7 +343,16 @@ export function VacancyManagement() {
 
 
   const handleResponder = async (idEvento: number, tipoOrigem: 'DEMISSAO' | 'AFASTAMENTO') => {
-    const dados = formData[idEvento] || {};
+    let dados = formData[idEvento] || {};
+    // Se tem data de abertura, abriu_vaga deve ser true (data implica abertura)
+    if (dados.data_abertura_vaga && !dados.abriu_vaga) {
+      dados = { ...dados, abriu_vaga: true };
+      updateFormDataMap(idEvento, { abriu_vaga: true });
+    }
+    if (dados.abriu_vaga === undefined || dados.abriu_vaga === null) {
+      setErroSalvar(prev => ({ ...prev, [idEvento]: 'Informe se a vaga foi aberta para substituição antes de salvar.' }));
+      return;
+    }
     if (dados.abriu_vaga === true && !dados.data_abertura_vaga) {
       setErroFechamento(idEvento);
       return;
@@ -2199,7 +2208,7 @@ function VagaCard({
                 <div>
                   <Label className="text-sm font-medium mb-2 block">Abriu vaga para substituição?</Label>
                   <RadioGroup
-                    value={naoPertenceUnidade ? 'pertence' : (abriuVaga === true ? 'sim' : 'nao')}
+                    value={naoPertenceUnidade ? 'pertence' : (abriuVaga === true ? 'sim' : abriuVaga === false ? 'nao' : '')}
                     onValueChange={(value) => {
                       let updates: any = {};
                       if (value === 'sim') {
@@ -2243,7 +2252,11 @@ function VagaCard({
                       id={`data-${vaga.id_evento}`}
                       className={`mt-1 ${abriuVaga === true && !dataAbertura ? 'border-red-400 focus:border-red-500' : ''}`}
                       value={dataAbertura}
-                      onChange={(e) => updateFormDataMap(vaga.id_evento, { data_abertura_vaga: e.target.value })}
+                      onChange={(e) => {
+                        const updates: any = { data_abertura_vaga: e.target.value };
+                        if (e.target.value) updates.abriu_vaga = true;
+                        updateFormDataMap(vaga.id_evento, updates);
+                      }}
                     />
                     {abriuVaga === true && !dataAbertura && (
                       <p className="text-xs text-red-500 mt-1">Campo obrigatório</p>
