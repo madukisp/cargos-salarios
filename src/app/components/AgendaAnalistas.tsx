@@ -1,5 +1,5 @@
 // Versão limpa para evitar corrupção
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Card, CardContent } from './ui/card';
 import {
     Select,
@@ -24,11 +24,27 @@ import {
     Copy,
     Check,
     ArrowRight,
+    UserPlus,
+    ClipboardList,
 } from 'lucide-react';
 import { useAgendaAnalistas } from '@/app/hooks/useAgendaAnalistas';
 import { formatarData } from '@/lib/column-formatters';
 import { VagaAtribuida } from '@/app/services/agendaAnalistasService';
 import { VagaDetalhesModal } from './VagaDetalhesModal';
+import { AtribuirVagaModal } from './AtribuirVagaModal';
+import { supabase } from '@/lib/supabase';
+
+interface VagaSemAtribuicao {
+    id_evento: number;
+    nome: string;
+    cargo: string;
+    cnpj: string;
+    data_evento: string;
+    dias_em_aberto: number;
+    situacao_origem: string;
+    lotacao: string;
+    vaga_preenchida: string | null;
+}
 
 const FILTROS_STORAGE_KEY = 'agenda_analistas_filtros';
 
@@ -111,6 +127,14 @@ export function AgendaAnalistas() {
     const [vagaParaTrocar, setVagaParaTrocar] = useState<{ vaga: VagaAtribuida; analistaAtualId: number; analistaAtualNome: string } | null>(null);
     const [analistaNovoSelecionado, setAnalistaNovoSelecionado] = useState<string | null>(null);
     const [trocando, setTrocando] = useState(false);
+
+    // Vagas sem atribuição
+    const [vagasSemAtribuicao, setVagasSemAtribuicao] = useState<VagaSemAtribuicao[]>([]);
+    const [loadingVagasSemAtribuicao, setLoadingVagasSemAtribuicao] = useState(false);
+    const [vagaParaAtribuir, setVagaParaAtribuir] = useState<VagaSemAtribuicao | null>(null);
+    const [expandirAbertasSemAtribuicao, setExpandirAbertasSemAtribuicao] = useState(true);
+    const [expandirFechadasSemAtribuicao, setExpandirFechadasSemAtribuicao] = useState(false);
+    const [buscaSemAtribuicao, setBuscaSemAtribuicao] = useState('');
 
     const copiarNome = useCallback((e: React.MouseEvent, nome: string, idEvento: number) => {
         e.stopPropagation();
@@ -281,6 +305,96 @@ export function AgendaAnalistas() {
         setOrdenacao(valor);
         handleSalvarFiltros({ analista: buscaAnalista, status: statusFiltro, busca, ano: selectedYear, mes: selectedMonth, ordenacao: valor });
     };
+
+    const carregarVagasSemAtribuicao = useCallback(async () => {
+        setLoadingVagasSemAtribuicao(true);
+        try {
+            // 1. IDs de eventos já atribuídos
+            const { data: atribuidas } = await supabase
+                .from('vagas_analista')
+                .select('id_evento')
+                .eq('ativo', true);
+            const idsAtribuidas = new Set((atribuidas || []).map((a: any) => a.id_evento as number));
+
+            // 2. Respostas onde a vaga foi aberta (abriu_vaga=true), tanto em aberto quanto fechadas
+            // Exclui: arquivadas, não encontradas e vagasSemAbertura (abriu_vaga=false)
+            const { data: respostasAbertas } = await supabase
+                .from('respostas_gestor')
+                .select('id_evento, vaga_preenchida')
+                .eq('abriu_vaga', true)
+                .not('arquivado', 'eq', true)
+                .not('nao_encontrada', 'eq', true);
+
+            // Mapa id_evento → vaga_preenchida (último valor ganha em caso de duplicata)
+            const mapaPreenchida = new Map<number, string | null>();
+            (respostasAbertas || []).forEach((r: any) => {
+                // Prefere 'SIM' se alguma das linhas tiver
+                if (!mapaPreenchida.has(r.id_evento) || r.vaga_preenchida === 'SIM') {
+                    mapaPreenchida.set(r.id_evento, r.vaga_preenchida ?? null);
+                }
+            });
+
+            // 3. Filtrar apenas os sem atribuição e desduplicar (um id_evento pode ter DEMISSAO e AFASTAMENTO)
+            const idsSemAtribuicao = [...new Set(
+                (respostasAbertas || [])
+                    .map((r: any) => r.id_evento as number)
+                    .filter(id => !idsAtribuidas.has(id))
+            )];
+
+            if (idsSemAtribuicao.length === 0) {
+                setVagasSemAtribuicao([]);
+                return;
+            }
+
+            // 4. Buscar detalhes dos eventos (chunked)
+            const eventosRaw: any[] = [];
+            const CHUNK_SIZE = 100;
+            for (let i = 0; i < idsSemAtribuicao.length; i += CHUNK_SIZE) {
+                const chunk = idsSemAtribuicao.slice(i, i + CHUNK_SIZE);
+                const { data } = await supabase
+                    .from('eventos_gestao_vagas_public')
+                    .select('id_evento, nome, cargo, cnpj, data_evento, dias_em_aberto, situacao_origem, lotacao')
+                    .in('id_evento', chunk);
+                if (data) eventosRaw.push(...data);
+            }
+
+            // Desduplicar por id_evento (a view pode retornar o mesmo evento mais de uma vez)
+            const eventosMap = new Map<number, any>();
+            eventosRaw.forEach(e => { if (!eventosMap.has(e.id_evento)) eventosMap.set(e.id_evento, e); });
+            const eventos = Array.from(eventosMap.values());
+
+            const hoje = new Date();
+            hoje.setHours(0, 0, 0, 0);
+
+            const result: VagaSemAtribuicao[] = eventos.map(e => {
+                const dataSaida = e.data_evento ? new Date(e.data_evento + 'T00:00:00') : null;
+                const dias = dataSaida
+                    ? Math.ceil(Math.abs(hoje.getTime() - dataSaida.getTime()) / (1000 * 60 * 60 * 24))
+                    : e.dias_em_aberto || 0;
+                return {
+                    id_evento: e.id_evento,
+                    nome: e.nome || '-',
+                    cargo: e.cargo || '-',
+                    cnpj: e.cnpj || '-',
+                    data_evento: e.data_evento || '-',
+                    dias_em_aberto: dias,
+                    situacao_origem: e.situacao_origem || '-',
+                    lotacao: e.lotacao || '-',
+                    vaga_preenchida: mapaPreenchida.get(e.id_evento) ?? null,
+                };
+            }).sort((a, b) => b.dias_em_aberto - a.dias_em_aberto);
+
+            setVagasSemAtribuicao(result);
+        } catch (err) {
+            console.error('Erro ao carregar vagas sem atribuição:', err);
+        } finally {
+            setLoadingVagasSemAtribuicao(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        carregarVagasSemAtribuicao();
+    }, [carregarVagasSemAtribuicao]);
 
     if (error) {
         return (
@@ -496,6 +610,195 @@ export function AgendaAnalistas() {
                     </div>
                 </CardContent>
             </Card>
+
+            {/* Vagas em Aberto sem Atribuição */}
+            {(() => {
+                const abertas = vagasSemAtribuicao.filter(v => v.vaga_preenchida !== 'SIM');
+                const abertasFiltradas = abertas.filter(v => {
+                    if (!buscaSemAtribuicao.trim()) return true;
+                    const t = buscaSemAtribuicao.toLowerCase();
+                    return v.nome.toLowerCase().includes(t) || v.cargo.toLowerCase().includes(t) || v.lotacao.toLowerCase().includes(t);
+                });
+                return (
+                    <Card className="bg-white dark:bg-slate-800 border-amber-200 dark:border-amber-700/50 overflow-hidden">
+                        <div
+                            onClick={() => setExpandirAbertasSemAtribuicao(prev => !prev)}
+                            className="p-4 cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-900/10 transition-colors flex items-center justify-between border-b border-amber-100 dark:border-amber-800/50"
+                        >
+                            <div className="flex items-center gap-3">
+                                <ClipboardList className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                                <div>
+                                    <h2 className="font-semibold text-slate-900 dark:text-slate-100">
+                                        Vagas em Aberto sem Atribuição
+                                    </h2>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        Vagas ainda não preenchidas sem analista responsável
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {loadingVagasSemAtribuicao ? (
+                                    <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
+                                ) : (
+                                    <Badge className="bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border-0">
+                                        {abertas.length} vagas
+                                    </Badge>
+                                )}
+                                {expandirAbertasSemAtribuicao ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+                            </div>
+                        </div>
+                        {expandirAbertasSemAtribuicao && (
+                            <CardContent className="p-4 space-y-3 bg-amber-50/30 dark:bg-amber-900/5">
+                                {loadingVagasSemAtribuicao ? (
+                                    <div className="flex items-center justify-center py-8 gap-2 text-slate-400">
+                                        <Loader2 className="w-5 h-5 animate-spin" /> Carregando...
+                                    </div>
+                                ) : abertas.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-6 text-center">
+                                        <Users className="w-8 h-8 text-green-400 mb-2" />
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">Nenhuma vaga em aberto sem analista</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                            <input
+                                                type="text"
+                                                placeholder="Buscar por nome, cargo ou lotação..."
+                                                value={buscaSemAtribuicao}
+                                                onChange={e => setBuscaSemAtribuicao(e.target.value)}
+                                                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                                onClick={e => e.stopPropagation()}
+                                            />
+                                        </div>
+                                        {abertasFiltradas.length === 0 ? (
+                                            <p className="text-center text-sm text-slate-400 py-3">Nenhuma vaga encontrada.</p>
+                                        ) : (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                {abertasFiltradas.map(vaga => {
+                                                    const statusBadge = getStatusBadge(vaga.dias_em_aberto);
+                                                    return (
+                                                        <div key={vaga.id_evento} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg flex items-start justify-between gap-3">
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="font-medium text-slate-900 dark:text-slate-100 text-sm truncate">{vaga.nome}</p>
+                                                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{vaga.cargo}</p>
+                                                                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                                                    <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">📍 {vaga.lotacao}</span>
+                                                                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${statusBadge.bg} ${statusBadge.text}`}>
+                                                                        {statusBadge.label} • {vaga.dias_em_aberto}d
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => setVagaParaAtribuir(vaga)}
+                                                                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                                                            >
+                                                                <UserPlus className="w-3.5 h-3.5" /> Atribuir
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </CardContent>
+                        )}
+                    </Card>
+                );
+            })()}
+
+            {/* Vagas Fechadas sem Atribuição */}
+            {(() => {
+                const fechadas = vagasSemAtribuicao.filter(v => v.vaga_preenchida === 'SIM');
+                const fechadasFiltradas = fechadas.filter(v => {
+                    if (!buscaSemAtribuicao.trim()) return true;
+                    const t = buscaSemAtribuicao.toLowerCase();
+                    return v.nome.toLowerCase().includes(t) || v.cargo.toLowerCase().includes(t) || v.lotacao.toLowerCase().includes(t);
+                });
+                return (
+                    <Card className="bg-white dark:bg-slate-800 border-green-200 dark:border-green-700/50 overflow-hidden">
+                        <div
+                            onClick={() => setExpandirFechadasSemAtribuicao(prev => !prev)}
+                            className="p-4 cursor-pointer hover:bg-green-50 dark:hover:bg-green-900/10 transition-colors flex items-center justify-between border-b border-green-100 dark:border-green-800/50"
+                        >
+                            <div className="flex items-center gap-3">
+                                <ClipboardList className="w-5 h-5 text-green-600 dark:text-green-400" />
+                                <div>
+                                    <h2 className="font-semibold text-slate-900 dark:text-slate-100">
+                                        Vagas Fechadas sem Atribuição
+                                    </h2>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        Vagas já preenchidas sem analista responsável registrado
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {loadingVagasSemAtribuicao ? (
+                                    <Loader2 className="w-4 h-4 animate-spin text-green-500" />
+                                ) : (
+                                    <Badge className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 border-0">
+                                        {fechadas.length} vagas
+                                    </Badge>
+                                )}
+                                {expandirFechadasSemAtribuicao ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+                            </div>
+                        </div>
+                        {expandirFechadasSemAtribuicao && (
+                            <CardContent className="p-4 space-y-3 bg-green-50/30 dark:bg-green-900/5">
+                                {loadingVagasSemAtribuicao ? (
+                                    <div className="flex items-center justify-center py-8 gap-2 text-slate-400">
+                                        <Loader2 className="w-5 h-5 animate-spin" /> Carregando...
+                                    </div>
+                                ) : fechadas.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-6 text-center">
+                                        <Users className="w-8 h-8 text-green-400 mb-2" />
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">Nenhuma vaga fechada sem analista</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                            <input
+                                                type="text"
+                                                placeholder="Buscar por nome, cargo ou lotação..."
+                                                value={buscaSemAtribuicao}
+                                                onChange={e => setBuscaSemAtribuicao(e.target.value)}
+                                                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-green-400"
+                                                onClick={e => e.stopPropagation()}
+                                            />
+                                        </div>
+                                        {fechadasFiltradas.length === 0 ? (
+                                            <p className="text-center text-sm text-slate-400 py-3">Nenhuma vaga encontrada.</p>
+                                        ) : (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                {fechadasFiltradas.map(vaga => (
+                                                    <div key={vaga.id_evento} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg flex items-start justify-between gap-3">
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="font-medium text-slate-900 dark:text-slate-100 text-sm truncate">{vaga.nome}</p>
+                                                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{vaga.cargo}</p>
+                                                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                                                <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">📍 {vaga.lotacao}</span>
+                                                                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">✓ Fechada</span>
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => setVagaParaAtribuir(vaga)}
+                                                            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                                                        >
+                                                            <UserPlus className="w-3.5 h-3.5" /> Atribuir
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </CardContent>
+                        )}
+                    </Card>
+                );
+            })()}
 
             {/* Conteúdo Principal */}
             {loading ? (
@@ -791,6 +1094,30 @@ export function AgendaAnalistas() {
                     onVagaFechada={() => { setVagaSelecionada(null); carregarDados(); }}
                 />
             )}
+
+            {/* Modal de Atribuição (vagas sem analista) */}
+            <AtribuirVagaModal
+                open={!!vagaParaAtribuir}
+                onOpenChange={(isOpen) => {
+                    if (!isOpen) {
+                        setVagaParaAtribuir(null);
+                        carregarVagasSemAtribuicao();
+                        carregarDados();
+                    }
+                }}
+                vaga={vagaParaAtribuir ? {
+                    id_evento: vagaParaAtribuir.id_evento,
+                    quem_saiu: vagaParaAtribuir.nome,
+                    cargo_saiu: vagaParaAtribuir.cargo,
+                    dias_em_aberto: vagaParaAtribuir.dias_em_aberto,
+                    cnpj: vagaParaAtribuir.cnpj,
+                    nome: vagaParaAtribuir.nome,
+                    cargo: vagaParaAtribuir.cargo,
+                    lotacao: vagaParaAtribuir.lotacao,
+                    data_evento: vagaParaAtribuir.data_evento,
+                    situacao_origem: vagaParaAtribuir.situacao_origem,
+                } : null}
+            />
         </div>
     );
 }

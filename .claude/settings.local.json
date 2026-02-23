@@ -39,7 +39,8 @@
       "Bash(npm run build 2>&1 | tail -15)",
       "Bash(npm run build 2>&1 | tail -12)",
       "Bash(./node_modules/.bin/tsc --noEmit 2>&1 | head -30)",
-      "Bash(node_modules/.bin/vite build 2>&1 | head -50)"
+      "Bash(node_modules/.bin/vite build 2>&1 | head -50)",
+      "Bash(npm run build 2>&1 | tail -10)"
     ]
   },
   "enabledPlugins": {
