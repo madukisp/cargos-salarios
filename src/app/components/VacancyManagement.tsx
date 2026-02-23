@@ -255,7 +255,7 @@ export function VacancyManagement() {
   const pendentesEf = useMemo(() => applyDateFilter(ordenarVagas(filtrarVagas(vagasPendentesEfetivacao, tlpData, fantasias))), [filtrarVagas, ordenarVagas, vagasPendentesEfetivacao, tlpData, fantasias, applyDateFilter]);
   const afastamentos = useMemo(() => applyDateFilter(ordenarVagas(filtrarVagas(afastamentosPendentes, tlpData, fantasias))), [filtrarVagas, ordenarVagas, afastamentosPendentes, tlpData, fantasias, applyDateFilter]);
 
-  // Filtrar vagasEmAberto com busca, contrato e filtro SP (campos têm nomes diferentes)
+  // Filtrar vagasEmAberto com busca, contrato, filtro SP e filtro de data
   const vagasEmAberto = useMemo(() => {
     const normalize = (s: string) =>
       (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -274,9 +274,24 @@ export function VacancyManagement() {
       const matchContratosSP = apenasContratosSP
         ? (nomeContratoAtual && CONTRATOS_SP.includes(nomeContratoAtual)) || false
         : true;
-      return matchBusca && matchContrato && matchContratosSP;
+      // Filtro de data: usa a mesma data exibida no card
+      let matchData = true;
+      if (selectedYear !== 'TODOS' || selectedMonth !== 'TODOS') {
+        const dataRef = vaga.data_abertura_vaga || vaga.data_evento;
+        if (!dataRef) {
+          matchData = false;
+        } else {
+          const date = new Date(dataRef);
+          const yearStr = String(date.getFullYear());
+          const monthStr = String(date.getMonth() + 1);
+          matchData =
+            (selectedYear === 'TODOS' || yearStr === selectedYear) &&
+            (selectedMonth === 'TODOS' || monthStr === selectedMonth);
+        }
+      }
+      return matchBusca && matchContrato && matchContratosSP && matchData;
     });
-  }, [vagasEmAbertoFromHook, busca, selectedFantasia, apenasContratosSP, fantasias, CONTRATOS_SP]);
+  }, [vagasEmAbertoFromHook, busca, selectedFantasia, apenasContratosSP, fantasias, CONTRATOS_SP, selectedYear, selectedMonth]);
 
   // Vagas efetivamente preenchidas
   const vagasFechadas = useMemo(() => {
@@ -337,12 +352,21 @@ export function VacancyManagement() {
       setErroFechamento(idEvento);
       return;
     }
+    if (dados.data_abertura_vaga && dados.data_fechamento_vaga) {
+      if (new Date(dados.data_fechamento_vaga) < new Date(dados.data_abertura_vaga)) {
+        setErroSalvar(prev => ({ ...prev, [idEvento]: 'A data de fechamento não pode ser anterior à data de abertura da vaga.' }));
+        return;
+      }
+    }
     setErroFechamento(null);
     setErroSalvar(prev => { const n = { ...prev }; delete n[idEvento]; return n; });
     setRespondendo((prev) => ({ ...prev, [idEvento]: true }));
     try {
       await responder(idEvento, tipoOrigem, dados);
       setExpandedId(null);
+      // Resetar filtro de data para garantir que a vaga salva apareça na aba correta
+      setSelectedYear('TODOS');
+      setSelectedMonth('TODOS');
       // Navegar para a aba correta após salvar
       if (dados.pendente_efetivacao === true) {
         // Se está com pendente de efetivação, fica em pendentes_ef
