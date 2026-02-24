@@ -15,6 +15,7 @@ import { useAuth } from './hooks/useAuth';
 import { Settings } from './components/Settings';
 import AgendaAnalistas from './components/AgendaAnalistas';
 import { BaseBI } from './components/BaseBI';
+import Notas from './components/Notas';
 import { NotificationProvider } from './contexts/NotificationContext';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from './components/ui/sonner';
@@ -60,6 +61,7 @@ function AppContent() {
             <Route path="/oris" element={<Oris />} />
             <Route path="/base-bi" element={<BaseBI />} />
             <Route path="/consulta-funcionarios" element={<EmployeeSearch />} />
+            <Route path="/notas" element={<Notas />} />
             <Route path="/configuracoes" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

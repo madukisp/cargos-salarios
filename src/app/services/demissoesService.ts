@@ -368,8 +368,9 @@ export async function carregarRespostasLote(
       });
 
       // Adicionar nome_substituto aos objetos de resposta
+      // Só sobrescreve nome_candidato com o nome do Oris se NÃO há nome_candidato manual salvo
       allData.forEach((resp: any) => {
-        if (resp.id_substituto && mapaSubstitutos[resp.id_substituto]) {
+        if (resp.id_substituto && mapaSubstitutos[resp.id_substituto] && !resp.nome_candidato) {
           mapa[resp.id_evento].nome_candidato = mapaSubstitutos[resp.id_substituto];
         }
       });
@@ -427,6 +428,15 @@ export async function salvarResposta(
   dados: Partial<RespostaGestor>
 ): Promise<void> {
   try {
+    console.log('🔧 [salvarResposta] Iniciando salvamento', {
+      id_evento,
+      tipo_origem,
+      nome_candidato: dados.nome_candidato,
+      vaga_preenchida: dados.vaga_preenchida,
+      id_substituto: dados.id_substituto,
+      todosOsDados: dados
+    });
+
     // Extrair apenas os campos que existem na tabela (excluir campos virtuais como nome_analista)
     const { nome_analista, id_resposta, ...dadosTabela } = dados as RespostaGestor & { nome_analista?: string | null; id_resposta?: number };
 
@@ -435,24 +445,46 @@ export async function salvarResposta(
       Object.entries(dadosTabela).map(([k, v]) => [k, v === '' ? null : v])
     );
 
+    console.log('📝 [salvarResposta] Dados sanitizados:', {
+      nome_candidato: dadosSanitizados.nome_candidato,
+      vaga_preenchida: dadosSanitizados.vaga_preenchida,
+      todos: dadosSanitizados
+    });
+
+    const registroParaUpsert = {
+      ...dadosSanitizados,
+      id_evento,
+      tipo_origem,
+      data_resposta: new Date().toISOString().split('T')[0],
+      data_fechamento_vaga: dados.vaga_preenchida === 'SIM'
+        ? (dados.data_fechamento_vaga || null)
+        : null,
+    };
+
+    console.log('📤 [salvarResposta] Enviando para Supabase com chave composta:', {
+      id_evento,
+      tipo_origem,
+      nome_candidato: registroParaUpsert.nome_candidato,
+      registroCompleto: registroParaUpsert
+    });
+
     const { error } = await supabase
       .from('respostas_gestor')
       .upsert(
-        {
-          ...dadosSanitizados,
-          id_evento,
-          tipo_origem,
-          data_resposta: new Date().toISOString().split('T')[0],
-          data_fechamento_vaga: dados.vaga_preenchida === 'SIM'
-            ? (dados.data_fechamento_vaga || null)
-            : null,
-        },
+        registroParaUpsert,
         { onConflict: 'id_evento, tipo_origem' }
       );
 
-    if (error) throw error;
+    console.log('📥 [salvarResposta] Resposta do Supabase:', { error });
+
+    if (error) {
+      console.error('❌ [salvarResposta] Erro:', error);
+      throw error;
+    }
+
+    console.log('✅ [salvarResposta] Sucesso!');
   } catch (error) {
-    console.error('Erro ao salvar resposta:', error);
+    console.error('❌ [salvarResposta] Erro geral:', error);
     throw error;
   }
 }

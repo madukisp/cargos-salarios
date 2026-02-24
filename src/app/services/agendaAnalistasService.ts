@@ -15,6 +15,7 @@ export interface VagaAtribuida {
   data_fechamento_vaga?: string;
   vaga_preenchida?: string;
   pendente_efetivacao?: boolean;
+  nome_substituto?: string;
 }
 
 export interface AnalistaComVagas {
@@ -135,7 +136,7 @@ export const carregarAgendaAnalistas = async (): Promise<AnalistaComVagas[]> => 
         const chunk = idEventosUnicos.slice(i, i + CHUNK_SIZE);
         const { data } = await supabase
           .from('respostas_gestor')
-          .select('*')
+          .select('id_evento, vaga_preenchida, data_abertura_vaga, data_fechamento_vaga, nome_candidato, id_substituto, pendente_efetivacao')
           .in('id_evento', chunk);
         
         if (data) respostasData.push(...data);
@@ -147,10 +148,28 @@ export const carregarAgendaAnalistas = async (): Promise<AnalistaComVagas[]> => 
       (eventosData || []).map(e => [e.id_evento, e])
     );
 
-    // Mapear respostas por ID
-    const mapaRespostas = new Map(
-      (respostasData || []).map(r => [r.id_evento, r])
-    );
+    // Mapear respostas por ID — prioriza 'SIM' em caso de duplicatas
+    const mapaRespostas = new Map<number, any>();
+    (respostasData || []).forEach((r: any) => {
+      const existing = mapaRespostas.get(r.id_evento);
+      // Prefere entrada com vaga_preenchida = 'SIM' (evita sobrescrever fechada com aberta)
+      if (!existing || r.vaga_preenchida === 'SIM') {
+        mapaRespostas.set(r.id_evento, r);
+      }
+    });
+
+    // Buscar nomes dos substitutos por id_substituto
+    const idsSubstitutos = [...new Set(
+      (respostasData || []).map((r: any) => r.id_substituto).filter(Boolean)
+    )];
+    const mapaSubstitutos = new Map<number, string>();
+    if (idsSubstitutos.length > 0) {
+      const { data: subsData } = await supabase
+        .from('oris_funcionarios')
+        .select('id, nome')
+        .in('id', idsSubstitutos);
+      (subsData || []).forEach((s: any) => mapaSubstitutos.set(s.id, s.nome));
+    }
 
     // Construir estrutura de analistas com vagas
     const analistas: AnalistaComVagas[] = (analistasData || []).map(analista => {
@@ -193,6 +212,7 @@ export const carregarAgendaAnalistas = async (): Promise<AnalistaComVagas[]> => 
             data_fechamento_vaga: resposta?.data_fechamento_vaga || undefined,
             vaga_preenchida: resposta?.vaga_preenchida,
             pendente_efetivacao: resposta?.pendente_efetivacao,
+            nome_substituto: resposta?.nome_candidato || (resposta?.id_substituto ? mapaSubstitutos.get(resposta.id_substituto) : undefined) || undefined,
           };
           
           return vagaAtribuida;

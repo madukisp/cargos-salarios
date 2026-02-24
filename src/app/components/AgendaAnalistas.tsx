@@ -1,5 +1,5 @@
 // Versão limpa para evitar corrupção
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Card, CardContent } from './ui/card';
 import {
     Select,
@@ -34,6 +34,8 @@ import { VagaAtribuida } from '@/app/services/agendaAnalistasService';
 import { VagaDetalhesModal } from './VagaDetalhesModal';
 import { AtribuirVagaModal } from './AtribuirVagaModal';
 import { supabase } from '@/lib/supabase';
+import { buscarRegistrosBIByNome } from '@/app/services/baseBiService';
+import { BiTooltipCard } from './BiTooltipCard';
 
 const CONTRATOS_SP = [
     'SBCD - PAI ZN',
@@ -147,6 +149,12 @@ function AgendaAnalistas() {
     const [removendo, setRemovendo] = useState<string | null>(null);
     const [vagaSelecionada, setVagaSelecionada] = useState<(VagaAtribuida & { nomeAnalista: string; cargoAnalista: string }) | null>(null);
     const [copiado, setCopiado] = useState<number | null>(null);
+
+    // Hover BI: estado do card de hover
+    const [biHoverNome, setBiHoverNome] = useState<string | null>(null);
+    const [biHoverData, setBiHoverData] = useState<{ rows: Record<string, any>[]; headers: string[] } | null>(null);
+    const [biHoverPos, setBiHoverPos] = useState<{ top: number; left: number } | null>(null);
+    const biHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [vagaParaTrocar, setVagaParaTrocar] = useState<{ vaga: VagaAtribuida; analistaAtualId: number; analistaAtualNome: string } | null>(null);
     const [analistaNovoSelecionado, setAnalistaNovoSelecionado] = useState<string | null>(null);
     const [trocando, setTrocando] = useState(false);
@@ -155,9 +163,28 @@ function AgendaAnalistas() {
     const [vagasSemAtribuicao, setVagasSemAtribuicao] = useState<VagaSemAtribuicao[]>([]);
     const [loadingVagasSemAtribuicao, setLoadingVagasSemAtribuicao] = useState(false);
     const [vagaParaAtribuir, setVagaParaAtribuir] = useState<VagaSemAtribuicao | null>(null);
+    const [vagaDetalhesAberta, setVagaDetalhesAberta] = useState<(VagaAtribuida & { nomeAnalista: string; cargoAnalista: string }) | null>(null);
     const [expandirAbertasSemAtribuicao, setExpandirAbertasSemAtribuicao] = useState(true);
     const [expandirFechadasSemAtribuicao, setExpandirFechadasSemAtribuicao] = useState(false);
     const [buscaSemAtribuicao, setBuscaSemAtribuicao] = useState('');
+
+    const adaptarVagaSemAtribuicao = useCallback((vaga: VagaSemAtribuicao): VagaAtribuida & { nomeAnalista: string; cargoAnalista: string } => ({
+        id_evento: vaga.id_evento,
+        nome_funcionario: vaga.nome,
+        cargo_vaga: vaga.cargo,
+        data_evento: vaga.data_evento,
+        dias_em_aberto: vaga.dias_em_aberto,
+        dias_reais: vaga.dias_em_aberto,
+        situacao_origem: vaga.situacao_origem,
+        lotacao: vaga.lotacao,
+        cnpj: vaga.cnpj,
+        data_atribuicao: '',
+        data_abertura_vaga: vaga.data_abertura_vaga ?? undefined,
+        data_fechamento_vaga: vaga.data_fechamento_vaga ?? undefined,
+        vaga_preenchida: vaga.vaga_preenchida ?? undefined,
+        nomeAnalista: 'Sem Analista',
+        cargoAnalista: '',
+    }), []);
 
     const copiarNome = useCallback((e: React.MouseEvent, nome: string, idEvento: number) => {
         e.stopPropagation();
@@ -784,7 +811,7 @@ function AgendaAnalistas() {
                                             {abertas.map(vaga => {
                                                 const statusBadge = getStatusBadge(vaga.dias_em_aberto);
                                                 return (
-                                                    <div key={vaga.id_evento} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg flex items-start justify-between gap-3">
+                                                    <div key={vaga.id_evento} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg flex items-start justify-between gap-3 cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/30 dark:hover:bg-slate-700/30 transition-colors" onClick={() => setVagaDetalhesAberta(adaptarVagaSemAtribuicao(vaga))}>
                                                         <div className="flex-1 min-w-0">
                                                             <div className="flex items-center gap-1 min-w-0">
                                                                 <p className="font-medium text-slate-900 dark:text-slate-100 text-sm truncate min-w-0">{vaga.nome}</p>
@@ -885,7 +912,7 @@ function AgendaAnalistas() {
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                             {fechadas.map(vaga => (
-                                                <div key={vaga.id_evento} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg flex items-start justify-between gap-3">
+                                                <div key={vaga.id_evento} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg flex items-start justify-between gap-3 cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/30 dark:hover:bg-slate-700/30 transition-colors" onClick={() => setVagaDetalhesAberta(adaptarVagaSemAtribuicao(vaga))}>
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-1 min-w-0">
                                                             <p className="font-medium text-slate-900 dark:text-slate-100 text-sm truncate min-w-0">{vaga.nome}</p>
@@ -1008,8 +1035,23 @@ function AgendaAnalistas() {
                                             Nenhuma vaga corresponde aos filtros
                                         </p>
                                     ) : (() => {
-                                        const vagasAbertas = analista.vagas.filter(v => v.vaga_preenchida !== 'SIM');
-                                        const vagasFechadas = analista.vagas.filter(v => v.vaga_preenchida === 'SIM');
+                                        // Validar valores de vaga_preenchida
+                                        const vagasAbertas = analista.vagas.filter(v => {
+                                            // Considerar como aberta se NOT 'SIM' (null, undefined, 'NAO', etc)
+                                            return v.vaga_preenchida !== 'SIM';
+                                        });
+                                        const vagasFechadas = analista.vagas.filter(v => {
+                                            // Considerar como fechada APENAS se 'SIM'
+                                            return v.vaga_preenchida === 'SIM';
+                                        });
+
+                                        // DEBUG: log das vagas
+                                        if (analista.vagas.length > 0) {
+                                            console.log(`[${analista.nome}] Vagas: Total=${analista.vagas.length}, Abertas=${vagasAbertas.length}, Fechadas=${vagasFechadas.length}`);
+                                            analista.vagas.forEach(v => {
+                                                console.log(`  - ${v.nome_funcionario}: vaga_preenchida="${v.vaga_preenchida}"`);
+                                            });
+                                        }
 
                                         const renderVaga = (vaga: VagaAtribuida) => {
                                             const statusBadge = getStatusBadge(vaga.dias_reais);
@@ -1020,6 +1062,29 @@ function AgendaAnalistas() {
                                                     key={vaga.id_evento}
                                                     className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:border-blue-300 dark:hover:border-blue-700 transition-colors cursor-pointer hover:bg-blue-50 dark:hover:bg-slate-700/50"
                                                     onClick={() => setVagaSelecionada({ ...vaga, nomeAnalista: analista.nome, cargoAnalista: analista.cargo })}
+                                                    onMouseEnter={(e) => {
+                                                        if (biHoverTimer.current) clearTimeout(biHoverTimer.current);
+                                                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                        const pos = {
+                                                            top: rect.bottom + 6,
+                                                            left: Math.min(rect.left, window.innerWidth - 360),
+                                                        };
+                                                        if (biHoverNome === vaga.nome_funcionario) {
+                                                            setBiHoverPos(pos);
+                                                            return;
+                                                        }
+                                                        setBiHoverNome(vaga.nome_funcionario);
+                                                        buscarRegistrosBIByNome(vaga.nome_funcionario).then(d => {
+                                                            setBiHoverData(d);
+                                                            setBiHoverPos(pos);
+                                                        });
+                                                    }}
+                                                    onMouseLeave={() => {
+                                                        biHoverTimer.current = setTimeout(() => {
+                                                            setBiHoverData(null);
+                                                            setBiHoverNome(null);
+                                                        }, 150);
+                                                    }}
                                                 >
                                                     <div className="flex items-start justify-between gap-4">
                                                         <div className="flex-1">
@@ -1080,6 +1145,11 @@ function AgendaAnalistas() {
                                                                             </p>
                                                                         )}
                                                                     </div>
+                                                                    {vaga.nome_substituto && (
+                                                                        <p className="text-xs text-amber-700 dark:text-amber-400 font-medium mt-1">
+                                                                            ✓ Substituto: {vaga.nome_substituto}
+                                                                        </p>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -1219,12 +1289,36 @@ function AgendaAnalistas() {
                 </div>
             )}
 
+            {/* Hover card Base BI — fixo na tela */}
+            {biHoverData && biHoverPos && (
+                <BiTooltipCard
+                    rows={biHoverData.rows}
+                    headers={biHoverData.headers}
+                    style={{ position: 'fixed', top: biHoverPos.top, left: biHoverPos.left, zIndex: 10000 }}
+                    onMouseEnter={() => { if (biHoverTimer.current) clearTimeout(biHoverTimer.current); }}
+                    onMouseLeave={() => { biHoverTimer.current = setTimeout(() => { setBiHoverData(null); setBiHoverNome(null); }, 150); }}
+                />
+            )}
+
             {/* Modal de Detalhes */}
             {vagaSelecionada && (
                 <VagaDetalhesModal
                     vaga={vagaSelecionada}
                     onClose={() => setVagaSelecionada(null)}
                     onVagaFechada={() => { setVagaSelecionada(null); carregarDados(); }}
+                />
+            )}
+
+            {/* Modal de Detalhes (vagas sem analista) */}
+            {vagaDetalhesAberta && (
+                <VagaDetalhesModal
+                    vaga={vagaDetalhesAberta}
+                    onClose={() => setVagaDetalhesAberta(null)}
+                    onVagaFechada={() => {
+                        setVagaDetalhesAberta(null);
+                        carregarVagasSemAtribuicao();
+                        carregarDados();
+                    }}
                 />
             )}
 

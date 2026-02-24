@@ -41,7 +41,14 @@
       "Bash(./node_modules/.bin/tsc --noEmit 2>&1 | head -30)",
       "Bash(node_modules/.bin/vite build 2>&1 | head -50)",
       "Bash(npm run build 2>&1 | tail -10)",
-      "Bash(npm run build 2>&1 | tail -6)"
+      "Bash(npm run build 2>&1 | tail -6)",
+      "Bash(find /home/pi/rh-system/cargos-salarios -name \"*.md\" -type f 2>/dev/null | head -20)",
+      "Bash(grep -r \"base_bi\\\\|base-bi\\\\|baseBi\" /home/pi/rh-system/cargos-salarios --include=\"*.ts\" --include=\"*.tsx\" --include=\"*.js\" --include=\"*.jsx\" --include=\"*.py\" 2>/dev/null | head -30)",
+      "Bash(./node_modules/.bin/tsc --noEmit 2>&1 | head -40)",
+      "Bash(grep:*)",
+      "Bash(tail:*)",
+      "Bash(cd /p/rh-system/cargos-salarios && ./node_modules/.bin/vite --version 2>&1)",
+      "Bash(cd:*)"
     ]
   },
   "enabledPlugins": {
