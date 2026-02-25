@@ -1,4 +1,4 @@
-import { Search, ChevronDown, ChevronUp, CheckCircle, Clock, AlertTriangle, Loader2, Users, Calendar, AlertCircle, TrendingUp, UserX, UserCheck, ChevronsUpDown, Check, UserPlus, Archive, ArchiveRestore, Trash2, Copy, SearchX, Undo2, X } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, CheckCircle, Clock, AlertTriangle, Loader2, Users, Calendar, AlertCircle, TrendingUp, UserX, UserCheck, ChevronsUpDown, Check, UserPlus, Archive, ArchiveRestore, Trash2, Copy, SearchX, Undo2, X, Pencil } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Card, CardContent } from './ui/card';
@@ -16,13 +16,15 @@ import { Checkbox } from './ui/checkbox';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { useGestaoVagas } from '@/app/hooks/useGestaoVagas';
 import { useFantasiaFilter } from '@/app/hooks/useFantasiaFilter';
-import { buscarFuncionarioPorCpf, buscarFuncionarioPorNome, buscarSugestoesSubstitutos, excluirVagaMovimentacao } from '@/app/services/demissoesService';
+import { buscarFuncionarioPorCpf, buscarFuncionarioPorNome, buscarSugestoesSubstitutos, excluirVagaMovimentacao, salvarResposta, VagaDerivada } from '@/app/services/demissoesService';
+import { buscarRegistrosBIByNome } from '@/app/services/baseBiService';
 import { FuncionarioProfile } from './FuncionarioProfile';
 import { useTlpData } from '@/app/hooks/useTlpData';
 import { StatusBadge } from './StatusBadge';
 import { formatarData } from '@/lib/column-formatters';
 import { AtribuirVagaModal } from './AtribuirVagaModal';
 import { NovaVagaMovimentacaoModal } from './NovaVagaMovimentacaoModal';
+import { BiTooltipCard } from './BiTooltipCard';
 
 const FILTROS_STORAGE_KEY = 'vacancy_management_filtros';
 
@@ -68,6 +70,7 @@ export function VacancyManagement() {
     vagasEmAberto: vagasEmAbertoFromHook,
     vagasNaoEncontradas: vagasNaoEncontradasFromHook,
     respostas,
+    vagasDerivadas = {} as Record<number, VagaDerivada[]>,
     lotacoes: lotacoesFromHook,
     loading,
     error,
@@ -94,14 +97,17 @@ export function VacancyManagement() {
   const filtrosSalvos = useMemo(() => carregarFiltros(), []);
 
   // Estados
-  const [abaSelecionada, setAbaSelecionada] = useState<string>(
-    filtrosSalvos?.abaSelecionada ?? 'pendentes'
-  );
+  const [abaSelecionada, setAbaSelecionada] = useState<string>(() => {
+    const aba = filtrosSalvos?.abaSelecionada;
+    // Aba 'busca' só existe com busca ativa — não restaurar ela
+    return (!aba || aba === 'busca') ? 'pendentes' : aba;
+  });
   const [lotacao, setLotacao] = useState<string>(filtrosSalvos?.lotacao ?? 'TODAS');
   const [ordenacao, setOrdenacao] = useState<string>(
     filtrosSalvos?.ordenacao ?? 'data_evento.desc'
   );
-  const [busca, setBusca] = useState<string>(filtrosSalvos?.busca ?? '');
+  // Não restaurar busca do localStorage para evitar estado inconsistente
+  const [busca, setBusca] = useState<string>('');
   const [apenasContratosSP, setApenasContratosSP] = useState<boolean>(
     filtrosSalvos?.apenasContratosSP ?? false
   );
@@ -157,16 +163,21 @@ export function VacancyManagement() {
     }));
   };
 
-  // Salvar filtros
+  // Salvar filtros (exceto busca, que não deve persistir entre sessões)
   useEffect(() => {
     salvarFiltros({
-      abaSelecionada,
+      abaSelecionada: abaSelecionada === 'busca' ? 'pendentes' : abaSelecionada,
       lotacao,
       ordenacao,
-      busca,
+      busca: '',
       apenasContratosSP,
     });
   }, [abaSelecionada, lotacao, ordenacao, busca, apenasContratosSP]);
+
+  // Carregar dados ao montar e quando filtros mudarem
+  useEffect(() => {
+    carregarDados(lotacao === 'TODAS' ? undefined : lotacao, selectedFantasia);
+  }, [lotacao, selectedFantasia, carregarDados]);
 
   // Usar lotações do hook quando carregarem
   const lotacoes = lotacoesFromHook;
@@ -203,9 +214,24 @@ export function VacancyManagement() {
       return vagas.filter((vaga) => {
         if (!vaga) return false;
         const matchLotacao = lotacao === 'TODAS' || vaga.lotacao === lotacao;
-        const matchBusca =
-          (vaga.cargo?.toLowerCase() || '').includes(busca.toLowerCase()) ||
-          (vaga.nome?.toLowerCase() || '').includes(busca.toLowerCase());
+
+        // Busca por texto em nome, cargo, lotação
+        let matchBusca = true;
+        if (busca.trim()) {
+          const buscaLower = busca.toLowerCase();
+          if (/^\d+$/.test(busca)) {
+            const numeroBusca = parseInt(busca, 10);
+            matchBusca = vaga.id_evento === numeroBusca;
+          } else {
+            // Senão, buscar por texto em nome, cargo, lotação
+            matchBusca =
+              (vaga.cargo?.toLowerCase() || '').includes(buscaLower) ||
+              (vaga.nome?.toLowerCase() || '').includes(buscaLower) ||
+              (vaga.lotacao?.toLowerCase() || '').includes(buscaLower) ||
+              (vaga.centro_custo?.toLowerCase() || '').includes(buscaLower) ||
+              (vaga.quem_saiu?.toLowerCase() || '').includes(buscaLower);
+          }
+        }
 
         // Filtrar por contrato selecionado
         const matchContrato = selectedFantasia === 'todos' || vaga.cnpj === selectedFantasia;
@@ -259,12 +285,23 @@ export function VacancyManagement() {
   const vagasEmAberto = useMemo(() => {
     const normalize = (s: string) =>
       (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const termoBusca = normalize(busca);
+
     return vagasEmAbertoFromHook.filter((vaga: any) => {
-      const matchBusca = !busca.trim() ||
-        normalize(vaga.cargo_saiu || '').includes(termoBusca) ||
-        normalize(vaga.quem_saiu || '').includes(termoBusca) ||
-        normalize(vaga.centro_custo || '').includes(termoBusca);
+      // Busca por texto
+      let matchBusca = true;
+      if (busca.trim()) {
+        if (/^\d+$/.test(busca)) {
+          const numeroBusca = parseInt(busca, 10);
+          matchBusca = vaga.id_evento === numeroBusca;
+        } else {
+          // Senão, buscar por texto normalizado
+          const termoBusca = normalize(busca);
+          matchBusca =
+            normalize(vaga.cargo_saiu || '').includes(termoBusca) ||
+            normalize(vaga.quem_saiu || '').includes(termoBusca) ||
+            normalize(vaga.centro_custo || '').includes(termoBusca);
+        }
+      }
       const matchContrato = selectedFantasia === 'todos' || vaga.cnpj === selectedFantasia;
       let nomeContratoAtual: string | null = null;
       if (vaga.cnpj && fantasias) {
@@ -445,12 +482,21 @@ export function VacancyManagement() {
     }
   };
 
+  const handleEditarEvento = async (
+    idEvento: number,
+    tipoOrigem: 'DEMISSAO' | 'AFASTAMENTO',
+    dados: { data_abertura_vaga?: string; data_fechamento_vaga?: string; nome_candidato?: string; id_evento_mae?: number | null }
+  ) => {
+    const respostaAtual = respostas[idEvento] || {};
+    await salvarResposta(idEvento, tipoOrigem, {
+      ...respostaAtual,
+      ...dados,
+      abriu_vaga: respostaAtual.abriu_vaga ?? true,
+    });
+    await carregarDados(lotacao === 'TODAS' ? undefined : lotacao, selectedFantasia);
+  };
 
 
-  // Recarregar dados quando lotação ou contrato mudar
-  useEffect(() => {
-    carregarDados(lotacao === 'TODAS' ? undefined : lotacao, selectedFantasia);
-  }, [lotacao, selectedFantasia, carregarDados]);
 
   return (
     <div className="space-y-6">
@@ -557,13 +603,13 @@ export function VacancyManagement() {
             {/* Busca */}
             <div className="md:col-span-1 lg:col-span-1">
               <Label className="text-xs font-bold uppercase text-slate-500 mb-2 block flex items-center gap-1">
-                <Search className="w-3 h-3" /> Buscar Funcionário
+                <Search className="w-3 h-3" /> Buscar Vaga ou Funcionário
               </Label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-blue-500" />
                 <Input
                   type="text"
-                  placeholder="Ex: João Silva, Médico, UTI..."
+                  placeholder="Ex: ID 10234, Resposta 1154, João Silva, Médico..."
                   value={busca}
                   onChange={(e) => setBusca(e.target.value)}
                   className="pl-10 pr-10 h-10 border-slate-200 dark:border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
@@ -765,6 +811,8 @@ export function VacancyManagement() {
                     onAtribuir={handleAtribuirVaga}
                     onArquivar={handleArquivar}
                     onMarcarNaoEncontrada={handleMarcarNaoEncontrada}
+                    onEditarEvento={handleEditarEvento}
+                    vagasDerivadas={vagasDerivadas[vaga.id_evento] ?? []}
                     erroFechamento={erroFechamento}
                     setErroFechamento={setErroFechamento}
                     erroSalvar={erroSalvar}
@@ -801,6 +849,8 @@ export function VacancyManagement() {
                     onAtribuir={handleAtribuirVaga}
                     onArquivar={handleArquivar}
                     onMarcarNaoEncontrada={handleMarcarNaoEncontrada}
+                    onEditarEvento={handleEditarEvento}
+                    vagasDerivadas={vagasDerivadas[vaga.id_evento] ?? []}
                     erroFechamento={erroFechamento}
                     setErroFechamento={setErroFechamento}
                     erroSalvar={erroSalvar}
@@ -835,6 +885,8 @@ export function VacancyManagement() {
                     updatingTlp={updatingTlp}
                     onAtribuir={handleAtribuirVaga}
                     onArquivar={handleArquivar}
+                    onEditarEvento={handleEditarEvento}
+                    vagasDerivadas={vagasDerivadas[vaga.id_evento] ?? []}
                     erroFechamento={erroFechamento}
                     setErroFechamento={setErroFechamento}
                     erroSalvar={erroSalvar}
@@ -878,6 +930,8 @@ export function VacancyManagement() {
                             updatingTlp={updatingTlp}
                             onAtribuir={handleAtribuirVaga}
                             onArquivar={handleArquivar}
+                            onEditarEvento={handleEditarEvento}
+                            vagasDerivadas={vagasDerivadas[vaga.id_evento] ?? []}
                             erroFechamento={erroFechamento}
                             setErroFechamento={setErroFechamento}
                             erroSalvar={erroSalvar}
@@ -915,6 +969,8 @@ export function VacancyManagement() {
                             updatingTlp={updatingTlp}
                             onAtribuir={handleAtribuirVaga}
                             onArquivar={handleArquivar}
+                            onEditarEvento={handleEditarEvento}
+                            vagasDerivadas={vagasDerivadas[vaga.id_evento] ?? []}
                             erroFechamento={erroFechamento}
                             setErroFechamento={setErroFechamento}
                             erroSalvar={erroSalvar}
@@ -951,6 +1007,8 @@ export function VacancyManagement() {
                             updatingTlp={updatingTlp}
                             onAtribuir={handleAtribuirVaga}
                             onArquivar={handleArquivar}
+                            onEditarEvento={handleEditarEvento}
+                            vagasDerivadas={vagasDerivadas[vaga.id_evento] ?? []}
                             erroFechamento={erroFechamento}
                             setErroFechamento={setErroFechamento}
                             erroSalvar={erroSalvar}
@@ -999,6 +1057,8 @@ export function VacancyManagement() {
                               updatingTlp={updatingTlp}
                               onAtribuir={handleAtribuirVaga}
                               onArquivar={handleArquivar}
+                              onEditarEvento={handleEditarEvento}
+                              vagasDerivadas={vagasDerivadas[vaga.id_evento] ?? []}
                               erroFechamento={erroFechamento}
                               setErroFechamento={setErroFechamento}
                               erroSalvar={erroSalvar}
@@ -1037,6 +1097,8 @@ export function VacancyManagement() {
                             updatingTlp={updatingTlp}
                             onAtribuir={handleAtribuirVaga}
                             onArquivar={handleArquivar}
+                            onEditarEvento={handleEditarEvento}
+                            vagasDerivadas={vagasDerivadas[vaga.id_evento] ?? []}
                             erroFechamento={erroFechamento}
                             setErroFechamento={setErroFechamento}
                             erroSalvar={erroSalvar}
@@ -1074,6 +1136,8 @@ export function VacancyManagement() {
                             onAtribuir={handleAtribuirVaga}
                             onArquivar={handleArquivar}
                             isArquivada={true}
+                            onEditarEvento={handleEditarEvento}
+                            vagasDerivadas={vagasDerivadas[vaga.id_evento] ?? []}
                             erroFechamento={erroFechamento}
                             setErroFechamento={setErroFechamento}
                             erroSalvar={erroSalvar}
@@ -1105,7 +1169,7 @@ export function VacancyManagement() {
                         : ((vaga as any).situacao_atual ?? '99-Demitido'), // Usar situação real do banco
                     };
                     return (
-                      <div key={vaga.id_evento} className="relative">
+                      <div key={`${(vaga as any)._source === 'MOVIMENTACAO' ? 'mov' : 'ev'}-${vaga.id_evento}`} className="relative">
                         {isMovimentacao && (
                           <button
                             type="button"
@@ -1136,6 +1200,8 @@ export function VacancyManagement() {
                           updatingTlp={updatingTlp}
                           onAtribuir={handleAtribuirVaga}
                           onArquivar={handleArquivar}
+                          onEditarEvento={handleEditarEvento}
+                          vagasDerivadas={vagasDerivadas[vaga.id_evento] ?? []}
                           erroFechamento={erroFechamento}
                           setErroFechamento={setErroFechamento}
                           erroSalvar={erroSalvar}
@@ -1166,6 +1232,8 @@ export function VacancyManagement() {
                       updatingTlp={updatingTlp}
                       onAtribuir={handleAtribuirVaga}
                       onArquivar={handleArquivar}
+                      onEditarEvento={handleEditarEvento}
+                      vagasDerivadas={vagasDerivadas[vaga.id_evento] ?? []}
                       erroFechamento={erroFechamento}
                       setErroFechamento={setErroFechamento}
                       erroSalvar={erroSalvar}
@@ -1211,6 +1279,8 @@ export function VacancyManagement() {
                           updatingTlp={updatingTlp}
                           onAtribuir={handleAtribuirVaga}
                           onArquivar={handleArquivar}
+                          onEditarEvento={handleEditarEvento}
+                          vagasDerivadas={vagasDerivadas[vaga.id_evento] ?? []}
                           erroFechamento={erroFechamento}
                           setErroFechamento={setErroFechamento}
                           erroSalvar={erroSalvar}
@@ -1246,6 +1316,8 @@ export function VacancyManagement() {
                           updatingTlp={updatingTlp}
                           onAtribuir={handleAtribuirVaga}
                           onArquivar={handleArquivar}
+                          onEditarEvento={handleEditarEvento}
+                          vagasDerivadas={vagasDerivadas[vaga.id_evento] ?? []}
                           erroFechamento={erroFechamento}
                           setErroFechamento={setErroFechamento}
                           erroSalvar={erroSalvar}
@@ -1284,6 +1356,8 @@ export function VacancyManagement() {
                     onAtribuir={handleAtribuirVaga}
                     onArquivar={handleArquivar}
                     isArquivada={true}
+                    onEditarEvento={handleEditarEvento}
+                    vagasDerivadas={vagasDerivadas[vaga.id_evento] ?? []}
                     erroFechamento={erroFechamento}
                     setErroFechamento={setErroFechamento}
                     erroSalvar={erroSalvar}
@@ -1325,6 +1399,8 @@ export function VacancyManagement() {
                       onArquivar={handleArquivar}
                       onMarcarNaoEncontrada={handleMarcarNaoEncontrada}
                       isNaoEncontrada={true}
+                      onEditarEvento={handleEditarEvento}
+                      vagasDerivadas={vagasDerivadas[vaga.id_evento] ?? []}
                       erroFechamento={erroFechamento}
                       setErroFechamento={setErroFechamento}
                       erroSalvar={erroSalvar}
@@ -1411,7 +1487,7 @@ function FuncionarioCombobox({
   cnpjAlvo?: string;
 }) {
   const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [isOpen, setIsOpen] = useState(true); // Sempre aberto por padrão
+  const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -1649,11 +1725,13 @@ function VagaCard({
   onAtribuir,
   onArquivar,
   onMarcarNaoEncontrada,
+  onEditarEvento,
   isArquivada,
   isNaoEncontrada,
   erroFechamento,
   setErroFechamento,
-  erroSalvar
+  erroSalvar,
+  vagasDerivadas = [],
 }: {
   vaga: any;
   mostrarSubstituto?: boolean;
@@ -1677,7 +1755,9 @@ function VagaCard({
   onAtribuir?: (vaga: any) => void;
   onArquivar?: (id: number, tipo: 'DEMISSAO' | 'AFASTAMENTO', status: boolean) => Promise<void>;
   onMarcarNaoEncontrada?: (id: number, tipo: 'DEMISSAO' | 'AFASTAMENTO', status: boolean, observacao?: string) => Promise<void>;
+  onEditarEvento?: (idEvento: number, tipoOrigem: 'DEMISSAO' | 'AFASTAMENTO', dados: { data_abertura_vaga?: string; data_fechamento_vaga?: string; nome_candidato?: string; id_evento_mae?: number | null }) => Promise<void>;
   isArquivada?: boolean;
+  vagasDerivadas?: VagaDerivada[];
   isNaoEncontrada?: boolean;
   erroFechamento: number | null;
   setErroFechamento: (id: number | null) => void;
@@ -1694,8 +1774,14 @@ function VagaCard({
   const tipoOrigem = vaga.situacao_origem === '99-Demitido' ? 'DEMISSAO' : 'AFASTAMENTO';
   const isPendenteEf = abaSelecionada === 'pendentes_ef';
   const [obsNaoEncontrada, setObsNaoEncontrada] = useState('');
-
   const [copiado, setCopiado] = useState<string | null>(null);
+  const [modoEdicao, setModoEdicao] = useState(false);
+  const [editDataAbertura, setEditDataAbertura] = useState('');
+  const [editDataFechamento, setEditDataFechamento] = useState('');
+  const [editNomeCandidato, setEditNomeCandidato] = useState('');
+  const [editIdEventoMae, setEditIdEventoMae] = useState<string>('');
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+  const [erroEdicao, setErroEdicao] = useState<string | null>(null);
 
   // Limpa erro ao expandir/recolher
   useEffect(() => {
@@ -1786,6 +1872,25 @@ function VagaCard({
   const pendenteEfetivacao = getVal('pendente_efetivacao', false);
 
   const nomeSubstitutoDisplay = currentResp.nome_candidato || currentForm.nome_candidato || currentForm.nome_substituto || '';
+
+  // Hover Base BI
+  const [biHoverNome, setBiHoverNome] = useState<string | null>(null);
+  const [biHoverData, setBiHoverData] = useState<{ rows: Record<string, any>[]; headers: string[] } | null>(null);
+  const [biHoverPos, setBiHoverPos] = useState<{ top: number; left: number } | null>(null);
+  const biHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleBiMouseEnter = (e: React.MouseEvent, nome: string) => {
+    if (biHoverTimer.current) clearTimeout(biHoverTimer.current);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const pos = { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 360) };
+    if (biHoverNome === nome) { setBiHoverPos(pos); return; }
+    setBiHoverNome(nome);
+    buscarRegistrosBIByNome(nome).then(d => { setBiHoverData(d); setBiHoverPos(pos); });
+  };
+
+  const handleBiMouseLeave = () => {
+    biHoverTimer.current = setTimeout(() => { setBiHoverData(null); setBiHoverNome(null); setBiHoverPos(null); }, 150);
+  };
 
   // Determinar status da vaga
   const getStatusBadge = () => {
@@ -1896,603 +2001,783 @@ function VagaCard({
   }, [vaga.id_evento, (vaga as any)._source, (vaga as any).data_abertura_vaga, formData, updateFormDataMap]);
 
   return (
-    <Card
-      key={vaga.id_evento}
-      className={`mb-3 overflow-hidden border-slate-200 dark:border-slate-800 transition-all hover:shadow-md ${erroFechamento === vaga.id_evento
-        ? 'ring-2 ring-red-500 border-red-500 shadow-lg shadow-red-100 dark:shadow-red-900/20'
-        : isNaoEncontrada
-          ? 'border-l-4 border-l-orange-500'
-          : alertaDataSuspeita
-            ? 'border-l-4 border-l-yellow-400'
-            : isPendenteEf
-              ? 'border-l-4 border-l-amber-500'
-              : ''
-        }`}
-    >
-      <div
-        className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-between"
-        onClick={() => setExpandedId(isExpanded ? null : vaga.id_evento)}
+    <>
+      {biHoverData && biHoverPos && (
+        <BiTooltipCard
+          rows={biHoverData.rows}
+          headers={biHoverData.headers}
+          style={{ position: 'fixed', top: biHoverPos.top, left: biHoverPos.left, zIndex: 10000 }}
+          onMouseEnter={() => { if (biHoverTimer.current) clearTimeout(biHoverTimer.current); }}
+          onMouseLeave={() => { biHoverTimer.current = setTimeout(() => { setBiHoverData(null); setBiHoverNome(null); setBiHoverPos(null); }, 150); }}
+        />
+      )}
+      <Card
+        key={vaga.id_evento}
+        className={`mb-3 overflow-hidden border-slate-200 dark:border-slate-800 transition-all hover:shadow-md ${erroFechamento === vaga.id_evento
+          ? 'ring-2 ring-red-500 border-red-500 shadow-lg shadow-red-100 dark:shadow-red-900/20'
+          : isNaoEncontrada
+            ? 'border-l-4 border-l-orange-500'
+            : alertaDataSuspeita
+              ? 'border-l-4 border-l-yellow-400'
+              : isPendenteEf
+                ? 'border-l-4 border-l-amber-500'
+                : ''
+          }`}
       >
-        <div className="flex items-start gap-3">
-          <div className={`mt-1 p-2 rounded-lg ${tipoOrigem === 'DEMISSAO' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
-            <Users size={18} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <h3 className="font-semibold text-slate-900 dark:text-slate-100">{vaga.cargo || 'Cargo não informado'}</h3>
-              <Badge variant="outline" className="text-[10px] h-5 uppercase">
-                {vaga.lotacao || 'Unidade'}
-              </Badge>
-              {nomeContrato && (
-                <Badge variant="secondary" className="text-[10px] h-5 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-none uppercase">
-                  {nomeContrato}
-                </Badge>
-              )}
-              <Badge className={`text-[10px] h-5 uppercase font-semibold border-none ${getStatusBadge().color}`}>
-                {getStatusBadge().label}
-              </Badge>
-              {(() => {
-                const isMovimentacao = (vaga as any)._source === 'MOVIMENTACAO';
-                const tipoMov = (vaga as any).tipo_movimentacao as string | undefined;
-                const MOTIVO_LABEL: Record<string, string> = {
-                  ENQUADRAMENTO: 'Enquadramento',
-                  ALTERACAO_NOMENCLATURA: 'Alt. Nomenclatura',
-                  PROMOCAO: 'Promoção',
-                  AUMENTO_CARGA_HORARIA: 'Aumento CH',
-                  REDUCAO_CARGA_HORARIA: 'Redução CH',
-                  MERITO: 'Mérito',
-                  CORRECAO_SALARIO: 'Correção Salário',
-                };
-                const label = isMovimentacao
-                  ? (tipoMov ? MOTIVO_LABEL[tipoMov] ?? tipoMov : 'Movimentação')
-                  : tipoOrigem === 'DEMISSAO' ? 'Demissão' : 'Afastamento';
-                const color = isMovimentacao
-                  ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                  : tipoOrigem === 'DEMISSAO'
-                    ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                    : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400';
-                return (
-                  <Badge className={`text-[10px] h-5 uppercase font-semibold border-none ${color}`}>
-                    {label}
-                  </Badge>
-                );
-              })()}
-              <SlaIcon className={`w-4 h-4 ${sla.color}`} />
-              {respostas[vaga.id_evento]?.nome_analista && (
-                <Badge className="text-[10px] h-5 font-medium border-none bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 flex items-center gap-1">
-                  <UserCheck size={10} />
-                  {respostas[vaga.id_evento]?.nome_analista}
-                </Badge>
-              )}
-              {alertaDataSuspeita && (
-                <Badge className="text-[10px] h-5 font-semibold border border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 flex items-center gap-1">
-                  <AlertTriangle size={10} />
-                  {dataInconsistente ? 'Abertura anterior à situação' : `${displayDiasEmAberto}d em aberto`}
-                </Badge>
-              )}
+        <div
+          className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-between"
+          onClick={() => setExpandedId(isExpanded ? null : vaga.id_evento)}
+          onMouseEnter={(e) => vaga.nome && handleBiMouseEnter(e, vaga.nome)}
+          onMouseLeave={handleBiMouseLeave}
+        >
+          <div className="flex items-start gap-3">
+            <div className={`mt-1 p-2 rounded-lg ${tipoOrigem === 'DEMISSAO' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
+              <Users size={18} />
             </div>
-            {mostrarSubstituto ? (
-              <div className="space-y-2">
-                <div className="flex items-center text-sm text-red-600 dark:text-red-400">
-                  <UserX className="w-4 h-4 mr-1" />
-                  <span>{vaga.nome || 'Sem nome'}</span>
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      copyWithFeedback(vaga.nome || '', 'nome-saiu');
-                    }}
-                    title="Copiar nome"
-                    className="ml-0.5 p-0.5 hover:bg-red-100 dark:hover:bg-red-900/40 rounded transition-colors"
-                    type="button"
-                  >
-                    {copiado === 'nome-saiu' ? (
-                      <Check className="w-3 h-3 text-green-600" />
-                    ) : (
-                      <Copy className="w-3 h-3" />
-                    )}
-                  </button>
-                </div>
-                {nomeSubstitutoDisplay && (
-                  <div className="flex items-center text-sm text-green-600 dark:text-green-400">
-                    <UserCheck className="w-4 h-4 mr-1" />
-                    <span>{nomeSubstitutoDisplay}</span>
+            <div>
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <h3 className="font-semibold text-slate-900 dark:text-slate-100">{vaga.cargo || 'Cargo não informado'}</h3>
+                <Badge variant="outline" className="text-[10px] h-5 uppercase">
+                  {vaga.lotacao || 'Unidade'}
+                </Badge>
+                {nomeContrato && (
+                  <Badge variant="secondary" className="text-[10px] h-5 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-none uppercase">
+                    {nomeContrato}
+                  </Badge>
+                )}
+                <Badge className={`text-[10px] h-5 uppercase font-semibold border-none ${getStatusBadge().color}`}>
+                  {getStatusBadge().label}
+                </Badge>
+                {(() => {
+                  const isMovimentacao = (vaga as any)._source === 'MOVIMENTACAO';
+                  const tipoMov = (vaga as any).tipo_movimentacao as string | undefined;
+                  const MOTIVO_LABEL: Record<string, string> = {
+                    ENQUADRAMENTO: 'Enquadramento',
+                    ALTERACAO_NOMENCLATURA: 'Alt. Nomenclatura',
+                    PROMOCAO: 'Promoção',
+                    AUMENTO_CARGA_HORARIA: 'Aumento CH',
+                    REDUCAO_CARGA_HORARIA: 'Redução CH',
+                    MERITO: 'Mérito',
+                    CORRECAO_SALARIO: 'Correção Salário',
+                  };
+                  const label = isMovimentacao
+                    ? (tipoMov ? MOTIVO_LABEL[tipoMov] ?? tipoMov : 'Movimentação')
+                    : tipoOrigem === 'DEMISSAO' ? 'Demissão' : 'Afastamento';
+                  const color = isMovimentacao
+                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                    : tipoOrigem === 'DEMISSAO'
+                      ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                      : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400';
+                  return (
+                    <Badge className={`text-[10px] h-5 uppercase font-semibold border-none ${color}`}>
+                      {label}
+                    </Badge>
+                  );
+                })()}
+                <SlaIcon className={`w-4 h-4 ${sla.color}`} />
+                {respostas[vaga.id_evento]?.nome_analista && (
+                  <Badge className="text-[10px] h-5 font-medium border-none bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 flex items-center gap-1">
+                    <UserCheck size={10} />
+                    {respostas[vaga.id_evento]?.nome_analista}
+                  </Badge>
+                )}
+                {alertaDataSuspeita && (
+                  <Badge className="text-[10px] h-5 font-semibold border border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 flex items-center gap-1">
+                    <AlertTriangle size={10} />
+                    {dataInconsistente ? 'Abertura anterior à situação' : `${displayDiasEmAberto}d em aberto`}
+                  </Badge>
+                )}
+              </div>
+              {mostrarSubstituto ? (
+                <div className="space-y-2">
+                  <div className="flex items-center text-sm text-red-600 dark:text-red-400">
+                    <UserX className="w-4 h-4 mr-1" />
+                    <span>{vaga.nome || 'Sem nome'}</span>
                     <button
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        copyWithFeedback(nomeSubstitutoDisplay || '', 'nome-sub');
+                        copyWithFeedback(vaga.nome || '', 'nome-saiu');
                       }}
                       title="Copiar nome"
-                      className="ml-0.5 p-0.5 hover:bg-green-100 dark:hover:bg-green-900/40 rounded transition-colors"
+                      className="ml-0.5 p-0.5 hover:bg-red-100 dark:hover:bg-red-900/40 rounded transition-colors"
                       type="button"
                     >
-                      {copiado === 'nome-sub' ? (
+                      {copiado === 'nome-saiu' ? (
                         <Check className="w-3 h-3 text-green-600" />
                       ) : (
                         <Copy className="w-3 h-3" />
                       )}
                     </button>
                   </div>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <div className="flex items-center text-left flex-wrap gap-x-1.5">
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    className="text-sm text-blue-600 dark:text-blue-400 font-medium hover:underline cursor-pointer transition-colors inline-flex items-center gap-0.5"
-                    onClick={handleVerPerfilClicado}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleVerPerfilClicado(e as any);
-                      }
-                    }}
-                  >
-                    {vaga.nome || 'Sem nome'}
-                    {loadingProfile && <Loader2 className="w-3 h-3 animate-spin" />}
-                  </span>
-                  {vaga.data_evento && (
-                    <span className="text-xs text-slate-400 dark:text-slate-500 font-normal">
-                      · {tipoOrigem === 'DEMISSAO' ? 'Dem.' : 'Afas.'} {formatarData(vaga.data_evento)}
-                    </span>
+                  {nomeSubstitutoDisplay && (
+                    <div className="flex items-center text-sm text-green-600 dark:text-green-400">
+                      <UserCheck className="w-4 h-4 mr-1" />
+                      <span>{nomeSubstitutoDisplay}</span>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          copyWithFeedback(nomeSubstitutoDisplay || '', 'nome-sub');
+                        }}
+                        title="Copiar nome"
+                        className="ml-0.5 p-0.5 hover:bg-green-100 dark:hover:bg-green-900/40 rounded transition-colors"
+                        type="button"
+                      >
+                        {copiado === 'nome-sub' ? (
+                          <Check className="w-3 h-3 text-green-600" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                      </button>
+                    </div>
                   )}
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      copyWithFeedback(vaga.nome || '', 'nome-default');
-                    }}
-                    title="Copiar nome"
-                    className="ml-0.5 p-0.5 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded transition-colors"
-                    type="button"
-                  >
-                    {copiado === 'nome-default' ? (
-                      <Check className="w-3 h-3 text-green-600" />
-                    ) : (
-                      <Copy className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                    )}
-                  </button>
                 </div>
-                {mostrarSituacao && vaga.situacao_origem && (
-                  <div className={`text-xs ${vaga.situacao_origem === '01-ATIVO' ? 'text-green-600 dark:text-green-400 font-medium' : 'text-slate-500 dark:text-slate-400'}`}>
-                    {vaga.situacao_origem}
+              ) : (
+                <div className="space-y-1">
+                  <div className="flex items-center text-left flex-wrap gap-x-1.5">
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="text-sm text-blue-600 dark:text-blue-400 font-medium hover:underline cursor-pointer transition-colors inline-flex items-center gap-0.5"
+                      onClick={handleVerPerfilClicado}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleVerPerfilClicado(e as any);
+                        }
+                      }}
+                    >
+                      {vaga.nome || 'Sem nome'}
+                      {loadingProfile && <Loader2 className="w-3 h-3 animate-spin" />}
+                    </span>
+                    {vaga.data_evento && (
+                      <span className="text-xs text-slate-400 dark:text-slate-500 font-normal">
+                        · {tipoOrigem === 'DEMISSAO' ? 'Dem.' : 'Afas.'} {formatarData(vaga.data_evento)}
+                      </span>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        copyWithFeedback(vaga.nome || '', 'nome-default');
+                      }}
+                      title="Copiar nome"
+                      className="ml-0.5 p-0.5 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded transition-colors"
+                      type="button"
+                    >
+                      {copiado === 'nome-default' ? (
+                        <Check className="w-3 h-3 text-green-600" />
+                      ) : (
+                        <Copy className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                      )}
+                    </button>
                   </div>
+                  {mostrarSituacao && vaga.situacao_origem && (
+                    <div className={`text-xs ${vaga.situacao_origem === '01-ATIVO' ? 'text-green-600 dark:text-green-400 font-medium' : 'text-slate-500 dark:text-slate-400'}`}>
+                      {vaga.situacao_origem}
+                    </div>
+                  )}
+                  {tipoOrigem === 'DEMISSAO' && vaga.tipo_rescisao && (
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      {vaga.tipo_rescisao}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 flex-wrap">
+                <span className="flex items-center gap-1">
+                  <Calendar size={12} />
+                  <span className="text-slate-400">Situação:</span>
+                  {formatarData(vaga.data_evento)}
+                </span>
+                {dataAberturaDisplay && (
+                  <span className={`flex items-center gap-1 ${dataInconsistente ? 'text-yellow-600 dark:text-yellow-400 font-semibold' : ''}`}>
+                    <Calendar size={12} className={dataInconsistente ? 'text-yellow-500' : 'text-blue-400'} />
+                    <span className="text-slate-400">Abertura:</span>
+                    {formatarData(dataAberturaDisplay)}
+                    {dataInconsistente && <AlertTriangle size={10} className="text-yellow-500" />}
+                  </span>
                 )}
-                {tipoOrigem === 'DEMISSAO' && vaga.tipo_rescisao && (
-                  <div className="text-xs text-slate-500 dark:text-slate-400">
-                    {vaga.tipo_rescisao}
-                  </div>
+                {(abaSelecionada === 'pendentes_ef' || abaSelecionada === 'fechadas') && dataFechamento && (
+                  <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                    <CheckCircle size={12} />
+                    <span className="text-slate-400">Fechamento:</span>
+                    {formatarData(dataFechamento)}
+                  </span>
+                )}
+                {diasParaFechar !== null ? (
+                  <span className="flex items-center gap-1 text-slate-500">
+                    <Clock size={12} />
+                    {diasParaFechar} dias para fechar
+                  </span>
+                ) : (
+                  <span className={`flex items-center gap-1 ${alertaDataSuspeita ? 'text-yellow-600 dark:text-yellow-400 font-semibold' : ''}`}>
+                    <Clock size={12} className={alertaDataSuspeita ? 'text-yellow-500' : ''} />
+                    {diasEmAbertoExibir} dias em aberto
+                    {alertaDataSuspeita && <AlertTriangle size={10} className="text-yellow-500" />}
+                  </span>
                 )}
               </div>
-            )}
-            <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 flex-wrap">
-              <span className="flex items-center gap-1">
-                <Calendar size={12} />
-                <span className="text-slate-400">Situação:</span>
-                {formatarData(vaga.data_evento)}
-              </span>
-              {dataAberturaDisplay && (
-                <span className={`flex items-center gap-1 ${dataInconsistente ? 'text-yellow-600 dark:text-yellow-400 font-semibold' : ''}`}>
-                  <Calendar size={12} className={dataInconsistente ? 'text-yellow-500' : 'text-blue-400'} />
-                  <span className="text-slate-400">Abertura:</span>
-                  {formatarData(dataAberturaDisplay)}
-                  {dataInconsistente && <AlertTriangle size={10} className="text-yellow-500" />}
-                </span>
-              )}
-              {(abaSelecionada === 'pendentes_ef' || abaSelecionada === 'fechadas') && dataFechamento && (
-                <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
-                  <CheckCircle size={12} />
-                  <span className="text-slate-400">Fechamento:</span>
-                  {formatarData(dataFechamento)}
-                </span>
-              )}
-              {diasParaFechar !== null ? (
-                <span className="flex items-center gap-1 text-slate-500">
-                  <Clock size={12} />
-                  {diasParaFechar} dias para fechar
-                </span>
-              ) : (
-                <span className={`flex items-center gap-1 ${alertaDataSuspeita ? 'text-yellow-600 dark:text-yellow-400 font-semibold' : ''}`}>
-                  <Clock size={12} className={alertaDataSuspeita ? 'text-yellow-500' : ''} />
-                  {diasEmAbertoExibir} dias em aberto
-                  {alertaDataSuspeita && <AlertTriangle size={10} className="text-yellow-500" />}
-                </span>
-              )}
             </div>
           </div>
+          <div className="flex items-center gap-3">
+            {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
-        </div>
-      </div>
 
-      {isExpanded && (
-        <CardContent className="border-t border-slate-200 dark:border-slate-700 pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Informações */}
-            <div className="space-y-4">
-              <h4 className="text-xs font-bold uppercase text-slate-400 flex items-center gap-2">
-                <AlertCircle size={14} /> Detalhes do Evento
-              </h4>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                  <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Situação</span>
-                  <span className={`font-medium ${vaga.situacao_origem === '99-Demitido' ? 'text-red-600' : vaga.situacao_origem === '01-ATIVO' ? 'text-green-600' : ''}`}>{vaga.situacao_origem}</span>
-                </div>
-                <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                  <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Dias em aberto</span>
-                  <span className={`font-medium ${sla.color}`}>{diasEmAbertoExibir} dias</span>
-                </div>
-                <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                  <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Carga Horária Semanal</span>
-                  <span className="font-medium">{vaga.carga_horaria_semanal ? `${vaga.carga_horaria_semanal} hs` : '-'}</span>
-                </div>
-                <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                  <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Escala</span>
-                  <span className="font-medium">{vaga.escala || '-'}</span>
+        {isExpanded && (
+          <CardContent className="border-t border-slate-200 dark:border-slate-700 pt-6">
+
+            {/* Vagas Derivadas (cadeia de substituição) */}
+            {vagasDerivadas.length > 0 && (
+              <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg">
+                <h4 className="text-xs font-bold uppercase text-amber-700 dark:text-amber-400 flex items-center gap-2 mb-3">
+                  <Users size={13} /> Cadeia de Substituição ({vagasDerivadas.length})
+                </h4>
+                <div className="space-y-2">
+                  {vagasDerivadas.map((derivada) => (
+                    <div key={derivada.id_evento} className="flex items-start justify-between gap-3 p-2.5 bg-white dark:bg-slate-800 rounded border border-amber-100 dark:border-amber-800 text-xs">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-slate-700 dark:text-slate-200 truncate">
+                          {derivada.nome_quem_saiu || `Evento #${derivada.id_evento}`}
+                        </p>
+                        {derivada.cargo_quem_saiu && (
+                          <p className="text-slate-500 dark:text-slate-400 truncate">{derivada.cargo_quem_saiu}</p>
+                        )}
+                        {derivada.data_evento && (
+                          <p className="text-slate-400 mt-0.5">{derivada.tipo_origem === 'DEMISSAO' ? 'Demissão' : 'Afastamento'}: {formatarData(derivada.data_evento)}</p>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        {derivada.nome_candidato ? (
+                          <p className="text-blue-600 dark:text-blue-400 font-medium">
+                            Sub: {derivada.nome_candidato}
+                          </p>
+                        ) : (
+                          <p className="text-slate-400 italic">Sem substituto</p>
+                        )}
+                        <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${derivada.vaga_preenchida === 'SIM' ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400' : 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>
+                          {derivada.vaga_preenchida === 'SIM' ? 'Fechada' : 'Em aberto'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
+            )}
 
-              {/* TLP Info */}
-              <div className="pt-2">
-                <h4 className="text-xs font-bold uppercase text-slate-400 flex items-center gap-2 mb-3">
-                  <TrendingUp size={14} /> Quadro Necessário (TLP)
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Informações */}
+              <div className="space-y-4">
+                <h4 className="text-xs font-bold uppercase text-slate-400 flex items-center gap-2">
+                  <AlertCircle size={14} /> Detalhes do Evento
                 </h4>
-                {tlpEntry ? (
-                  <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 space-y-3 border border-slate-100 dark:border-slate-700">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-slate-500 uppercase font-bold">Status do Quadro</span>
-                      <StatusBadge status={tlpEntry.status} />
+                <div className={`grid gap-4 text-sm ${currentResp?.id_resposta ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Situação</span>
+                    <span className={`font-medium ${vaga.situacao_origem === '99-Demitido' ? 'text-red-600' : vaga.situacao_origem === '01-ATIVO' ? 'text-green-600' : ''}`}>{vaga.situacao_origem}</span>
+                  </div>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Dias em aberto</span>
+                    <span className={`font-medium ${sla.color}`}>{diasEmAbertoExibir} dias</span>
+                  </div>
+                  {currentResp?.id_resposta && (
+                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+                      <span className="text-blue-600 dark:text-blue-400 block text-[10px] uppercase font-bold mb-1">ID Resposta</span>
+                      <div className="flex items-center gap-1 font-mono font-bold text-blue-700 dark:text-blue-300">
+                        #{currentResp.id_resposta}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyWithFeedback(String(currentResp.id_resposta), 'id-resposta');
+                          }}
+                          className="p-0.5 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded transition-colors"
+                          title="Copiar ID"
+                          type="button"
+                        >
+                          {copiado === 'id-resposta' ? (
+                            <Check className="w-3 h-3 text-green-600 dark:text-green-400" />
+                          ) : (
+                            <Copy className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                          )}
+                        </button>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div>
-                        <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Ideal</p>
-                        <div className="flex items-center justify-center gap-1">
-                          <input
-                            type="number"
-                            className={`w-12 text-center text-lg font-bold border-b border-dashed border-slate-300 hover:border-blue-500 focus:border-blue-600 focus:outline-none bg-transparent text-slate-900 dark:text-slate-100 ${updatingTlp === `${vaga.cargo}-${vaga.lotacao}` ? 'opacity-50' : ''}`}
-                            defaultValue={tlpEntry.tlp}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') e.currentTarget.blur();
-                            }}
-                            onBlur={(e) => {
-                              const val = parseInt(e.target.value, 10);
-                              if (!isNaN(val) && val !== tlpEntry.tlp) {
-                                handleUpdateTlpValue(vaga.cargo, vaga.lotacao, tlpEntry.id, val);
-                              } else {
-                                e.currentTarget.value = tlpEntry.tlp.toString();
-                              }
-                            }}
-                            disabled={updatingTlp === `${vaga.cargo}-${vaga.lotacao}`}
-                          />
-                          {updatingTlp === `${vaga.cargo}-${vaga.lotacao}` && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
+                  )}
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Carga Horária Semanal</span>
+                    <span className="font-medium">{vaga.carga_horaria_semanal ? `${vaga.carga_horaria_semanal} hs` : '-'}</span>
+                  </div>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Escala</span>
+                    <span className="font-medium">{vaga.escala || '-'}</span>
+                  </div>
+                </div>
+
+                {/* TLP Info */}
+                <div className="pt-2">
+                  <h4 className="text-xs font-bold uppercase text-slate-400 flex items-center gap-2 mb-3">
+                    <TrendingUp size={14} /> Quadro Necessário (TLP)
+                  </h4>
+                  {tlpEntry ? (
+                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 space-y-3 border border-slate-100 dark:border-slate-700">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-500 uppercase font-bold">Status do Quadro</span>
+                        <StatusBadge status={tlpEntry.status} />
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Ideal</p>
+                          <div className="flex items-center justify-center gap-1">
+                            <input
+                              type="number"
+                              className={`w-12 text-center text-lg font-bold border-b border-dashed border-slate-300 hover:border-blue-500 focus:border-blue-600 focus:outline-none bg-transparent text-slate-900 dark:text-slate-100 ${updatingTlp === `${vaga.cargo}-${vaga.lotacao}` ? 'opacity-50' : ''}`}
+                              defaultValue={tlpEntry.tlp}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') e.currentTarget.blur();
+                              }}
+                              onBlur={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                if (!isNaN(val) && val !== tlpEntry.tlp) {
+                                  handleUpdateTlpValue(vaga.cargo, vaga.lotacao, tlpEntry.id, val);
+                                } else {
+                                  e.currentTarget.value = tlpEntry.tlp.toString();
+                                }
+                              }}
+                              disabled={updatingTlp === `${vaga.cargo}-${vaga.lotacao}`}
+                            />
+                            {updatingTlp === `${vaga.cargo}-${vaga.lotacao}` && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Real</p>
+                          <p className="text-lg font-bold text-green-600 dark:text-green-400">{tlpEntry.ativos}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Saldo</p>
+                          <p className={`text-lg font-bold ${tlpEntry.saldo < 0 ? 'text-red-600' : 'text-amber-600'}`}>
+                            {tlpEntry.saldo > 0 ? `+${tlpEntry.saldo}` : tlpEntry.saldo}
+                          </p>
                         </div>
                       </div>
-                      <div>
-                        <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Real</p>
-                        <p className="text-lg font-bold text-green-600 dark:text-green-400">{tlpEntry.ativos}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Saldo</p>
-                        <p className={`text-lg font-bold ${tlpEntry.saldo < 0 ? 'text-red-600' : 'text-amber-600'}`}>
-                          {tlpEntry.saldo > 0 ? `+${tlpEntry.saldo}` : tlpEntry.saldo}
-                        </p>
-                      </div>
+                      <p className="text-[10px] text-slate-400 italic text-center">
+                        * Real considera ativos + afastados
+                      </p>
                     </div>
-                    <p className="text-[10px] text-slate-400 italic text-center">
-                      * Real considera ativos + afastados
+                  ) : (
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-center border border-dashed border-slate-200 dark:border-slate-700">
+                      <p className="text-xs text-slate-500 italic">Dados TLP não mapeados para esta unidade.</p>
+                    </div>
+                  )}
+                </div>
+
+                {isPendenteEf && (
+                  <div className="mt-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-lg">
+                    <p className="text-xs text-amber-800 dark:text-amber-300 font-medium leading-relaxed">
+                      Esta vaga foi marcada como "Pendente de Efetivação". Confirme quando o novo funcionário já estiver trabalhando.
                     </p>
-                  </div>
-                ) : (
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-center border border-dashed border-slate-200 dark:border-slate-700">
-                    <p className="text-xs text-slate-500 italic">Dados TLP não mapeados para esta unidade.</p>
                   </div>
                 )}
               </div>
 
-              {isPendenteEf && (
-                <div className="mt-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-lg">
-                  <p className="text-xs text-amber-800 dark:text-amber-300 font-medium leading-relaxed">
-                    Esta vaga foi marcada como "Pendente de Efetivação". Confirme quando o novo funcionário já estiver trabalhando.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Formulário de resposta */}
-            <div className="space-y-4">
-              <div className="space-y-3">
-                <div>
-                  <Label className="text-sm font-medium mb-2 block">Abriu vaga para substituição?</Label>
-                  <RadioGroup
-                    value={naoPertenceUnidade ? 'pertence' : (abriuVaga === true ? 'sim' : abriuVaga === false ? 'nao' : '')}
-                    onValueChange={(value) => {
-                      let updates: any = {};
-                      if (value === 'sim') {
-                        updates = { abriu_vaga: true, nao_pertence_unidade: false };
-                      } else if (value === 'nao') {
-                        updates = { abriu_vaga: false, nao_pertence_unidade: false };
-                      } else if (value === 'pertence') {
-                        updates = { abriu_vaga: false, nao_pertence_unidade: true };
-                      }
-                      updateFormDataMap(vaga.id_evento, updates);
-                    }}
-                  >
-                    <div className="flex items-center space-x-2 mb-2">
-                      <RadioGroupItem value="sim" id={`sim-${vaga.id_evento}`} />
-                      <Label htmlFor={`sim-${vaga.id_evento}`} className="cursor-pointer">
-                        SIM
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2 mb-2">
-                      <RadioGroupItem value="nao" id={`nao-${vaga.id_evento}`} />
-                      <Label htmlFor={`nao-${vaga.id_evento}`} className="cursor-pointer">
-                        NÃO
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="pertence" id={`pertence-${vaga.id_evento}`} />
-                      <Label htmlFor={`pertence-${vaga.id_evento}`} className="cursor-pointer">
-                        Não pertence à unidade
-                      </Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
+              {/* Formulário de resposta */}
+              <div className="space-y-4">
+                {/* Painel de edição rápida */}
+                {onEditarEvento && (
                   <div>
-                    <Label htmlFor={`data-${vaga.id_evento}`} className="text-sm">
-                      Data Abertura{abriuVaga === true && <span className="text-red-500 ml-1">*</span>}
-                    </Label>
-                    <Input
-                      type="date"
-                      id={`data-${vaga.id_evento}`}
-                      className={`mt-1 ${abriuVaga === true && !dataAbertura ? 'border-red-400 focus:border-red-500' : ''}`}
-                      value={dataAbertura}
-                      onChange={(e) => {
-                        const updates: any = { data_abertura_vaga: e.target.value };
-                        if (e.target.value) updates.abriu_vaga = true;
-                        updateFormDataMap(vaga.id_evento, updates);
-                      }}
-                    />
-                    {abriuVaga === true && !dataAbertura && (
-                      <p className="text-xs text-red-500 mt-1">Campo obrigatório</p>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-xs font-bold uppercase text-slate-400">Editar Resposta</h4>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!modoEdicao) {
+                            setEditDataAbertura(currentResp.data_abertura_vaga || '');
+                            setEditDataFechamento(currentResp.data_fechamento_vaga || '');
+                            setEditNomeCandidato(currentResp.nome_candidato || '');
+                            setEditIdEventoMae(currentResp.id_evento_mae != null ? String(currentResp.id_evento_mae) : '');
+                          }
+                          setModoEdicao(v => !v);
+                          setErroEdicao(null);
+                        }}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors ${modoEdicao ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}`}
+                      >
+                        <Pencil size={12} />
+                        {modoEdicao ? 'Cancelar edição' : 'Editar'}
+                      </button>
+                    </div>
+                    {modoEdicao && (
+                      <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Data de abertura</label>
+                            <input
+                              type="date"
+                              className="w-full p-2 text-sm border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 dark:text-slate-200"
+                              value={editDataAbertura}
+                              onChange={(e) => setEditDataAbertura(e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Data de fechamento</label>
+                            <input
+                              type="date"
+                              className="w-full p-2 text-sm border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 dark:text-slate-200"
+                              value={editDataFechamento}
+                              onChange={(e) => setEditDataFechamento(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Nome do substituto</label>
+                          <FuncionarioCombobox
+                            value={editNomeCandidato}
+                            onChange={(val) => setEditNomeCandidato(val)}
+                            cargoAlvo={vaga.cargo}
+                            lotacaoAlvo={vaga.lotacao}
+                            nomeFantasiaAlvo={nomeContrato || undefined}
+                            cnpjAlvo={vaga.cnpj}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
+                            ID Vaga Mãe <span className="font-normal text-slate-400 normal-case">(opcional — encadear com afastamento anterior)</span>
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            placeholder="Ex: 10162"
+                            className="w-full p-2 text-sm border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 dark:text-slate-200"
+                            value={editIdEventoMae}
+                            onChange={(e) => setEditIdEventoMae(e.target.value)}
+                          />
+                        </div>
+                        {erroEdicao && (
+                          <p className="text-xs text-red-600 flex items-center gap-1">
+                            <AlertTriangle size={12} /> {erroEdicao}
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          disabled={salvandoEdicao}
+                          onClick={async () => {
+                            setSalvandoEdicao(true);
+                            setErroEdicao(null);
+                            const idMaeNum = editIdEventoMae.trim() ? parseInt(editIdEventoMae, 10) : null;
+                            try {
+                              await onEditarEvento(vaga.id_evento, tipoOrigem, {
+                                data_abertura_vaga: editDataAbertura || undefined,
+                                data_fechamento_vaga: editDataFechamento || undefined,
+                                nome_candidato: editNomeCandidato || undefined,
+                                id_evento_mae: isNaN(idMaeNum as number) ? null : idMaeNum,
+                              });
+                              setModoEdicao(false);
+                            } catch (err: any) {
+                              setErroEdicao(err?.message || 'Erro ao salvar');
+                            } finally {
+                              setSalvandoEdicao(false);
+                            }
+                          }}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors"
+                        >
+                          {salvandoEdicao && <Loader2 size={12} className="animate-spin" />}
+                          {salvandoEdicao ? 'Salvando...' : 'Salvar Alterações'}
+                        </button>
+                      </div>
                     )}
                   </div>
+                )}
+                <div className="space-y-3">
                   <div>
-                    <Label htmlFor={`preench-${vaga.id_evento}`} className="text-sm">
-                      Vaga Preenchida?
-                    </Label>
-                    <Select
-                      value={vagaPreenchida}
-                      onValueChange={(value) =>
-                        updateFormDataMap(vaga.id_evento, { vaga_preenchida: value as 'SIM' | 'NAO' })
-                      }
+                    <Label className="text-sm font-medium mb-2 block">Abriu vaga para substituição?</Label>
+                    <RadioGroup
+                      value={naoPertenceUnidade ? 'pertence' : (abriuVaga === true ? 'sim' : abriuVaga === false ? 'nao' : '')}
+                      onValueChange={(value) => {
+                        let updates: any = {};
+                        if (value === 'sim') {
+                          updates = { abriu_vaga: true, nao_pertence_unidade: false };
+                        } else if (value === 'nao') {
+                          updates = { abriu_vaga: false, nao_pertence_unidade: false };
+                        } else if (value === 'pertence') {
+                          updates = { abriu_vaga: false, nao_pertence_unidade: true };
+                        }
+                        updateFormDataMap(vaga.id_evento, updates);
+                      }}
                     >
-                      <SelectTrigger id={`preench-${vaga.id_evento}`} className="mt-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="SIM">SIM</SelectItem>
-                        <SelectItem value="NAO">NÃO</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      <div className="flex items-center space-x-2 mb-2">
+                        <RadioGroupItem value="sim" id={`sim-${vaga.id_evento}`} />
+                        <Label htmlFor={`sim-${vaga.id_evento}`} className="cursor-pointer">
+                          SIM
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2 mb-2">
+                        <RadioGroupItem value="nao" id={`nao-${vaga.id_evento}`} />
+                        <Label htmlFor={`nao-${vaga.id_evento}`} className="cursor-pointer">
+                          NÃO
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="pertence" id={`pertence-${vaga.id_evento}`} />
+                        <Label htmlFor={`pertence-${vaga.id_evento}`} className="cursor-pointer">
+                          Não pertence à unidade
+                        </Label>
+                      </div>
+                    </RadioGroup>
                   </div>
-                </div>
 
-                {vagaPreenchida === 'SIM' && (
-                  <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label htmlFor={`fechamento-${vaga.id_evento}`} className="text-sm">
-                        Data Fechamento <span className="text-red-500">*</span>
+                      <Label htmlFor={`data-${vaga.id_evento}`} className="text-sm">
+                        Data Abertura{abriuVaga === true && <span className="text-red-500 ml-1">*</span>}
                       </Label>
                       <Input
                         type="date"
-                        id={`fechamento-${vaga.id_evento}`}
-                        className={`mt-1 ${!dataFechamento ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : ''}`}
-                        value={dataFechamento}
-                        onChange={(e) => updateFormDataMap(vaga.id_evento, { data_fechamento_vaga: e.target.value })}
+                        id={`data-${vaga.id_evento}`}
+                        className={`mt-1 ${abriuVaga === true && !dataAbertura ? 'border-red-400 focus:border-red-500' : ''}`}
+                        value={dataAbertura}
+                        onChange={(e) => {
+                          const updates: any = { data_abertura_vaga: e.target.value };
+                          if (e.target.value) updates.abriu_vaga = true;
+                          updateFormDataMap(vaga.id_evento, updates);
+                        }}
                       />
-                      {!dataFechamento && (
+                      {abriuVaga === true && !dataAbertura && (
                         <p className="text-xs text-red-500 mt-1">Campo obrigatório</p>
                       )}
-                      {dataFechamento && dataAbertura && (() => {
-                        const diasEntreAberturaEFechamento = Math.floor(
-                          (new Date(dataFechamento + 'T00:00:00').getTime() - new Date(dataAbertura + 'T00:00:00').getTime()) /
-                          (1000 * 60 * 60 * 24)
-                        );
-                        return diasEntreAberturaEFechamento > 180 ? (
-                          <div className="mt-1.5 flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2 py-1.5">
-                            <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-                            <span>
-                              O intervalo entre abertura e fechamento é de <strong>{diasEntreAberturaEFechamento} dias</strong>. Confirme se o fechamento realmente ocorreu em {new Date(dataFechamento + 'T00:00:00').toLocaleDateString('pt-BR')}.
-                            </span>
-                          </div>
-                        ) : null;
-                      })()}
                     </div>
                     <div>
-                      <Label htmlFor={`substituto-${vaga.id_evento}`} className="text-sm mb-2 block">
-                        Nome do Substituto
+                      <Label htmlFor={`preench-${vaga.id_evento}`} className="text-sm">
+                        Vaga Preenchida?
                       </Label>
-                      <div className="relative">
-                        <FuncionarioCombobox
-                          value={nomeCandidato}
-                          onChange={(val) => updateFormDataMap(vaga.id_evento, { nome_candidato: val })}
-                          cargoAlvo={vaga.cargo}
-                          lotacaoAlvo={vaga.lotacao}
-                          nomeFantasiaAlvo={nomeContrato || undefined}
-                          cnpjAlvo={vaga.cnpj}
-                        />
-                        {nomeCandidato && (
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              copyWithFeedback(nomeCandidato, 'nome-candidato');
-                            }}
-                            title="Copiar nome do substituto"
-                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
-                            type="button"
-                          >
-                            {copiado === 'nome-candidato' ? (
-                              <Check className="w-4 h-4 text-green-600" />
-                            ) : (
-                              <Copy className="w-4 h-4 text-slate-600 dark:text-slate-400" />
-                            )}
-                          </button>
-                        )}
-                      </div>
+                      <Select
+                        value={vagaPreenchida}
+                        onValueChange={(value) =>
+                          updateFormDataMap(vaga.id_evento, { vaga_preenchida: value as 'SIM' | 'NAO' })
+                        }
+                      >
+                        <SelectTrigger id={`preench-${vaga.id_evento}`} className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="SIM">SIM</SelectItem>
+                          <SelectItem value="NAO">NÃO</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
-                )}
 
-                <div>
-                  <Label htmlFor={`obs-${vaga.id_evento}`} className="text-sm">
-                    Observações
-                  </Label>
-                  <textarea
-                    id={`obs-${vaga.id_evento}`}
-                    className="w-full mt-1 p-2 text-sm border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 dark:text-slate-200"
-                    rows={2}
-                    placeholder="Adicione observações..."
-                    value={observacao}
-                    onChange={(e) => updateFormDataMap(vaga.id_evento, { observacao: e.target.value })}
-                  />
+                  {vagaPreenchida === 'SIM' && (
+                    <div className="space-y-3">
+                      <div>
+                        <Label htmlFor={`fechamento-${vaga.id_evento}`} className="text-sm">
+                          Data Fechamento <span className="text-red-500">*</span>
+                        </Label>
+                        <Input
+                          type="date"
+                          id={`fechamento-${vaga.id_evento}`}
+                          className={`mt-1 ${!dataFechamento ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : ''}`}
+                          value={dataFechamento}
+                          onChange={(e) => updateFormDataMap(vaga.id_evento, { data_fechamento_vaga: e.target.value })}
+                        />
+                        {!dataFechamento && (
+                          <p className="text-xs text-red-500 mt-1">Campo obrigatório</p>
+                        )}
+                        {dataFechamento && dataAbertura && (() => {
+                          const diasEntreAberturaEFechamento = Math.floor(
+                            (new Date(dataFechamento + 'T00:00:00').getTime() - new Date(dataAbertura + 'T00:00:00').getTime()) /
+                            (1000 * 60 * 60 * 24)
+                          );
+                          return diasEntreAberturaEFechamento > 180 ? (
+                            <div className="mt-1.5 flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2 py-1.5">
+                              <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                              <span>
+                                O intervalo entre abertura e fechamento é de <strong>{diasEntreAberturaEFechamento} dias</strong>. Confirme se o fechamento realmente ocorreu em {new Date(dataFechamento + 'T00:00:00').toLocaleDateString('pt-BR')}.
+                              </span>
+                            </div>
+                          ) : null;
+                        })()}
+                      </div>
+                      <div>
+                        <Label htmlFor={`substituto-${vaga.id_evento}`} className="text-sm mb-2 block">
+                          Nome do Substituto
+                        </Label>
+                        <div className="relative">
+                          <FuncionarioCombobox
+                            value={nomeCandidato}
+                            onChange={(val) => updateFormDataMap(vaga.id_evento, { nome_candidato: val })}
+                            cargoAlvo={vaga.cargo}
+                            lotacaoAlvo={vaga.lotacao}
+                            nomeFantasiaAlvo={nomeContrato || undefined}
+                            cnpjAlvo={vaga.cnpj}
+                          />
+                          {nomeCandidato && (
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                copyWithFeedback(nomeCandidato, 'nome-candidato');
+                              }}
+                              title="Copiar nome do substituto"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
+                              type="button"
+                            >
+                              {copiado === 'nome-candidato' ? (
+                                <Check className="w-4 h-4 text-green-600" />
+                              ) : (
+                                <Copy className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <Label htmlFor={`obs-${vaga.id_evento}`} className="text-sm">
+                      Observações
+                    </Label>
+                    <textarea
+                      id={`obs-${vaga.id_evento}`}
+                      className="w-full mt-1 p-2 text-sm border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 dark:text-slate-200"
+                      rows={2}
+                      placeholder="Adicione observações..."
+                      value={observacao}
+                      onChange={(e) => updateFormDataMap(vaga.id_evento, { observacao: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`efetiv-${vaga.id_evento}`}
+                      checked={pendenteEfetivacao === true}
+                      onCheckedChange={(checked) =>
+                        updateFormDataMap(vaga.id_evento, { pendente_efetivacao: checked === true })
+                      }
+                    />
+                    <Label htmlFor={`efetiv-${vaga.id_evento}`} className="text-sm cursor-pointer">
+                      Pendente efetivação
+                    </Label>
+                  </div>
                 </div>
 
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`efetiv-${vaga.id_evento}`}
-                    checked={pendenteEfetivacao === true}
-                    onCheckedChange={(checked) =>
-                      updateFormDataMap(vaga.id_evento, { pendente_efetivacao: checked === true })
-                    }
-                  />
-                  <Label htmlFor={`efetiv-${vaga.id_evento}`} className="text-sm cursor-pointer">
-                    Pendente efetivação
-                  </Label>
-                </div>
-              </div>
+                {/* Seção Não Encontrada */}
+                {onMarcarNaoEncontrada && (isNaoEncontrada ? (
+                  <div className="mb-4 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg space-y-2">
+                    <p className="text-xs font-semibold text-orange-800 dark:text-orange-300 flex items-center gap-1">
+                      <SearchX size={13} /> Esta vaga foi sinalizada como não encontrada.
+                    </p>
+                    {respostas[vaga.id_evento]?.observacao_nao_encontrada && (
+                      <p className="text-xs text-orange-700 dark:text-orange-400 italic">
+                        Obs.: {respostas[vaga.id_evento].observacao_nao_encontrada}
+                      </p>
+                    )}
+                    <button
+                      onClick={() => onMarcarNaoEncontrada(vaga.id_evento, tipoOrigem, false)}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded text-xs font-medium transition-colors"
+                      type="button"
+                    >
+                      <Undo2 size={13} /> Devolver para fila original
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mb-4 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg space-y-2">
+                    <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                      <SearchX size={13} /> Não conseguiu encontrar esta vaga?
+                    </p>
+                    <textarea
+                      className="w-full p-2 text-xs border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 dark:text-slate-200 resize-none"
+                      rows={2}
+                      placeholder="Descreva o que foi tentado (opcional)..."
+                      value={obsNaoEncontrada}
+                      onChange={(e) => setObsNaoEncontrada(e.target.value)}
+                    />
+                    <button
+                      onClick={() => onMarcarNaoEncontrada(vaga.id_evento, tipoOrigem, true, obsNaoEncontrada || undefined)}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded text-xs font-medium transition-colors"
+                      type="button"
+                    >
+                      <SearchX size={13} /> Sinalizar como Não Encontrada
+                    </button>
+                  </div>
+                ))}
 
-              {/* Seção Não Encontrada */}
-              {onMarcarNaoEncontrada && (isNaoEncontrada ? (
-                <div className="mb-4 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg space-y-2">
-                  <p className="text-xs font-semibold text-orange-800 dark:text-orange-300 flex items-center gap-1">
-                    <SearchX size={13} /> Esta vaga foi sinalizada como não encontrada.
-                  </p>
-                  {respostas[vaga.id_evento]?.observacao_nao_encontrada && (
-                    <p className="text-xs text-orange-700 dark:text-orange-400 italic">
-                      Obs.: {respostas[vaga.id_evento].observacao_nao_encontrada}
+                <div className="flex gap-3">
+                  {/* Botão Arquivar/Desarquivar */}
+                  {onArquivar && !isNaoEncontrada && (
+                    <button
+                      onClick={() => onArquivar(vaga.id_evento, tipoOrigem, !isArquivada)}
+                      className={`px-4 py-2 ${isArquivada ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-600 hover:bg-slate-700'} text-white rounded font-medium text-sm transition-colors flex items-center gap-2 shadow-sm`}
+                      title={isArquivada ? "Reabrir Vaga" : "Cancelar Vaga"}
+                    >
+                      {isArquivada ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+                      {isArquivada ? 'Reabrir' : 'Cancelar'}
+                    </button>
+                  )}
+
+                  {/* Botão Salvar Resposta (MAIOR) */}
+                  {isNaoEncontrada ? null : isPendenteEf ? (
+                    <button
+                      onClick={() => handleEfetivar(vaga.id_evento, tipoOrigem)}
+                      disabled={respondendo[vaga.id_evento]}
+                      className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded font-medium text-sm flex items-center justify-center gap-2 shadow-sm transition-colors"
+                    >
+                      {respondendo[vaga.id_evento] && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {respondendo[vaga.id_evento] ? 'Confirmando...' : 'Confirmar Contratação'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleResponder(vaga.id_evento, tipoOrigem)}
+                      disabled={respondendo[vaga.id_evento]}
+                      className={`flex-1 px-4 py-2 disabled:opacity-50 text-white rounded font-medium text-sm flex items-center justify-center gap-2 shadow-sm transition-colors ${abaSelecionada === 'fechadas' ? 'bg-slate-500 hover:bg-slate-600' : 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400'}`}
+                    >
+                      {respondendo[vaga.id_evento] && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {respondendo[vaga.id_evento] ? 'Salvando...' : abaSelecionada === 'fechadas' ? 'Atualizar Fechamento' : 'Salvar Resposta'}
+                    </button>
+                  )}
+
+                  {erroFechamento === vaga.id_evento && (
+                    <p className="w-full text-xs text-red-600 font-medium text-center">
+                      Informe a data de fechamento da vaga antes de salvar.
                     </p>
                   )}
-                  <button
-                    onClick={() => onMarcarNaoEncontrada(vaga.id_evento, tipoOrigem, false)}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded text-xs font-medium transition-colors"
-                    type="button"
-                  >
-                    <Undo2 size={13} /> Devolver para fila original
-                  </button>
+
+                  {erroSalvar?.[vaga.id_evento] && (
+                    <p className="w-full text-xs text-red-600 font-medium text-center flex items-center justify-center gap-1">
+                      <AlertTriangle className="w-3 h-3" />
+                      Erro ao salvar: {erroSalvar[vaga.id_evento]}
+                    </p>
+                  )}
+
+                  {abaSelecionada === 'respondidas' && (
+                    <button
+                      onClick={() => handleResponder(vaga.id_evento, tipoOrigem)}
+                      disabled={respondendo[vaga.id_evento]}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded font-medium text-sm transition-colors"
+                    >
+                      Atualizar
+                    </button>
+                  )}
+
+                  {/* Botão Atribuir */}
+                  {onAtribuir && !isNaoEncontrada && (
+                    <button
+                      onClick={() => onAtribuir(vaga)}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-sm transition-colors flex items-center gap-2 shadow-sm"
+                      title="Atribuir Vaga a Analista"
+                    >
+                      <UserPlus size={16} />
+                      Atribuir
+                    </button>
+                  )}
                 </div>
-              ) : (
-                <div className="mb-4 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg space-y-2">
-                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1">
-                    <SearchX size={13} /> Não conseguiu encontrar esta vaga?
-                  </p>
-                  <textarea
-                    className="w-full p-2 text-xs border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 dark:text-slate-200 resize-none"
-                    rows={2}
-                    placeholder="Descreva o que foi tentado (opcional)..."
-                    value={obsNaoEncontrada}
-                    onChange={(e) => setObsNaoEncontrada(e.target.value)}
-                  />
-                  <button
-                    onClick={() => onMarcarNaoEncontrada(vaga.id_evento, tipoOrigem, true, obsNaoEncontrada || undefined)}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded text-xs font-medium transition-colors"
-                    type="button"
-                  >
-                    <SearchX size={13} /> Sinalizar como Não Encontrada
-                  </button>
-                </div>
-              ))}
-
-              <div className="flex gap-3">
-                {/* Botão Arquivar/Desarquivar */}
-                {onArquivar && !isNaoEncontrada && (
-                  <button
-                    onClick={() => onArquivar(vaga.id_evento, tipoOrigem, !isArquivada)}
-                    className={`px-4 py-2 ${isArquivada ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-600 hover:bg-slate-700'} text-white rounded font-medium text-sm transition-colors flex items-center gap-2 shadow-sm`}
-                    title={isArquivada ? "Reabrir Vaga" : "Cancelar Vaga"}
-                  >
-                    {isArquivada ? <ArchiveRestore size={16} /> : <Archive size={16} />}
-                    {isArquivada ? 'Reabrir' : 'Cancelar'}
-                  </button>
-                )}
-
-                {/* Botão Salvar Resposta (MAIOR) */}
-                {isNaoEncontrada ? null : isPendenteEf ? (
-                  <button
-                    onClick={() => handleEfetivar(vaga.id_evento, tipoOrigem)}
-                    disabled={respondendo[vaga.id_evento]}
-                    className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded font-medium text-sm flex items-center justify-center gap-2 shadow-sm transition-colors"
-                  >
-                    {respondendo[vaga.id_evento] && <Loader2 className="w-4 h-4 animate-spin" />}
-                    {respondendo[vaga.id_evento] ? 'Confirmando...' : 'Confirmar Contratação'}
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleResponder(vaga.id_evento, tipoOrigem)}
-                    disabled={respondendo[vaga.id_evento]}
-                    className={`flex-1 px-4 py-2 disabled:opacity-50 text-white rounded font-medium text-sm flex items-center justify-center gap-2 shadow-sm transition-colors ${abaSelecionada === 'fechadas' ? 'bg-slate-500 hover:bg-slate-600' : 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400'}`}
-                  >
-                    {respondendo[vaga.id_evento] && <Loader2 className="w-4 h-4 animate-spin" />}
-                    {respondendo[vaga.id_evento] ? 'Salvando...' : abaSelecionada === 'fechadas' ? 'Atualizar Fechamento' : 'Salvar Resposta'}
-                  </button>
-                )}
-
-                {erroFechamento === vaga.id_evento && (
-                  <p className="w-full text-xs text-red-600 font-medium text-center">
-                    Informe a data de fechamento da vaga antes de salvar.
-                  </p>
-                )}
-
-                {erroSalvar?.[vaga.id_evento] && (
-                  <p className="w-full text-xs text-red-600 font-medium text-center flex items-center justify-center gap-1">
-                    <AlertTriangle className="w-3 h-3" />
-                    Erro ao salvar: {erroSalvar[vaga.id_evento]}
-                  </p>
-                )}
-
-                {abaSelecionada === 'respondidas' && (
-                  <button
-                    onClick={() => handleResponder(vaga.id_evento, tipoOrigem)}
-                    disabled={respondendo[vaga.id_evento]}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded font-medium text-sm transition-colors"
-                  >
-                    Atualizar
-                  </button>
-                )}
-
-                {/* Botão Atribuir */}
-                {onAtribuir && !isNaoEncontrada && (
-                  <button
-                    onClick={() => onAtribuir(vaga)}
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-sm transition-colors flex items-center gap-2 shadow-sm"
-                    title="Atribuir Vaga a Analista"
-                  >
-                    <UserPlus size={16} />
-                    Atribuir
-                  </button>
-                )}
               </div>
             </div>
-          </div>
-        </CardContent>
-      )
-      }
-    </Card >
+          </CardContent>
+        )
+        }
+      </Card>
+    </>
   );
 }

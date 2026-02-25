@@ -123,18 +123,51 @@ export const atribuicaoService = {
 
         const { error } = await supabase
             .from('vagas_analista')
-            .insert({
-                id_evento: realIdEvento,
-                id_analista: data.id_analista,
-                cnpj: data.cnpj,
-                ativo: true
-            });
+            .upsert(
+                {
+                    id_evento: realIdEvento,
+                    id_analista: data.id_analista,
+                    cnpj: data.cnpj,
+                    ativo: true
+                },
+                { onConflict: 'id_evento,id_analista', ignoreDuplicates: true }
+            );
 
         if (error) {
-            // Se falhar e for constraint de FK, e não tivermos tentado criar ainda...
-            if (error.code === '23503' && !data._needs_creation && data._id_funcionario) {
-                // Retry logic could go here, but recursion is risky inside a simple function.
-                // Better to assume the frontend passes _needs_creation correctly.
+            // 23505 = unique violation: já atribuído, trata como sucesso silencioso
+            if (error.code === '23505') {
+                return realIdEvento;
+            }
+            // FK violation: id_evento é um fallback (oris.id) que não existe em eventos_movimentacao.
+            // Tentar recuperar o evento real buscando pelo id_funcionario.
+            if (error.code === '23503') {
+                const funcId = data._id_funcionario ?? realIdEvento;
+                const { data: eventoReal } = await supabase
+                    .from('eventos_movimentacao')
+                    .select('id_evento')
+                    .eq('id_funcionario', funcId)
+                    .eq('tipo_evento', 'AFASTAMENTO')
+                    .order('data_evento', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (eventoReal) {
+                    const { error: retryError } = await supabase
+                        .from('vagas_analista')
+                        .upsert(
+                            {
+                                id_evento: eventoReal.id_evento,
+                                id_analista: data.id_analista,
+                                cnpj: data.cnpj,
+                                ativo: true
+                            },
+                            { onConflict: 'id_evento,id_analista', ignoreDuplicates: true }
+                        );
+                    // 23505 = já atribuído, tudo bem
+                    if (!retryError || retryError.code === '23505') {
+                        return eventoReal.id_evento;
+                    }
+                }
             }
             throw new Error(`Erro ao atribuir vaga: ${error.message}`);
         }

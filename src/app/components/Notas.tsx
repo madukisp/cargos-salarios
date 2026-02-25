@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNotas, Nota } from '@/app/hooks/useNotas';
+import { useNotas, type Nota } from '@/app/hooks/useNotas';
 import { useAuth } from '@/app/hooks/useAuth';
 import { Plus, Trash2, Edit2 } from 'lucide-react';
 import { Button } from './ui/button';
@@ -398,7 +398,14 @@ export default function Notas() {
                   <div className="text-xs text-slate-600 dark:text-slate-400 mb-3">
                     <div>{nota.autor}</div>
                     <div>
-                      {new Date(nota.criado_em).toLocaleDateString('pt-BR')}
+                      {new Date(nota.criado_em).toLocaleString('pt-BR', {
+                        timeZone: 'America/Sao_Paulo',
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
                     </div>
                   </div>
 

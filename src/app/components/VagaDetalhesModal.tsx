@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import ReactConfetti from 'react-confetti';
-import { X, Loader2, AlertCircle, Search, CheckCircle, ChevronsUpDown, Check, FileSpreadsheet } from 'lucide-react';
+import { X, Loader2, AlertCircle, Search, CheckCircle, ChevronsUpDown, Check, FileSpreadsheet, Copy } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { formatarData } from '@/lib/column-formatters';
 import { VagaAtribuida } from '@/app/services/agendaAnalistasService';
@@ -234,6 +234,7 @@ function VagaDetalhesModal({ vaga, onClose, onVagaFechada }: VagaDetalhesModalPr
   const [salvandoSubstituto, setSalvandoSubstituto] = useState(false);
   const [nomeSubstitutoManual, setNomeSubstitutoManual] = useState('');
   const [forcarRecarregamento, setForcarRecarregamento] = useState(0);
+  const [copiadoIdResposta, setCopiadoIdResposta] = useState(false);
 
   // Base BI RH — hover card
   const [biData, setBiData] = useState<{ rows: Record<string, any>[]; headers: string[] } | null>(null);
@@ -330,6 +331,9 @@ function VagaDetalhesModal({ vaga, onClose, onVagaFechada }: VagaDetalhesModalPr
         console.log('✅ Dados completos carregados:', {
           nome_candidato_final: respostaData?.nome_candidato || 'VAZIO',
           funcionario_atual: substitutoData?.nome || 'NENHUM',
+          id_resposta: respostaData?.id_resposta,
+          todasRespostas_count: todasRespostas?.length,
+          respostaData_completa: respostaData,
         });
 
         setDetalhes({
@@ -983,7 +987,7 @@ function VagaDetalhesModal({ vaga, onClose, onVagaFechada }: VagaDetalhesModalPr
                 )}
 
                 {/* Lotação e Contrato */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
+                <div className={`grid grid-cols-1 gap-6 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600 ${detalhes.resposta?.id_resposta ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
                   <div>
                     <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mb-1">Lotação</p>
                     <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{vaga.lotacao}</p>
@@ -992,6 +996,47 @@ function VagaDetalhesModal({ vaga, onClose, onVagaFechada }: VagaDetalhesModalPr
                     <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mb-1">CNPJ</p>
                     <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{vaga.cnpj}</p>
                   </div>
+                  {detalhes.resposta?.id_resposta && (
+                    <div>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mb-1">ID Resposta</p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-mono font-bold text-slate-900 dark:text-slate-100">
+                          #{detalhes.resposta.id_resposta}
+                        </span>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(String(detalhes.resposta.id_resposta));
+                              setCopiadoIdResposta(true);
+                              setTimeout(() => setCopiadoIdResposta(false), 2000);
+                            } catch (err) {
+                              console.error('Erro ao copiar:', err);
+                              // Fallback: selecionar texto e copiar
+                              const text = String(detalhes.resposta.id_resposta);
+                              const textarea = document.createElement('textarea');
+                              textarea.value = text;
+                              document.body.appendChild(textarea);
+                              textarea.select();
+                              document.execCommand('copy');
+                              document.body.removeChild(textarea);
+                              setCopiadoIdResposta(true);
+                              setTimeout(() => setCopiadoIdResposta(false), 2000);
+                            }
+                          }}
+                          className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                          title="Copiar ID"
+                        >
+                          {copiadoIdResposta
+                            ? <Check className="w-3.5 h-3.5 text-green-500" />
+                            : <Copy className="w-3.5 h-3.5" />
+                          }
+                        </button>
+                        {copiadoIdResposta && (
+                          <span className="text-xs text-green-600 dark:text-green-400">Copiado!</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Data de Atribuição */}

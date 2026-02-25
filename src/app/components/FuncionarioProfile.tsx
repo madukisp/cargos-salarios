@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, Briefcase, Calendar, User, ArrowRightLeft, Loader2, ExternalLink, ArrowLeft } from 'lucide-react';
-import { getFormattedValue } from '@/lib/column-formatters';
-import { buscarRastreioVaga, RastreioVaga } from '@/app/services/demissoesService';
+import { X, Briefcase, Calendar, User, ArrowRightLeft, Loader2, ExternalLink, ArrowLeft, History, CheckCircle, Clock } from 'lucide-react';
+import { getFormattedValue, formatarData } from '@/lib/column-formatters';
+import { buscarRastreioVaga, buscarOcupantesVaga, RastreioVaga, OcupanteVaga } from '@/app/services/demissoesService';
 import { supabase } from '@/lib/supabase';
 
 interface FuncionarioProfileProps {
@@ -13,14 +13,20 @@ interface FuncionarioProfileProps {
 export function FuncionarioProfile({ funcionario, onClose, onBack }: FuncionarioProfileProps) {
   const [rastreio, setRastreio] = useState<RastreioVaga | null>(null);
   const [loadingRastreio, setLoadingRastreio] = useState(false);
+  const [ocupantes, setOcupantes] = useState<OcupanteVaga[]>([]);
+  const [loadingOcupantes, setLoadingOcupantes] = useState(false);
   const [linkedEmployee, setLinkedEmployee] = useState<any | null>(null);
 
   useEffect(() => {
     if (!funcionario?.id) return;
     setLoadingRastreio(true);
+    setLoadingOcupantes(true);
     buscarRastreioVaga(funcionario.id)
       .then(r => setRastreio(r))
       .finally(() => setLoadingRastreio(false));
+    buscarOcupantesVaga(funcionario.id)
+      .then(o => setOcupantes(o))
+      .finally(() => setLoadingOcupantes(false));
   }, [funcionario?.id]);
 
   const abrirPerfilVinculado = async (id: number) => {
@@ -171,6 +177,89 @@ export function FuncionarioProfile({ funcionario, onClose, onBack }: Funcionario
                     </div>
                   </div>
                 ))}
+
+                {/* Histórico da Vaga — todos os ocupantes da cadeia */}
+                {(loadingOcupantes || ocupantes.length > 0) && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-3 pb-2 border-b border-slate-200 dark:border-slate-700 flex items-center gap-2">
+                      <History className="w-4 h-4 text-purple-500" />
+                      Histórico da Vaga
+                    </h3>
+
+                    {loadingOcupantes ? (
+                      <div className="flex items-center gap-2 text-slate-400 text-sm py-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Carregando histórico...
+                      </div>
+                    ) : (
+                      <div className="relative pl-5">
+                        {/* Linha vertical da timeline */}
+                        <div className="absolute left-1.5 top-2 bottom-2 w-0.5 bg-slate-200 dark:bg-slate-700" />
+
+                        <div className="space-y-4">
+                          {ocupantes.map((oc, idx) => {
+                            const isAtual = oc.vaga_preenchida !== 'SIM';
+                            return (
+                              <div key={idx} className="relative">
+                                {/* Bolinha da timeline */}
+                                <div className={`absolute -left-3.5 top-1 w-3 h-3 rounded-full border-2 border-white dark:border-slate-800 ${isAtual ? 'bg-blue-500' : 'bg-slate-400'}`} />
+
+                                <div
+                                  className={`ml-1 p-3 rounded-lg border text-sm ${isAtual
+                                    ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+                                    : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'
+                                  } ${oc.id ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                                  onClick={() => oc.id && abrirPerfilVinculado(oc.id)}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                      <p className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                                        {oc.nome}
+                                      </p>
+                                      {oc.cargo && (
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                          {oc.cargo}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      {isAtual ? (
+                                        <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+                                          <Clock size={9} /> Em aberto
+                                        </span>
+                                      ) : (
+                                        <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400">
+                                          <CheckCircle size={9} /> Encerrada
+                                        </span>
+                                      )}
+                                      {oc.id && <ExternalLink className="w-3 h-3 text-slate-400" />}
+                                    </div>
+                                  </div>
+
+                                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                                    {oc.data_abertura && (
+                                      <span>
+                                        <span className="text-slate-400">De:</span> {formatarData(oc.data_abertura)}
+                                      </span>
+                                    )}
+                                    {oc.data_fechamento && (
+                                      <span>
+                                        <span className="text-slate-400">Até:</span> {formatarData(oc.data_fechamento)}
+                                      </span>
+                                    )}
+                                    <span className={`font-medium ${oc.tipo_evento === 'DEMISSAO' ? 'text-red-500' : 'text-blue-500'}`}>
+                                      {oc.tipo_evento === 'DEMISSAO' ? 'Demissão' : 'Afastamento'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Rastreio de Vaga */}
                 <div>

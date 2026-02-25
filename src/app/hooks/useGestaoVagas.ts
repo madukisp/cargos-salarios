@@ -12,9 +12,11 @@ import {
   carregarVagasEmAberto,
   carregarVagasNaoEncontradas,
   marcarVagaNaoEncontrada,
+  carregarVagasDerivadas,
   EventoDemissao,
   RespostaGestor,
   VagaEmAberto,
+  VagaDerivada,
 } from '@/app/services/demissoesService';
 
 export function useGestaoVagas() {
@@ -26,6 +28,7 @@ export function useGestaoVagas() {
   const [vagasNaoEncontradas, setVagasNaoEncontradas] = useState<EventoDemissao[]>([]);
   const [vagasEmAberto, setVagasEmAberto] = useState<VagaEmAberto[]>([]);
   const [respostas, setRespostas] = useState<Record<number, RespostaGestor>>({});
+  const [vagasDerivadas, setVagasDerivadas] = useState<Record<number, VagaDerivada[]>>({});
   const [lotacoes, setLotacoes] = useState<string[]>(['TODAS']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +50,7 @@ export function useGestaoVagas() {
         carregarVagasEmAberto(lotacao, cnpj),
         carregarVagasNaoEncontradas(lotacao, cnpj),
         carregarLotacoes(),
+        carregarVagasDerivadas(),
       ]);
 
       const demPendRaw       = results[0].status === 'fulfilled' ? results[0].value as any[] : [];
@@ -57,6 +61,7 @@ export function useGestaoVagas() {
       const vagasEmAbertoRaw = results[5].status === 'fulfilled' ? results[5].value as any[] : [];
       const naoEncontradasRaw= results[6].status === 'fulfilled' ? results[6].value as any[] : [];
       const lotacoesData     = results[7].status === 'fulfilled' ? results[7].value as string[] : ['TODAS'];
+      const vagasDerivadaData= results[8].status === 'fulfilled' ? results[8].value as Record<number, VagaDerivada[]> : {};
 
       // Combinar e desduplicar eventos
       // afastRespRaw garante que afastamentos com resposta apareçam mesmo se o funcionário já retornou ao trabalho
@@ -137,6 +142,7 @@ export function useGestaoVagas() {
       setVagasNaoEncontradas(naoEncontradas);
       setVagasEmAberto(vagasEmAbertoRaw);
       setLotacoes(lotacoesData || ['TODAS']);
+      setVagasDerivadas(vagasDerivadaData);
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao carregar dados';
@@ -213,6 +219,7 @@ export function useGestaoVagas() {
     vagasNaoEncontradas,
     vagasEmAberto,
     respostas,
+    vagasDerivadas,
     lotacoes,
     loading,
     error,

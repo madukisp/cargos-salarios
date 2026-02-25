@@ -164,7 +164,7 @@ function AgendaAnalistas() {
     const [loadingVagasSemAtribuicao, setLoadingVagasSemAtribuicao] = useState(false);
     const [vagaParaAtribuir, setVagaParaAtribuir] = useState<VagaSemAtribuicao | null>(null);
     const [vagaDetalhesAberta, setVagaDetalhesAberta] = useState<(VagaAtribuida & { nomeAnalista: string; cargoAnalista: string }) | null>(null);
-    const [expandirAbertasSemAtribuicao, setExpandirAbertasSemAtribuicao] = useState(true);
+    const [expandirAbertasSemAtribuicao, setExpandirAbertasSemAtribuicao] = useState(false);
     const [expandirFechadasSemAtribuicao, setExpandirFechadasSemAtribuicao] = useState(false);
     const [buscaSemAtribuicao, setBuscaSemAtribuicao] = useState('');
 
@@ -478,7 +478,7 @@ function AgendaAnalistas() {
                     data_abertura_vaga: mapaRespostas.get(e.id_evento)?.data_abertura_vaga ?? null,
                     data_fechamento_vaga: mapaRespostas.get(e.id_evento)?.data_fechamento_vaga ?? null,
                 };
-            }).sort((a, b) => b.dias_em_aberto - a.dias_em_aberto);
+            });
 
             setVagasSemAtribuicao(result);
         } catch (err) {
@@ -492,8 +492,27 @@ function AgendaAnalistas() {
         abertasSemAtribuicao,
         fechadasSemAtribuicao
     } = useMemo(() => {
-        const todasAbertas = vagasSemAtribuicaoSP.filter(v => v.vaga_preenchida !== 'SIM');
-        const todasFechadas = vagasSemAtribuicaoSP.filter(v => v.vaga_preenchida === 'SIM');
+        // Função de ordenação reutilizável
+        const aplicarOrdenacao = (lista: VagaSemAtribuicao[]) => {
+            const sorted = [...lista];
+            if (ordenacao === 'alfabetica') {
+                sorted.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+            } else if (ordenacao === 'abertura') {
+                // Mais recentes primeiro pela data de abertura da vaga
+                sorted.sort((a, b) => {
+                    const da = a.data_abertura_vaga ? new Date(a.data_abertura_vaga).getTime() : 0;
+                    const db = b.data_abertura_vaga ? new Date(b.data_abertura_vaga).getTime() : 0;
+                    return db - da;
+                });
+            } else {
+                // 'antigas' → mais dias em aberto primeiro (padrão)
+                sorted.sort((a, b) => b.dias_em_aberto - a.dias_em_aberto);
+            }
+            return sorted;
+        };
+
+        const todasAbertas = aplicarOrdenacao(vagasSemAtribuicaoSP.filter(v => v.vaga_preenchida !== 'SIM'));
+        const todasFechadas = aplicarOrdenacao(vagasSemAtribuicaoSP.filter(v => v.vaga_preenchida === 'SIM'));
 
         const query = (buscaSemAtribuicao || busca).trim().toLowerCase();
 
@@ -522,7 +541,7 @@ function AgendaAnalistas() {
             abertasSemAtribuicao: filteredAbertas,
             fechadasSemAtribuicao: filteredFechadas
         };
-    }, [vagasSemAtribuicaoSP, busca, buscaSemAtribuicao]);
+    }, [vagasSemAtribuicaoSP, busca, buscaSemAtribuicao, ordenacao]);
 
     // Auto-expandir se houver resultados na busca, e recolher se não houver
     useEffect(() => {
@@ -811,7 +830,7 @@ function AgendaAnalistas() {
                                             {abertas.map(vaga => {
                                                 const statusBadge = getStatusBadge(vaga.dias_em_aberto);
                                                 return (
-                                                    <div key={vaga.id_evento} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg flex items-start justify-between gap-3 cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/30 dark:hover:bg-slate-700/30 transition-colors" onClick={() => setVagaDetalhesAberta(adaptarVagaSemAtribuicao(vaga))}>
+                                                    <div key={vaga.id_evento} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg flex items-start justify-between gap-3 cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/30 dark:hover:bg-slate-700/30 transition-colors" onClick={() => setVagaDetalhesAberta(adaptarVagaSemAtribuicao(vaga))} onMouseEnter={(e) => { if (biHoverTimer.current) clearTimeout(biHoverTimer.current); const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); const pos = { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 360) }; if (biHoverNome === vaga.nome) { setBiHoverPos(pos); return; } setBiHoverNome(vaga.nome); buscarRegistrosBIByNome(vaga.nome).then(d => { setBiHoverData(d); setBiHoverPos(pos); }); }} onMouseLeave={() => { biHoverTimer.current = setTimeout(() => { setBiHoverData(null); setBiHoverNome(null); }, 150); }}>
                                                         <div className="flex-1 min-w-0">
                                                             <div className="flex items-center gap-1 min-w-0">
                                                                 <p className="font-medium text-slate-900 dark:text-slate-100 text-sm truncate min-w-0">{vaga.nome}</p>
@@ -912,7 +931,7 @@ function AgendaAnalistas() {
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                             {fechadas.map(vaga => (
-                                                <div key={vaga.id_evento} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg flex items-start justify-between gap-3 cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/30 dark:hover:bg-slate-700/30 transition-colors" onClick={() => setVagaDetalhesAberta(adaptarVagaSemAtribuicao(vaga))}>
+                                                <div key={vaga.id_evento} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg flex items-start justify-between gap-3 cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/30 dark:hover:bg-slate-700/30 transition-colors" onClick={() => setVagaDetalhesAberta(adaptarVagaSemAtribuicao(vaga))} onMouseEnter={(e) => { if (biHoverTimer.current) clearTimeout(biHoverTimer.current); const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); const pos = { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 360) }; if (biHoverNome === vaga.nome) { setBiHoverPos(pos); return; } setBiHoverNome(vaga.nome); buscarRegistrosBIByNome(vaga.nome).then(d => { setBiHoverData(d); setBiHoverPos(pos); }); }} onMouseLeave={() => { biHoverTimer.current = setTimeout(() => { setBiHoverData(null); setBiHoverNome(null); }, 150); }}>
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-1 min-w-0">
                                                             <p className="font-medium text-slate-900 dark:text-slate-100 text-sm truncate min-w-0">{vaga.nome}</p>

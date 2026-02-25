@@ -283,13 +283,12 @@ export function NovaVagaMovimentacaoModal({
               onChange={(e) => setTipoMovimentacao(e.target.value)}
             >
               <option value="">Selecione o motivo...</option>
-              <option value="ENQUADRAMENTO">Enquadramento</option>
-              <option value="ALTERACAO_NOMENCLATURA">Alteração de Nomenclatura</option>
+              <option value="AUMENTO_QUADRO">Aumento de Quadro</option>
               <option value="PROMOCAO">Promoção</option>
+              <option value="ALTERACAO_NOMENCLATURA">Alteração de Nomenclatura</option>
               <option value="AUMENTO_CARGA_HORARIA">Aumento de Carga Horária</option>
               <option value="REDUCAO_CARGA_HORARIA">Redução de Carga Horária</option>
-              <option value="MERITO">Mérito</option>
-              <option value="CORRECAO_SALARIO">Correção de Salário</option>
+              <option value="MEDICAS">Vagas médicas</option>
             </select>
           </div>
 

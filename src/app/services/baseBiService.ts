@@ -10,11 +10,12 @@ export function normBI(s: string) {
 }
 
 export const BI_COLUNAS = [  
+  { label: 'Processo', chave: 'Nº PROCESSO' },
   { label: 'Analista', chave: 'ANALISTA RESPONSÁVEL PELO PROCESSO' },
   { label: 'Colaborador', chave: 'NOME - COLABORADOR' },
-  { label: 'Abertura da vaga', chave: 'ABERTURA' },
+  { label: 'Abertura', chave: 'ABERTURA' },
   { label: 'Fechamento', chave: 'FECHAMENTO' },
-  { label: 'Substituído por', chave: 'SUBSTITUIDO POR' },
+  { label: 'Substituto', chave: 'SUBSTITUIDO POR' },
   { label: 'Unidade', chave: 'UNIDADE' },
   { label: 'Função', chave: 'FUNÇÃO' },
   { label: 'Motivo', chave: 'MOTIVO DO DESLIGAMENTO' },
@@ -69,6 +70,24 @@ export async function buscarRegistrosBIByNome(nome: string): Promise<{ rows: Rec
   if (!nomeCol) return { rows: [], headers };
   const nomeNorm = normBI(nome);
   const rows = allRows.filter(r => normBI(String(r[nomeCol] ?? '')) === nomeNorm);
+
+  // O usuário solicitou que, se houver duplicidade, seja exibido o registro com o maior Nº Processo primeiro.
+  const colProcesso = headers.find(h => {
+    const n = normBI(h);
+    return n === 'n processo' || n === 'nº processo' || n === 'numero processo' || n === 'processo' || n === 'no processo' || n.includes('nº do processo');
+  });
+
+  if (colProcesso) {
+    rows.sort((a, b) => {
+      const parseNum = (val: any) => {
+        const s = String(val ?? '0').replace(/[^\d.,-]/g, '').replace(',', '.');
+        const n = parseFloat(s);
+        return isNaN(n) ? 0 : n;
+      };
+      return parseNum(b[colProcesso]) - parseNum(a[colProcesso]);
+    });
+  }
+
   return { rows, headers };
 }
 
