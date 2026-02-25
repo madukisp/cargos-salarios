@@ -348,8 +348,8 @@ export async function salvarResposta(
       todosOsDados: dados
     });
 
-    // Extrair apenas os campos que existem na tabela (excluir campos virtuais como nome_analista)
-    const { nome_analista, id_resposta, ...dadosTabela } = dados as RespostaGestor & { nome_analista?: string | null; id_resposta?: number };
+    // Extrair apenas os campos que existem na tabela (excluir campos virtuais como nome_analista e _substitutoAdmissao)
+    const { nome_analista, id_resposta, _substitutoAdmissao, ...dadosTabela } = dados as RespostaGestor & { nome_analista?: string | null; id_resposta?: number; _substitutoAdmissao?: string | null };
 
     // Sanitizar: converter strings vazias para null (evita erro de tipo em colunas date/integer do PostgreSQL)
     const dadosSanitizados = Object.fromEntries(
