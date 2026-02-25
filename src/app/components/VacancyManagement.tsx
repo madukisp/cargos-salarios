@@ -17,11 +17,11 @@ import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { useGestaoVagas } from '@/app/hooks/useGestaoVagas';
 import { useFantasiaFilter } from '@/app/hooks/useFantasiaFilter';
 import { buscarFuncionarioPorCpf, buscarFuncionarioPorNome, buscarSugestoesSubstitutos, excluirVagaMovimentacao, salvarResposta, VagaDerivada } from '@/app/services/demissoesService';
-import { buscarRegistrosBIByNome } from '@/app/services/baseBiService';
+import { buscarRegistrosBIByNome, normBI } from '@/app/services/baseBiService';
 import { FuncionarioProfile } from './FuncionarioProfile';
 import { useTlpData } from '@/app/hooks/useTlpData';
 import { StatusBadge } from './StatusBadge';
-import { formatarData } from '@/lib/column-formatters';
+import { formatarData, parseBrazilianDateToISO } from '@/lib/column-formatters';
 import { AtribuirVagaModal } from './AtribuirVagaModal';
 import { NovaVagaMovimentacaoModal } from './NovaVagaMovimentacaoModal';
 import { BiTooltipCard } from './BiTooltipCard';
@@ -1793,8 +1793,22 @@ function VagaCard({
     }
   }, [isExpanded, vaga.id_evento, erroFechamento, setErroFechamento]);
 
-  const currentResp = respostas[vaga.id_evento] || {};
-  const currentForm = formData[vaga.id_evento] || {};
+  const idNum = Number(vaga.id_evento);
+  const currentResp = respostas[idNum] || {};
+  const currentForm = formData[idNum] || {};
+
+  // Log para diagnosticar preenchimento
+  useEffect(() => {
+    if (isExpanded) {
+      console.log(`[VagaCard Debug] ID: ${idNum}`, {
+        nome: vaga.nome,
+        form: currentForm,
+        resp: currentResp,
+        abriuVaga: currentForm.abriu_vaga ?? currentResp.abriu_vaga,
+        dataAbertura: currentForm.data_abertura_vaga ?? currentResp.data_abertura_vaga
+      });
+    }
+  }, [isExpanded, idNum, currentForm, currentResp, vaga.nome]);
 
   // Função para copiar texto com feedback visual
   const copyWithFeedback = (text: string, fieldId: string) => {
@@ -2002,6 +2016,79 @@ function VagaCard({
       });
     }
   }, [vaga.id_evento, (vaga as any)._source, (vaga as any).data_abertura_vaga, formData, updateFormDataMap]);
+
+  // Efeito para pré-preencher dados da Base BI (Data Abertura)
+  useEffect(() => {
+    const idNum = Number(vaga.id_evento);
+    const formVal = formData[idNum]?.data_abertura_vaga;
+    const respVal = currentResp?.data_abertura_vaga;
+
+    const shouldPreFill = isExpanded && vaga.nome && !formVal && !respVal;
+
+    if (shouldPreFill) {
+      console.log(`[BI Pre-fill] Attempting for ${vaga.nome} (ID: ${idNum})`);
+      buscarRegistrosBIByNome(vaga.nome).then(d => {
+        if (d && d.rows.length > 0) {
+          // Procurar a primeira linha que tenha uma data de abertura válida
+          const colAbertura = d.headers.find(h => normBI(h).includes(normBI('ABERTURA')));
+
+          if (!colAbertura) {
+            console.warn(`[BI Pre-fill] Column "ABERTURA" not found in headers:`, d.headers);
+            return;
+          }
+
+          let isoDate: string | null = null;
+          let valorEncontrado = '';
+          let nomeSubstituto = '';
+
+          const colSubstituto = d.headers.find(h => normBI(h).includes(normBI('SUBSTITUIDO POR')));
+
+          for (const row of d.rows) {
+            // Data Abertura
+            const valor = String(row[colAbertura] ?? '').trim();
+            if (!isoDate && valor) {
+              const parsed = parseBrazilianDateToISO(valor);
+              if (parsed) {
+                isoDate = parsed;
+                valorEncontrado = valor;
+              }
+            }
+
+            // Substituto
+            if (colSubstituto && !nomeSubstituto) {
+              const sub = String(row[colSubstituto] ?? '').trim();
+              if (sub && sub !== '-' && sub !== '—') {
+                nomeSubstituto = sub;
+              }
+            }
+
+            if (isoDate && nomeSubstituto) break;
+          }
+
+          if (isoDate || nomeSubstituto) {
+            const updates: any = {};
+            if (isoDate) {
+              console.log(`[BI Pre-fill] Data found: "${valorEncontrado}" -> ISO: "${isoDate}"`);
+              updates.data_abertura_vaga = isoDate;
+              updates.abriu_vaga = true;
+            }
+            if (nomeSubstituto) {
+              console.log(`[BI Pre-fill] Substitute found: "${nomeSubstituto}"`);
+              updates.nome_candidato = nomeSubstituto;
+              updates.vaga_preenchida = 'SIM';
+            }
+
+            updateFormDataMap(idNum, updates);
+          } else {
+            console.log(`[BI Pre-fill] No valid info found in ${d.rows.length} rows for ${vaga.nome}`);
+          }
+        } else {
+          console.log(`[BI Pre-fill] No rows found in BI for ${vaga.nome}`);
+        }
+      });
+    }
+  }, [isExpanded, vaga.nome, vaga.id_evento, currentResp?.data_abertura_vaga, updateFormDataMap]); // Removido formData do array de dependências para evitar loops
+
 
   return (
     <>

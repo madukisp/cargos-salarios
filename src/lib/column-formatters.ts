@@ -109,3 +109,17 @@ export function hasFormatter(columnName: string): boolean {
 export function getFormattedColumns(): string[] {
   return Object.keys(COLUMN_FORMATTERS);
 }
+/**
+ * Converter data brasileira (DD/MM/YYYY) para formato ISO (YYYY-MM-DD)
+ */
+export function parseBrazilianDateToISO(dateStr: string): string | null {
+  if (!dateStr || !dateStr.includes('/')) return null;
+  const parts = dateStr.split('/');
+  if (parts.length === 3) {
+    const [day, month, year] = parts;
+    if (year.length === 4) {
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+  }
+  return null;
+}

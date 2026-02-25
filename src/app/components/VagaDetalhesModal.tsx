@@ -2,11 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import ReactConfetti from 'react-confetti';
 import { X, Loader2, AlertCircle, Search, CheckCircle, ChevronsUpDown, Check, FileSpreadsheet, Copy } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { formatarData } from '@/lib/column-formatters';
+import { formatarData, parseBrazilianDateToISO } from '@/lib/column-formatters';
 import { VagaAtribuida } from '@/app/services/agendaAnalistasService';
 import { Badge } from './ui/badge';
 import { buscarSugestoesSubstitutos, salvarResposta } from '@/app/services/demissoesService';
-import { buscarRegistrosBIByNome } from '@/app/services/baseBiService';
+import { buscarRegistrosBIByNome, normBI } from '@/app/services/baseBiService';
 import { BiTooltipCard } from './BiTooltipCard';
 
 interface VagaDetalhesModalProps {
@@ -201,7 +201,7 @@ function getStatusBadge(diasEmAberto: number) {
   }
 }
 
-function VagaDetalhesModal({ vaga, onClose, onVagaFechada }: VagaDetalhesModalProps) {
+export function VagaDetalhesModal({ vaga, onClose, onVagaFechada }: VagaDetalhesModalProps) {
   console.log('🎯 VagaDetalhesModal RENDERIZADO com vaga:', { id_evento: vaga.id_evento, nome_funcionario: vaga.nome_funcionario, timestamp: new Date().toISOString() });
 
   const [detalhes, setDetalhes] = useState<DetalhesCompletos>({
@@ -259,8 +259,53 @@ function VagaDetalhesModal({ vaga, onClose, onVagaFechada }: VagaDetalhesModalPr
   }, [vaga.id_evento]);
 
   useEffect(() => {
-    buscarRegistrosBIByNome(vaga.nome_funcionario).then(d => { setBiData(d); });
-  }, [vaga.nome_funcionario]);
+    const nomeBusca = (vaga as any).nome_funcionario || (vaga as any).nome;
+    if (nomeBusca) {
+      buscarRegistrosBIByNome(nomeBusca).then(d => { setBiData(d); });
+    }
+  }, [(vaga as any).nome_funcionario, (vaga as any).nome]);
+
+  // Pre-fill dataAbertura from Base BI
+  useEffect(() => {
+    const hasData = biData && biData.rows.length > 0;
+    const isDateEmpty = !dataAbertura && !detalhes.resposta?.data_abertura_vaga;
+
+    if (hasData && isDateEmpty) {
+      const colAbertura = biData.headers.find(h => normBI(h).includes(normBI('ABERTURA')));
+      const colSubstituto = biData.headers.find(h => normBI(h).includes(normBI('SUBSTITUIDO POR')));
+
+      if (colAbertura) {
+        let isoDate: string | null = null;
+        let nomeSubstituto = '';
+
+        for (const row of biData.rows) {
+          const valor = String(row[colAbertura] ?? '').trim();
+          if (!isoDate && valor) {
+            const parsed = parseBrazilianDateToISO(valor);
+            if (parsed) isoDate = parsed;
+          }
+
+          if (colSubstituto && !nomeSubstituto) {
+            const sub = String(row[colSubstituto] ?? '').trim();
+            if (sub && sub !== '-' && sub !== '—') {
+              nomeSubstituto = sub;
+            }
+          }
+          if (isoDate && nomeSubstituto) break;
+        }
+
+        if (isoDate) {
+          console.log(`[VagaDetalhesModal] Pre-filling Abertura from BI: ${isoDate}`);
+          setDataAbertura(isoDate);
+        }
+        if (nomeSubstituto && !searchSubstituto && !detalhes.resposta?.nome_candidato) {
+          console.log(`[VagaDetalhesModal] Pre-filling Substitute from BI: ${nomeSubstituto}`);
+          setSearchSubstituto(nomeSubstituto);
+        }
+      }
+    }
+  }, [biData, dataAbertura, detalhes.resposta?.data_abertura_vaga]);
+
 
   const handleBiEnter = () => {
     if (biHideTimer.current) clearTimeout(biHideTimer.current);
@@ -1141,4 +1186,4 @@ function VagaDetalhesModal({ vaga, onClose, onVagaFechada }: VagaDetalhesModalPr
   );
 }
 
-export { VagaDetalhesModal };
+
