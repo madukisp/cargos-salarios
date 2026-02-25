@@ -127,9 +127,8 @@ export function VacancyManagement() {
     setSelectedVagaForAtribuicao(vaga);
   };
 
-  // Filtros de tempo
-  const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: 5 }, (_, i) => String(currentYear - i));
+  // Filtros de tempo — apenas 2025 em diante
+  const years = ['2025', '2026'];
   const months = [
     { value: '1', label: 'Janeiro' }, { value: '2', label: 'Fevereiro' },
     { value: '3', label: 'Março' }, { value: '4', label: 'Abril' },
@@ -182,13 +181,9 @@ export function VacancyManagement() {
   // Usar lotações do hook quando carregarem
   const lotacoes = lotacoesFromHook;
 
-  // Aplicar filtro de data
+  // Aplicar filtro de data — filtra dados de 2025 em diante
   // Usa data_abertura_vaga se existir (na resposta ou no objeto), senão usa data_evento
   const applyDateFilter = useCallback((data: any[]) => {
-    if (selectedYear === 'TODOS' && selectedMonth === 'TODOS') {
-      return data;
-    }
-
     return data.filter((item) => {
       const dataReferencia = item.data_abertura_vaga
         || respostas[item.id_evento]?.data_abertura_vaga
@@ -200,6 +195,11 @@ export function VacancyManagement() {
       const year = String(eventDate.getFullYear());
       const month = String(eventDate.getMonth() + 1);
 
+      // Filtro obrigatório: apenas 2025 em diante
+      const year2025OrLater = parseInt(year) >= 2025;
+      if (!year2025OrLater) return false;
+
+      // Filtros opcionais: ano e mês selecionados
       const matchYear = selectedYear === 'TODOS' || year === selectedYear;
       const matchMonth = selectedMonth === 'TODOS' || month === selectedMonth;
 
