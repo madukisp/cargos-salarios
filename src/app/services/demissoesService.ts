@@ -52,6 +52,20 @@ export interface RespostaGestor {
   nao_encontrada?: boolean | null;
   observacao_nao_encontrada?: string | null;
   nome_analista?: string | null;
+  id_evento_mae?: number | null;
+}
+
+export interface VagaDerivada {
+  id_evento: number;
+  id_evento_mae: number;
+  nome_candidato: string | null;
+  data_abertura_vaga: string | null;
+  data_fechamento_vaga: string | null;
+  vaga_preenchida: 'SIM' | 'NAO' | null;
+  tipo_origem: 'DEMISSAO' | 'AFASTAMENTO';
+  nome_quem_saiu?: string;
+  cargo_quem_saiu?: string;
+  data_evento?: string;
 }
 
 export async function carregarDemissoes(
@@ -61,171 +75,68 @@ export async function carregarDemissoes(
 ): Promise<EventoDemissao[]> {
   try {
 
-    // --- Caminho RESPONDIDO: usa eventos_gestao_vagas_public como fonte primária ---
+    // --- Usa eventos_gestao_vagas_public como fonte primária para AMBOS os status ---
     // Evita o limite de 1.000 linhas do Supabase ao varrer oris_funcionarios (8.992 demitidos)
-    if (status === 'RESPONDIDO') {
-      let evQuery = supabase
-        .from('eventos_gestao_vagas_public')
-        .select('id_evento,nome,cargo,cnpj,data_evento,status_evento,dias_em_aberto,situacao_origem,lotacao')
-        .eq('status_evento', 'RESPONDIDO')
-        .eq('situacao_origem', '99-Demitido')
-        .order('data_evento', { ascending: false });
+    // A view já sincroniza automaticamente eventos de oris_funcionarios
+    let evQuery = supabase
+      .from('eventos_gestao_vagas_public')
+      .select('id_evento,nome,cargo,cnpj,data_evento,status_evento,dias_em_aberto,situacao_origem,lotacao')
+      .eq('status_evento', status)
+      .eq('situacao_origem', '99-Demitido')
+      .order('data_evento', { ascending: false });
 
-      if (lotacao && lotacao !== 'TODAS') {
-        evQuery = evQuery.eq('lotacao', lotacao);
-      }
-      if (cnpj && cnpj !== 'todos') {
-        evQuery = evQuery.eq('cnpj', cnpj);
-      }
-
-      const { data: eventos, error: evError } = await evQuery;
-      if (evError) throw evError;
-      if (!eventos || eventos.length === 0) return [];
-
-      // Enriquecer com tipo_rescisao, carga_horaria_semanal, escala do oris_funcionarios em blocos de 100 para evitar erro de URL longa
-      const nomes = eventos.map((e: any) => e.nome).filter(Boolean);
-      let mapaDetalhes: Record<string, any> = {};
-      
-      if (nomes.length > 0) {
-        const uniqueNomes = Array.from(new Set(nomes));
-        const CHUNK_SIZE = 100;
-        
-        for (let i = 0; i < uniqueNomes.length; i += CHUNK_SIZE) {
-          const chunk = uniqueNomes.slice(i, i + CHUNK_SIZE);
-          const { data: orisData } = await supabase
-            .from('oris_funcionarios')
-            .select('nome,tipo_rescisao,carga_horaria_semanal,escala')
-            .in('nome', chunk);
-            
-          (orisData || []).forEach((o: any) => { 
-            mapaDetalhes[o.nome] = o; 
-          });
-        }
-      }
-
-      const hoje = new Date();
-      hoje.setHours(0, 0, 0, 0);
-      return eventos.map((e: any) => {
-        const dataSaida = new Date(e.data_evento + 'T00:00:00');
-        const diasEmAberto = Math.ceil(Math.abs(hoje.getTime() - dataSaida.getTime()) / (1000 * 60 * 60 * 24));
-        const det = mapaDetalhes[e.nome] || {};
-        return {
-          id_evento: e.id_evento,
-          nome: e.nome,
-          cargo: e.cargo,
-          cnpj: e.cnpj,
-          data_evento: e.data_evento,
-          status_evento: 'RESPONDIDO' as const,
-          dias_em_aberto: diasEmAberto,
-          situacao_origem: e.situacao_origem || '99-Demitido',
-          lotacao: e.lotacao || 'Sem lotação',
-          tipo_rescisao: det.tipo_rescisao || null,
-          carga_horaria_semanal: det.carga_horaria_semanal || null,
-          escala: det.escala || null,
-        } as EventoDemissao;
-      });
-    }
-
-    // --- Caminho PENDENTE: varre oris_funcionarios para achar demitidos sem evento/resposta ---
-    // 1. Buscar demitidos recentes do oris_funcionarios
-    let query = supabase
-      .from('oris_funcionarios')
-      .select(
-        'id,nome,cargo,cnpj,dt_rescisao,tipo_rescisao,carga_horaria_semanal,escala,centro_custo,nome_fantasia,situacao'
-      )
-      .eq('situacao', '99-Demitido')
-      .order('dt_rescisao', { ascending: false });
-
-    const { data: demitidos, error: empError } = await query;
-    if (empError) throw empError;
-
-    if (!demitidos || demitidos.length === 0) return [];
-
-    // 2. Buscar eventos correspondentes em eventos_movimentacao em blocos
-    const funcIds = demitidos.map(d => d.id);
-    const mapaEventos: Record<number, number> = {};
-    
-    if (funcIds.length > 0) {
-      const CHUNK_SIZE = 100;
-      for (let i = 0; i < funcIds.length; i += CHUNK_SIZE) {
-        const chunk = funcIds.slice(i, i + CHUNK_SIZE);
-        const { data: eventosReais } = await supabase
-          .from('eventos_movimentacao')
-          .select('id_evento, id_funcionario, data_evento')
-          .in('id_funcionario', chunk)
-          .eq('situacao_origem', '99-Demitido');
-
-        if (eventosReais) {
-          eventosReais.forEach((ev: any) => {
-            mapaEventos[ev.id_funcionario] = ev.id_evento;
-          });
-        }
-      }
-    }
-
-    // 3. Buscar respostas apenas para os eventos dos funcionários em questão
-    // (evitar o limite de 1000 linhas do Supabase buscando tudo)
-    const idsParaVerificar = demitidos.map(d => {
-      const realIdEvento = mapaEventos[d.id];
-      return realIdEvento || d.id;
-    });
-
-    const respostasSet = new Set<number>();
-    if (idsParaVerificar.length > 0) {
-      const CHUNK_SIZE = 100;
-      for (let i = 0; i < idsParaVerificar.length; i += CHUNK_SIZE) {
-        const chunk = idsParaVerificar.slice(i, i + CHUNK_SIZE);
-        const { data: respostas } = await supabase
-          .from('respostas_gestor')
-          .select('id_evento')
-          .in('id_evento', chunk);
-        
-        (respostas || []).forEach(r => respostasSet.add(r.id_evento));
-      }
-    }
-
-    // 4. Filtrar apenas os que NÃO têm resposta (PENDENTE)
-    let demissoesFiltradas = demitidos.filter(d => {
-      const realIdEvento = mapaEventos[d.id];
-      const idParaChecar = realIdEvento || d.id;
-      return !respostasSet.has(idParaChecar);
-    });
-
-    // 5. Filtros de UI
     if (lotacao && lotacao !== 'TODAS') {
-      demissoesFiltradas = demissoesFiltradas.filter(d =>
-        d.centro_custo === lotacao || d.nome_fantasia === lotacao
-      );
+      evQuery = evQuery.eq('lotacao', lotacao);
     }
     if (cnpj && cnpj !== 'todos') {
-      demissoesFiltradas = demissoesFiltradas.filter(d => d.cnpj === cnpj);
+      evQuery = evQuery.eq('cnpj', cnpj);
     }
 
+    const { data: eventos, error: evError } = await evQuery;
+    if (evError) throw evError;
+    if (!eventos || eventos.length === 0) return [];
+
+    // Enriquecer com tipo_rescisao, carga_horaria_semanal, escala do oris_funcionarios em blocos de 100 para evitar erro de URL longa
+    const nomes = eventos.map((e: any) => e.nome).filter(Boolean);
+    let mapaDetalhes: Record<string, any> = {};
+
+    if (nomes.length > 0) {
+      const uniqueNomes = Array.from(new Set(nomes));
+      const CHUNK_SIZE = 100;
+
+      for (let i = 0; i < uniqueNomes.length; i += CHUNK_SIZE) {
+        const chunk = uniqueNomes.slice(i, i + CHUNK_SIZE);
+        const { data: orisData } = await supabase
+          .from('oris_funcionarios')
+          .select('nome,tipo_rescisao,carga_horaria_semanal,escala')
+          .in('nome', chunk);
+
+        (orisData || []).forEach((o: any) => {
+          mapaDetalhes[o.nome] = o;
+        });
+      }
+    }
 
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
 
-    return demissoesFiltradas.map(d => {
-      const dataSaida = new Date(d.dt_rescisao + 'T00:00:00');
-      const diffTime = Math.abs(hoje.getTime() - dataSaida.getTime());
-      const diasEmAberto = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      const realIdEvento = mapaEventos[d.id];
-
+    return eventos.map((e: any) => {
+      const dataSaida = new Date(e.data_evento + 'T00:00:00');
+      const diasEmAberto = Math.ceil(Math.abs(hoje.getTime() - dataSaida.getTime()) / (1000 * 60 * 60 * 24));
+      const det = mapaDetalhes[e.nome] || {};
       return {
-        id_evento: realIdEvento || d.id,
-        nome: d.nome,
-        cargo: d.cargo,
-        cnpj: d.cnpj,
-        data_evento: d.dt_rescisao,
-        status_evento: 'PENDENTE' as const,
+        id_evento: e.id_evento,
+        nome: e.nome,
+        cargo: e.cargo,
+        cnpj: e.cnpj,
+        data_evento: e.data_evento,
+        status_evento: status as const,
         dias_em_aberto: diasEmAberto,
-        situacao_origem: d.situacao || '99-Demitido',
-        lotacao: d.centro_custo || d.nome_fantasia || 'Sem lotação',
-        tipo_rescisao: d.tipo_rescisao,
-        carga_horaria_semanal: d.carga_horaria_semanal,
-        escala: d.escala,
-        _id_funcionario: d.id,
-        _needs_creation: !realIdEvento
+        situacao_origem: e.situacao_origem || '99-Demitido',
+        lotacao: e.lotacao || 'Sem lotação',
+        tipo_rescisao: det.tipo_rescisao || null,
+        carga_horaria_semanal: det.carga_horaria_semanal || null,
+        escala: det.escala || null,
       } as EventoDemissao;
     });
   } catch (error) {
@@ -1126,15 +1037,35 @@ export async function buscarRastreioVaga(idFuncionario: number): Promise<Rastrei
     if (!eventIds.includes(idFuncionario)) eventIds.push(idFuncionario);
 
     if (eventIds.length > 0) {
-      // Busca todas as respostas para os eventos (sem filtrar por id_substituto)
-      const { data: respostas } = await supabase
-        .from('respostas_gestor')
-        .select('id_evento, id_substituto, nome_candidato, tipo_origem, vaga_preenchida, data_fechamento_vaga')
-        .in('id_evento', eventIds);
+      // Busca respostas diretas E derivadas (id_evento_mae) para encontrar o cobridor atual
+      const [respDiretas, respDerivadas] = await Promise.all([
+        supabase
+          .from('respostas_gestor')
+          .select('id_evento, id_substituto, nome_candidato, tipo_origem, vaga_preenchida, data_fechamento_vaga, data_abertura_vaga')
+          .in('id_evento', eventIds),
+        supabase
+          .from('respostas_gestor')
+          .select('id_evento, id_substituto, nome_candidato, tipo_origem, vaga_preenchida, data_fechamento_vaga, data_abertura_vaga')
+          .in('id_evento_mae', eventIds),
+      ]);
 
-      // Prioriza quem tem id_substituto; fallback para nome_candidato (texto livre)
-      const resposta = respostas?.find(r => r.id_substituto !== null)
-        ?? respostas?.find(r => r.nome_candidato && r.nome_candidato.trim());
+      // Todas as respostas da cadeia (com candidato)
+      const todas = [
+        ...(respDiretas.data || []),
+        ...(respDerivadas.data || []),
+      ].filter(r => r.id_substituto !== null || (r.nome_candidato && r.nome_candidato.trim()));
+
+      // Escolher o substituto ATUAL = mais recente na cadeia:
+      // 1ª prioridade: vaga ainda em aberto (vaga_preenchida != 'SIM')
+      // 2ª prioridade: mais recente por data_abertura_vaga (ou data_fechamento_vaga)
+      const emAberto = todas.filter(r => r.vaga_preenchida !== 'SIM');
+      const candidatos = emAberto.length > 0 ? emAberto : todas;
+
+      const resposta = candidatos.sort((a, b) => {
+        const da = a.data_abertura_vaga ?? a.data_fechamento_vaga ?? '';
+        const db = b.data_abertura_vaga ?? b.data_fechamento_vaga ?? '';
+        return db.localeCompare(da); // mais recente primeiro
+      })[0] ?? null;
 
       if (resposta) {
         if (resposta.id_substituto) {
@@ -1223,4 +1154,155 @@ export async function buscarRastreioVaga(idFuncionario: number): Promise<Rastrei
   }
 
   return result;
+}
+
+export interface OcupanteVaga {
+  nome: string;
+  cargo?: string | null;
+  id?: number | null;
+  dt_admissao?: string | null;
+  data_abertura?: string | null;
+  data_fechamento?: string | null;
+  vaga_preenchida?: 'SIM' | 'NAO' | null;
+  tipo_evento: 'DEMISSAO' | 'AFASTAMENTO';
+  ordem: number;
+}
+
+/**
+ * Retorna todos os ocupantes que passaram pela vaga criada pelo afastamento/demissão de idFuncionario.
+ * Inclui subs diretos (respostas_gestor.id_evento = evento do func) e derivados
+ * (respostas_gestor.id_evento_mae = evento do func), formando a cadeia completa.
+ */
+export async function buscarOcupantesVaga(idFuncionario: number): Promise<OcupanteVaga[]> {
+  try {
+    // 1. Buscar eventos deste funcionário
+    const { data: eventos } = await supabase
+      .from('eventos_movimentacao')
+      .select('id_evento, situacao_origem')
+      .eq('id_funcionario', idFuncionario);
+
+    // Fallback: inclui o próprio id do funcionário caso evento não exista
+    const idsEventos: number[] = eventos?.map(e => e.id_evento) ?? [];
+    if (!idsEventos.includes(idFuncionario)) idsEventos.push(idFuncionario);
+
+    if (idsEventos.length === 0) return [];
+
+    // 2. Buscar respostas diretas (first-level subs)
+    const { data: diretas } = await supabase
+      .from('respostas_gestor')
+      .select('id_evento, id_evento_mae, id_substituto, nome_candidato, data_abertura_vaga, data_fechamento_vaga, vaga_preenchida, tipo_origem')
+      .in('id_evento', idsEventos);
+
+    // 3. Buscar respostas derivadas (second-level: id_evento_mae aponta para os eventos deste func)
+    const { data: derivadas } = await supabase
+      .from('respostas_gestor')
+      .select('id_evento, id_evento_mae, id_substituto, nome_candidato, data_abertura_vaga, data_fechamento_vaga, vaga_preenchida, tipo_origem')
+      .in('id_evento_mae', idsEventos);
+
+    const todas = [...(diretas || []), ...(derivadas || [])];
+    if (todas.length === 0) return [];
+
+    // 4. Resolver nomes/cargo do oris para quem tem id_substituto
+    const idsSubstitutos = [...new Set(todas.map(r => r.id_substituto).filter(Boolean))];
+    let mapaOris: Record<number, any> = {};
+    if (idsSubstitutos.length > 0) {
+      const { data: orisData } = await supabase
+        .from('oris_funcionarios')
+        .select('id, cargo, dt_admissao')
+        .in('id', idsSubstitutos);
+      (orisData || []).forEach((o: any) => { mapaOris[o.id] = o; });
+    }
+
+    // 5. Montar lista: diretas primeiro, derivadas depois; ordena por data_abertura
+    const ocupantes: OcupanteVaga[] = [];
+
+    const toOcupante = (resp: any): OcupanteVaga | null => {
+      const nome = resp.nome_candidato?.trim();
+      if (!nome) return null;
+      const oris = resp.id_substituto ? mapaOris[resp.id_substituto] : null;
+      return {
+        nome,
+        cargo: oris?.cargo ?? null,
+        id: resp.id_substituto ?? null,
+        dt_admissao: oris?.dt_admissao ?? null,
+        data_abertura: resp.data_abertura_vaga ?? null,
+        data_fechamento: resp.data_fechamento_vaga ?? null,
+        vaga_preenchida: resp.vaga_preenchida ?? null,
+        tipo_evento: resp.tipo_origem,
+        ordem: 0,
+      };
+    };
+
+    // Deduplicar: mesma pessoa não aparece duas vezes
+    const seen = new Set<string>();
+    for (const resp of todas) {
+      const o = toOcupante(resp);
+      if (!o) continue;
+      const key = o.nome.toUpperCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      ocupantes.push(o);
+    }
+
+    // Ordenar por data_abertura (crescente), colocando sem data no final
+    ocupantes.sort((a, b) => {
+      if (!a.data_abertura && !b.data_abertura) return 0;
+      if (!a.data_abertura) return 1;
+      if (!b.data_abertura) return -1;
+      return a.data_abertura.localeCompare(b.data_abertura);
+    });
+
+    // Atribuir ordem após sort
+    ocupantes.forEach((o, i) => { o.ordem = i + 1; });
+
+    return ocupantes;
+  } catch (error) {
+    console.error('Erro em buscarOcupantesVaga:', error);
+    return [];
+  }
+}
+
+export async function carregarVagasDerivadas(): Promise<Record<number, VagaDerivada[]>> {
+  try {
+    const { data, error } = await supabase
+      .from('respostas_gestor')
+      .select('id_evento, id_evento_mae, nome_candidato, data_abertura_vaga, data_fechamento_vaga, vaga_preenchida, tipo_origem')
+      .not('id_evento_mae', 'is', null);
+
+    if (error) throw error;
+    if (!data || data.length === 0) return {};
+
+    const idsEventos = data.map((r: any) => r.id_evento);
+    const { data: eventos } = await supabase
+      .from('eventos_movimentacao')
+      .select('id_evento, nome, cargo, data_evento')
+      .in('id_evento', idsEventos);
+
+    const mapaEventos: Record<number, any> = {};
+    (eventos || []).forEach((e: any) => { mapaEventos[e.id_evento] = e; });
+
+    const mapa: Record<number, VagaDerivada[]> = {};
+    data.forEach((r: any) => {
+      const mae = r.id_evento_mae as number;
+      if (!mapa[mae]) mapa[mae] = [];
+      const ev = mapaEventos[r.id_evento];
+      mapa[mae].push({
+        id_evento: r.id_evento,
+        id_evento_mae: mae,
+        nome_candidato: r.nome_candidato,
+        data_abertura_vaga: r.data_abertura_vaga,
+        data_fechamento_vaga: r.data_fechamento_vaga,
+        vaga_preenchida: r.vaga_preenchida,
+        tipo_origem: r.tipo_origem,
+        nome_quem_saiu: ev?.nome,
+        cargo_quem_saiu: ev?.cargo,
+        data_evento: ev?.data_evento,
+      });
+    });
+
+    return mapa;
+  } catch (error) {
+    console.error('Erro ao carregar vagas derivadas:', error);
+    return {};
+  }
 }
