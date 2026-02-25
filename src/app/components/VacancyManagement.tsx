@@ -1474,7 +1474,6 @@ function EmptyState({ icon: Icon, title, description }: { icon: any, title: stri
 function FuncionarioCombobox({
   value,
   onChange,
-  onSelectFull,
   cargoAlvo,
   lotacaoAlvo,
   nomeFantasiaAlvo,
@@ -1482,7 +1481,6 @@ function FuncionarioCombobox({
 }: {
   value: string;
   onChange: (value: string) => void;
-  onSelectFull?: (func: { nome: string; dt_admissao?: string | null }) => void;
   cargoAlvo?: string;
   lotacaoAlvo?: string;
   nomeFantasiaAlvo?: string;
@@ -1638,7 +1636,6 @@ function FuncionarioCombobox({
                     className={`px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer flex flex-col gap-0.5 ${isRecommended ? 'bg-slate-50 dark:bg-slate-900/50' : ''}`}
                     onClick={() => {
                       onChange(s.nome);
-                      if (onSelectFull) onSelectFull({ nome: s.nome, dt_admissao: s.dt_admissao ?? null });
                       setIsOpen(false);
                     }}
                   >
@@ -2583,16 +2580,6 @@ function VagaCard({
                           value={dataFechamento}
                           onChange={(e) => updateFormDataMap(vaga.id_evento, { data_fechamento_vaga: e.target.value })}
                         />
-                        {formData[vaga.id_evento]?._substitutoAdmissao && (
-                          <button
-                            type="button"
-                            onClick={() => updateFormDataMap(vaga.id_evento, { data_fechamento_vaga: formData[vaga.id_evento]._substitutoAdmissao })}
-                            className="mt-2 flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
-                          >
-                            <Calendar size={12} />
-                            Admissão do substituto: <strong>{formatarData(formData[vaga.id_evento]._substitutoAdmissao)}</strong>
-                          </button>
-                        )}
                         {!dataFechamento && (
                           <p className="text-xs text-red-500 mt-1">Campo obrigatório</p>
                         )}
@@ -2619,7 +2606,6 @@ function VagaCard({
                           <FuncionarioCombobox
                             value={nomeCandidato}
                             onChange={(val) => updateFormDataMap(vaga.id_evento, { nome_candidato: val })}
-                            onSelectFull={(func) => updateFormDataMap(vaga.id_evento, { nome_candidato: func.nome, _substitutoAdmissao: func.dt_admissao ?? null })}
                             cargoAlvo={vaga.cargo}
                             lotacaoAlvo={vaga.lotacao}
                             nomeFantasiaAlvo={nomeContrato || undefined}
