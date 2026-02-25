@@ -2587,10 +2587,10 @@ function VagaCard({
                           <button
                             type="button"
                             onClick={() => updateFormDataMap(vaga.id_evento, { data_fechamento_vaga: formData[vaga.id_evento]._substitutoAdmissao })}
-                            className="mt-1.5 flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                            className="mt-2 flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
                           >
-                            <Calendar size={11} />
-                            Usar admissão do substituto: {formatarData(formData[vaga.id_evento]._substitutoAdmissao)}
+                            <Calendar size={12} />
+                            Admissão do substituto: <strong>{formatarData(formData[vaga.id_evento]._substitutoAdmissao)}</strong>
                           </button>
                         )}
                         {!dataFechamento && (
