@@ -383,7 +383,7 @@ export async function salvarResposta(
       .from('respostas_gestor')
       .upsert(
         registroParaUpsert,
-        { onConflict: 'id_evento, tipo_origem' }
+        { onConflict: 'id_evento,tipo_origem' }
       );
 
     console.log('📥 [salvarResposta] Resposta do Supabase:', { error });
