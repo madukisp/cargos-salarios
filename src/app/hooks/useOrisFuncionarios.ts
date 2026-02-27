@@ -8,6 +8,7 @@ export interface OrisFilters {
   fantasias?: string[];
   centrosCusto?: string[];
   cargos?: string[];
+  situacoes?: string[];
 }
 
 export function useOrisFuncionarios(filters: OrisFilters = {}) {
@@ -28,7 +29,8 @@ export function useOrisFuncionarios(filters: OrisFilters = {}) {
           (filters.statusFilter && filters.statusFilter !== 'todos') ||
           (filters.fantasias && filters.fantasias.length > 0) ||
           (filters.centrosCusto && filters.centrosCusto.length > 0) ||
-          (filters.cargos && filters.cargos.length > 0);
+          (filters.cargos && filters.cargos.length > 0) ||
+          (filters.situacoes && filters.situacoes.length > 0);
 
         let query = supabase
           .from('oris_funcionarios')
@@ -57,6 +59,10 @@ export function useOrisFuncionarios(filters: OrisFilters = {}) {
 
         if (filters.cargos && filters.cargos.length > 0) {
           query = query.in('cargo', filters.cargos);
+        }
+        
+        if (filters.situacoes && filters.situacoes.length > 0) {
+          query = query.in('situacao', filters.situacoes);
         }
 
         if (filters.searchTerm) {
@@ -107,7 +113,7 @@ export function useOrisFuncionarios(filters: OrisFilters = {}) {
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [filters.searchNome, filters.searchTerm, filters.statusFilter, JSON.stringify(filters.fantasias), JSON.stringify(filters.centrosCusto), JSON.stringify(filters.cargos)]);
+  }, [filters.searchNome, filters.searchTerm, filters.statusFilter, JSON.stringify(filters.fantasias), JSON.stringify(filters.centrosCusto), JSON.stringify(filters.cargos), JSON.stringify(filters.situacoes)]);
 
   return { data, columns, loading, error, totalCount };
 }
@@ -136,20 +142,14 @@ export function useOrisFantasias() {
   return fantasias;
 }
 
-export function useOrisCentrosCusto(fantasias: string[]) {
+export function useOrisCentrosCusto() {
   const [centrosCusto, setCentrosCusto] = useState<string[]>([]);
 
   useEffect(() => {
     async function loadCentrosCusto() {
-      if (fantasias.length === 0) {
-        setCentrosCusto([]);
-        return;
-      }
-
       const { data, error } = await supabase
         .from('oris_funcionarios')
-        .select('centro_custo')
-        .in('nome_fantasia', fantasias);
+        .select('centro_custo');
 
       if (!error && data) {
         const unique = Array.from(new Set(data.map(d => d.centro_custo).filter(Boolean))).sort();
@@ -157,31 +157,19 @@ export function useOrisCentrosCusto(fantasias: string[]) {
       }
     }
     loadCentrosCusto();
-  }, [JSON.stringify(fantasias)]);
+  }, []);
 
   return centrosCusto;
 }
 
-export function useOrisCargos(fantasias: string[], centrosCusto: string[]) {
+export function useOrisCargos() {
   const [cargos, setCargos] = useState<string[]>([]);
 
   useEffect(() => {
     async function loadCargos() {
-      if (fantasias.length === 0) {
-        setCargos([]);
-        return;
-      }
-
-      let query = supabase
+      const { data, error } = await supabase
         .from('oris_funcionarios')
-        .select('cargo')
-        .in('nome_fantasia', fantasias);
-
-      if (centrosCusto.length > 0) {
-        query = query.in('centro_custo', centrosCusto);
-      }
-
-      const { data, error } = await query;
+        .select('cargo');
 
       if (!error && data) {
         const unique = Array.from(new Set(data.map(d => d.cargo).filter(Boolean))).sort();
@@ -189,7 +177,27 @@ export function useOrisCargos(fantasias: string[], centrosCusto: string[]) {
       }
     }
     loadCargos();
-  }, [JSON.stringify(fantasias), JSON.stringify(centrosCusto)]);
+  }, []);
 
   return cargos;
+}
+
+export function useOrisSituacoes() {
+  const [situacoes, setSituacoes] = useState<string[]>([]);
+
+  useEffect(() => {
+    async function loadSituacoes() {
+      const { data, error } = await supabase
+        .from('oris_funcionarios')
+        .select('situacao');
+
+      if (!error && data) {
+        const unique = Array.from(new Set(data.map(d => d.situacao).filter(Boolean))).sort();
+        setSituacoes(unique as string[]);
+      }
+    }
+    loadSituacoes();
+  }, []);
+
+  return situacoes;
 }

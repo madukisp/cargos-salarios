@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Download, Search, Settings, X, GripVertical, ArrowUp, ArrowDown, Filter, ChevronDown, Check } from 'lucide-react';
-import { useOrisFuncionarios, useOrisFantasias, useOrisCentrosCusto, useOrisCargos } from '../hooks/useOrisFuncionarios';
+import { useOrisFuncionarios, useOrisFantasias, useOrisCentrosCusto, useOrisCargos, useOrisSituacoes } from '../hooks/useOrisFuncionarios';
 import { getVisibleColumnFields, getColumnLabels } from '@/lib/columns.config';
 import { getFormattedValue } from '@/lib/column-formatters';
 import { FuncionarioProfile } from './FuncionarioProfile';
@@ -15,6 +15,7 @@ export default function Oris() {
   const [selectedFantasias, setSelectedFantasias] = useState<Set<string>>(new Set());
   const [selectedCentrosCusto, setSelectedCentrosCusto] = useState<Set<string>>(new Set());
   const [selectedCargos, setSelectedCargos] = useState<Set<string>>(new Set());
+  const [selectedSituacoes, setSelectedSituacoes] = useState<Set<string>>(new Set());
 
   // Passar filtros para o hook
   const { data, columns: initialColumns, loading, error, totalCount } = useOrisFuncionarios({
@@ -23,7 +24,8 @@ export default function Oris() {
     statusFilter,
     fantasias: Array.from(selectedFantasias),
     centrosCusto: Array.from(selectedCentrosCusto),
-    cargos: Array.from(selectedCargos)
+    cargos: Array.from(selectedCargos),
+    situacoes: Array.from(selectedSituacoes)
   });
 
   const [columns, setColumns] = useState<string[]>([]);
@@ -35,9 +37,11 @@ export default function Oris() {
   const [showFantasiaFilter, setShowFantasiaFilter] = useState(false);
   const [showCentroCustoFilter, setShowCentroCustoFilter] = useState(false);
   const [showCargoFilter, setShowCargoFilter] = useState(false);
+  const [showSituacaoFilter, setShowSituacaoFilter] = useState(false);
   const [fantasiaSearch, setFantasiaSearch] = useState('');
   const [ccSearch, setCcSearch] = useState('');
   const [cargoSearch, setCargoSearch] = useState('');
+  const [situacaoSearch, setSituacaoSearch] = useState('');
   const [selectedFuncionario, setSelectedFuncionario] = useState<any | null>(null);
 
   // Obter colunas configuradas (memoizado para evitar infinite loop)
@@ -71,11 +75,14 @@ export default function Oris() {
     });
   }, [rawUniqueFantasias]);
 
-  // Obter centros de custo filtrados pelos contratos selecionados
-  const availableCentrosCusto = useOrisCentrosCusto(Array.from(selectedFantasias));
+  // Obter centros de custo usando o novo hook (sem hierarquia)
+  const availableCentrosCusto = useOrisCentrosCusto();
 
-  // Obter cargos filtrados pelos contratos e centros de custo selecionados
-  const availableCargos = useOrisCargos(Array.from(selectedFantasias), Array.from(selectedCentrosCusto));
+  // Obter cargos usando o novo hook (sem hierarquia)
+  const availableCargos = useOrisCargos();
+
+  // Obter situações usando o novo hook (sem hierarquia)
+  const availableSituacoes = useOrisSituacoes();
 
   // Carregar preferências do localStorage e configuração de colunas
   useEffect(() => {
@@ -158,9 +165,6 @@ export default function Oris() {
       newFantasias.add(fantasia);
     }
     setSelectedFantasias(newFantasias);
-    // Limpar centros de custo e cargos selecionados quando mudar os contratos
-    setSelectedCentrosCusto(new Set());
-    setSelectedCargos(new Set());
   };
 
   // Toggle centro de custo selecionado
@@ -172,8 +176,6 @@ export default function Oris() {
       newCC.add(cc);
     }
     setSelectedCentrosCusto(newCC);
-    // Limpar cargos selecionados quando mudar os centros de custo
-    setSelectedCargos(new Set());
   };
 
   // Toggle cargo selecionado
@@ -185,6 +187,17 @@ export default function Oris() {
       newCargos.add(cargo);
     }
     setSelectedCargos(newCargos);
+  };
+
+  // Toggle situação selecionada
+  const toggleSituacao = (situacao: string) => {
+    const newSituacoes = new Set(selectedSituacoes);
+    if (newSituacoes.has(situacao)) {
+      newSituacoes.delete(situacao);
+    } else {
+      newSituacoes.add(situacao);
+    }
+    setSelectedSituacoes(newSituacoes);
   };
 
   // Toggle visibilidade de coluna
@@ -416,163 +429,237 @@ export default function Oris() {
           </div>
 
           {/* Filtro Centro de Custo */}
-          {selectedFantasias.size > 0 && (
-            <div className="relative">
-              <button
-                onClick={() => setShowCentroCustoFilter(!showCentroCustoFilter)}
-                className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors w-full md:w-auto ${showCentroCustoFilter
-                  ? 'bg-purple-600 text-white'
-                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-                  }`}
-              >
-                <Filter className="w-4 h-4" />
-                Filtrar por Centro de Custo
-                {selectedCentrosCusto.size > 0 && (
-                  <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${showCentroCustoFilter ? 'bg-white text-purple-600' : 'bg-purple-600 text-white'}`}>
-                    {selectedCentrosCusto.size}
-                  </span>
-                )}
-                <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${showCentroCustoFilter ? 'rotate-180' : ''}`} />
-              </button>
-
-              {showCentroCustoFilter && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => {
-                      setShowCentroCustoFilter(false);
-                      setCcSearch('');
-                    }}
-                  />
-                  <div className="absolute top-full left-0 z-50 mt-2 w-full md:w-80 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2 animate-in fade-in zoom-in duration-200">
-                    <div className="relative">
-                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <input
-                        type="text"
-                        placeholder="Pesquisar Centro de Custo..."
-                        value={ccSearch}
-                        onChange={(e) => setCcSearch(e.target.value)}
-                        className="w-full pl-8 pr-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-purple-500"
-                        autoFocus
-                      />
-                    </div>
-                    <div className="max-h-60 overflow-y-auto space-y-0.5 custom-scrollbar">
-                      {availableCentrosCusto
-                        .filter(cc => cc.toLowerCase().includes(ccSearch.toLowerCase()))
-                        .map((cc) => (
-                          <div
-                            key={cc}
-                            onClick={() => toggleCentroCusto(cc)}
-                            className="flex items-center justify-between px-2 py-1.5 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-                          >
-                            <span className="text-xs text-slate-700 dark:text-slate-200 truncate pr-2">
-                              {cc}
-                            </span>
-                            {selectedCentrosCusto.has(cc) && (
-                              <Check className="w-4 h-4 text-purple-600 flex-shrink-0" />
-                            )}
-                          </div>
-                        ))}
-                    </div>
-                    <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
-                      <button
-                        onClick={() => setSelectedCentrosCusto(new Set(availableCentrosCusto))}
-                        className="flex-1 text-[10px] px-2 py-1.5 bg-purple-50 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 rounded hover:bg-purple-100 dark:hover:bg-purple-900/60 transition-colors font-bold uppercase tracking-wider"
-                      >
-                        Todos
-                      </button>
-                      <button
-                        onClick={() => setSelectedCentrosCusto(new Set())}
-                        className="flex-1 text-[10px] px-2 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors font-bold uppercase tracking-wider"
-                      >
-                        Limpar
-                      </button>
-                    </div>
-                  </div>
-                </>
+          <div className="relative">
+            <button
+              onClick={() => setShowCentroCustoFilter(!showCentroCustoFilter)}
+              className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors w-full md:w-auto ${showCentroCustoFilter
+                ? 'bg-purple-600 text-white'
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                }`}
+            >
+              <Filter className="w-4 h-4" />
+              Filtrar por Centro de Custo
+              {selectedCentrosCusto.size > 0 && (
+                <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${showCentroCustoFilter ? 'bg-white text-purple-600' : 'bg-purple-600 text-white'}`}>
+                  {selectedCentrosCusto.size}
+                </span>
               )}
-            </div>
-          )}
+              <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${showCentroCustoFilter ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showCentroCustoFilter && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => {
+                    setShowCentroCustoFilter(false);
+                    setCcSearch('');
+                  }}
+                />
+                <div className="absolute top-full left-0 z-50 mt-2 w-full md:w-80 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2 animate-in fade-in zoom-in duration-200">
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Pesquisar Centro de Custo..."
+                      value={ccSearch}
+                      onChange={(e) => setCcSearch(e.target.value)}
+                      className="w-full pl-8 pr-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="max-h-60 overflow-y-auto space-y-0.5 custom-scrollbar">
+                    {availableCentrosCusto
+                      .filter(cc => cc.toLowerCase().includes(ccSearch.toLowerCase()))
+                      .map((cc) => (
+                        <div
+                          key={cc}
+                          onClick={() => toggleCentroCusto(cc)}
+                          className="flex items-center justify-between px-2 py-1.5 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                        >
+                          <span className="text-xs text-slate-700 dark:text-slate-200 truncate pr-2">
+                            {cc}
+                          </span>
+                          {selectedCentrosCusto.has(cc) && (
+                            <Check className="w-4 h-4 text-purple-600 flex-shrink-0" />
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                  <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                    <button
+                      onClick={() => setSelectedCentrosCusto(new Set(availableCentrosCusto))}
+                      className="flex-1 text-[10px] px-2 py-1.5 bg-purple-50 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 rounded hover:bg-purple-100 dark:hover:bg-purple-900/60 transition-colors font-bold uppercase tracking-wider"
+                    >
+                      Todos
+                    </button>
+                    <button
+                      onClick={() => setSelectedCentrosCusto(new Set())}
+                      className="flex-1 text-[10px] px-2 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors font-bold uppercase tracking-wider"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Filtro Cargo */}
-          {selectedFantasias.size > 0 && (
-            <div className="relative">
-              <button
-                onClick={() => setShowCargoFilter(!showCargoFilter)}
-                className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors w-full md:w-auto ${showCargoFilter
-                  ? 'bg-teal-600 text-white'
-                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-                  }`}
-              >
-                <Filter className="w-4 h-4" />
-                Filtrar por Cargo
-                {selectedCargos.size > 0 && (
-                  <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${showCargoFilter ? 'bg-white text-teal-600' : 'bg-teal-600 text-white'}`}>
-                    {selectedCargos.size}
-                  </span>
-                )}
-                <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${showCargoFilter ? 'rotate-180' : ''}`} />
-              </button>
-
-              {showCargoFilter && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => {
-                      setShowCargoFilter(false);
-                      setCargoSearch('');
-                    }}
-                  />
-                  <div className="absolute top-full left-0 z-50 mt-2 w-full md:w-80 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2 animate-in fade-in zoom-in duration-200">
-                    <div className="relative">
-                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <input
-                        type="text"
-                        placeholder="Pesquisar Cargo..."
-                        value={cargoSearch}
-                        onChange={(e) => setCargoSearch(e.target.value)}
-                        className="w-full pl-8 pr-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-teal-500"
-                        autoFocus
-                      />
-                    </div>
-                    <div className="max-h-60 overflow-y-auto space-y-0.5 custom-scrollbar">
-                      {availableCargos
-                        .filter(c => c.toLowerCase().includes(cargoSearch.toLowerCase()))
-                        .map((cargo) => (
-                          <div
-                            key={cargo}
-                            onClick={() => toggleCargo(cargo)}
-                            className="flex items-center justify-between px-2 py-1.5 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-                          >
-                            <span className="text-xs text-slate-700 dark:text-slate-200 truncate pr-2">
-                              {cargo}
-                            </span>
-                            {selectedCargos.has(cargo) && (
-                              <Check className="w-4 h-4 text-teal-600 flex-shrink-0" />
-                            )}
-                          </div>
-                        ))}
-                    </div>
-                    <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
-                      <button
-                        onClick={() => setSelectedCargos(new Set(availableCargos))}
-                        className="flex-1 text-[10px] px-2 py-1.5 bg-teal-50 dark:bg-teal-900/40 text-teal-600 dark:text-teal-400 rounded hover:bg-teal-100 dark:hover:bg-teal-900/60 transition-colors font-bold uppercase tracking-wider"
-                      >
-                        Todos
-                      </button>
-                      <button
-                        onClick={() => setSelectedCargos(new Set())}
-                        className="flex-1 text-[10px] px-2 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors font-bold uppercase tracking-wider"
-                      >
-                        Limpar
-                      </button>
-                    </div>
-                  </div>
-                </>
+          <div className="relative">
+            <button
+              onClick={() => setShowCargoFilter(!showCargoFilter)}
+              className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors w-full md:w-auto ${showCargoFilter
+                ? 'bg-teal-600 text-white'
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                }`}
+            >
+              <Filter className="w-4 h-4" />
+              Filtrar por Cargo
+              {selectedCargos.size > 0 && (
+                <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${showCargoFilter ? 'bg-white text-teal-600' : 'bg-teal-600 text-white'}`}>
+                  {selectedCargos.size}
+                </span>
               )}
-            </div>
-          )}
+              <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${showCargoFilter ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showCargoFilter && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => {
+                    setShowCargoFilter(false);
+                    setCargoSearch('');
+                  }}
+                />
+                <div className="absolute top-full left-0 z-50 mt-2 w-full md:w-80 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2 animate-in fade-in zoom-in duration-200">
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Pesquisar Cargo..."
+                      value={cargoSearch}
+                      onChange={(e) => setCargoSearch(e.target.value)}
+                      className="w-full pl-8 pr-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-teal-500"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="max-h-60 overflow-y-auto space-y-0.5 custom-scrollbar">
+                    {availableCargos
+                      .filter(c => c.toLowerCase().includes(cargoSearch.toLowerCase()))
+                      .map((cargo) => (
+                        <div
+                          key={cargo}
+                          onClick={() => toggleCargo(cargo)}
+                          className="flex items-center justify-between px-2 py-1.5 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                        >
+                          <span className="text-xs text-slate-700 dark:text-slate-200 truncate pr-2">
+                            {cargo}
+                          </span>
+                          {selectedCargos.has(cargo) && (
+                            <Check className="w-4 h-4 text-teal-600 flex-shrink-0" />
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                  <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                    <button
+                      onClick={() => setSelectedCargos(new Set(availableCargos))}
+                      className="flex-1 text-[10px] px-2 py-1.5 bg-teal-50 dark:bg-teal-900/40 text-teal-600 dark:text-teal-400 rounded hover:bg-teal-100 dark:hover:bg-teal-900/60 transition-colors font-bold uppercase tracking-wider"
+                    >
+                      Todos
+                    </button>
+                    <button
+                      onClick={() => setSelectedCargos(new Set())}
+                      className="flex-1 text-[10px] px-2 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors font-bold uppercase tracking-wider"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Filtro Situação */}
+          <div className="relative">
+            <button
+              onClick={() => setShowSituacaoFilter(!showSituacaoFilter)}
+              className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors w-full md:w-auto ${showSituacaoFilter
+                ? 'bg-amber-600 text-white'
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                }`}
+            >
+              <Filter className="w-4 h-4" />
+              Filtrar por Situação
+              {selectedSituacoes.size > 0 && (
+                <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${showSituacaoFilter ? 'bg-white text-amber-600' : 'bg-amber-600 text-white'}`}>
+                  {selectedSituacoes.size}
+                </span>
+              )}
+              <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${showSituacaoFilter ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showSituacaoFilter && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => {
+                    setShowSituacaoFilter(false);
+                    setSituacaoSearch('');
+                  }}
+                />
+                <div className="absolute top-full left-0 z-50 mt-2 w-full md:w-80 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2 animate-in fade-in zoom-in duration-200">
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Pesquisar Situação..."
+                      value={situacaoSearch}
+                      onChange={(e) => setSituacaoSearch(e.target.value)}
+                      className="w-full pl-8 pr-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="max-h-60 overflow-y-auto space-y-0.5 custom-scrollbar">
+                    {availableSituacoes
+                      .filter(s => s.toLowerCase().includes(situacaoSearch.toLowerCase()))
+                      .map((situacao) => (
+                        <div
+                          key={situacao}
+                          onClick={() => toggleSituacao(situacao)}
+                          className="flex items-center justify-between px-2 py-1.5 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                        >
+                          <span className="text-xs text-slate-700 dark:text-slate-200 truncate pr-2">
+                            {situacao}
+                          </span>
+                          {selectedSituacoes.has(situacao) && (
+                            <Check className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                  <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                    <button
+                      onClick={() => setSelectedSituacoes(new Set(availableSituacoes))}
+                      className="flex-1 text-[10px] px-2 py-1.5 bg-amber-50 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-colors font-bold uppercase tracking-wider"
+                    >
+                      Todos
+                    </button>
+                    <button
+                      onClick={() => setSelectedSituacoes(new Set())}
+                      className="flex-1 text-[10px] px-2 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors font-bold uppercase tracking-wider"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
+
 
         {/* Busca Geral */}
         <div className="relative">
@@ -597,11 +684,13 @@ export default function Oris() {
       </div>
 
       {/* Error */}
-      {error && (
-        <div className="p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg">
-          <p className="text-sm text-red-700 dark:text-red-400">Erro: {error}</p>
-        </div>
-      )}
+      {
+        error && (
+          <div className="p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg">
+            <p className="text-sm text-red-700 dark:text-red-400">Erro: {error}</p>
+          </div>
+        )
+      }
 
       {/* Table */}
       <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col h-96">
@@ -708,6 +797,9 @@ export default function Oris() {
         {selectedCargos.size > 0 && (
           <p className="mt-1">Cargos selecionados: {selectedCargos.size}</p>
         )}
+        {selectedSituacoes.size > 0 && (
+          <p className="mt-1">Situações selecionadas: {selectedSituacoes.size}</p>
+        )}
         {searchTerm && (
           <p className="mt-1">Busca geral: {searchTerm}</p>
         )}
@@ -717,81 +809,85 @@ export default function Oris() {
       </div>
 
       {/* Column Selector Modal */}
-      {showColumnModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg max-w-md w-full">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                Gerenciar Colunas
-              </h2>
-              <button
-                onClick={() => setShowColumnModal(false)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {
+        showColumnModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg max-w-md w-full">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  Gerenciar Colunas
+                </h2>
+                <button
+                  onClick={() => setShowColumnModal(false)}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
 
-            {/* Modal Body */}
-            <div className="px-6 py-4 max-h-96 overflow-y-auto">
-              <div className="space-y-2">
-                {[...columns]
-                  .sort((a, b) => {
-                    const labelA = getColumnLabels()[a] || a;
-                    const labelB = getColumnLabels()[b] || b;
-                    return labelA.localeCompare(labelB, 'pt-BR');
-                  })
-                  .map((col) => {
-                    const label = getColumnLabels()[col] || col;
-                    return (
-                      <label key={col} className="flex items-center gap-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={visibleColumns.has(col)}
-                          onChange={() => toggleColumn(col)}
-                          className="w-4 h-4 rounded border-slate-300 dark:border-slate-600"
-                        />
-                        <span className="text-sm text-slate-700 dark:text-slate-300 flex-1">{label}</span>
-                        <span className="text-xs text-slate-400">{col}</span>
-                      </label>
-                    );
-                  })}
+              {/* Modal Body */}
+              <div className="px-6 py-4 max-h-96 overflow-y-auto">
+                <div className="space-y-2">
+                  {[...columns]
+                    .sort((a, b) => {
+                      const labelA = getColumnLabels()[a] || a;
+                      const labelB = getColumnLabels()[b] || b;
+                      return labelA.localeCompare(labelB, 'pt-BR');
+                    })
+                    .map((col) => {
+                      const label = getColumnLabels()[col] || col;
+                      return (
+                        <label key={col} className="flex items-center gap-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={visibleColumns.has(col)}
+                            onChange={() => toggleColumn(col)}
+                            className="w-4 h-4 rounded border-slate-300 dark:border-slate-600"
+                          />
+                          <span className="text-sm text-slate-700 dark:text-slate-300 flex-1">{label}</span>
+                          <span className="text-xs text-slate-400">{col}</span>
+                        </label>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex gap-2">
+                <button
+                  onClick={() => setVisibleColumns(new Set(columns))}
+                  className="flex-1 px-3 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  Mostrar Todas
+                </button>
+                <button
+                  onClick={() => setVisibleColumns(new Set())}
+                  className="flex-1 px-3 py-2 text-sm font-medium bg-slate-300 dark:bg-slate-700 hover:bg-slate-400 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded-lg transition-colors"
+                >
+                  Ocultar Todas
+                </button>
+                <button
+                  onClick={() => setShowColumnModal(false)}
+                  className="flex-1 px-3 py-2 text-sm font-medium bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors"
+                >
+                  Fechar
+                </button>
               </div>
             </div>
-
-            {/* Modal Footer */}
-            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex gap-2">
-              <button
-                onClick={() => setVisibleColumns(new Set(columns))}
-                className="flex-1 px-3 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-              >
-                Mostrar Todas
-              </button>
-              <button
-                onClick={() => setVisibleColumns(new Set())}
-                className="flex-1 px-3 py-2 text-sm font-medium bg-slate-300 dark:bg-slate-700 hover:bg-slate-400 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 rounded-lg transition-colors"
-              >
-                Ocultar Todas
-              </button>
-              <button
-                onClick={() => setShowColumnModal(false)}
-                className="flex-1 px-3 py-2 text-sm font-medium bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors"
-              >
-                Fechar
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Funcionário Profile Modal */}
-      {selectedFuncionario && (
-        <FuncionarioProfile
-          funcionario={selectedFuncionario}
-          onClose={() => setSelectedFuncionario(null)}
-        />
-      )}
-    </div>
+      {
+        selectedFuncionario && (
+          <FuncionarioProfile
+            funcionario={selectedFuncionario}
+            onClose={() => setSelectedFuncionario(null)}
+          />
+        )
+      }
+    </div >
   );
 }
