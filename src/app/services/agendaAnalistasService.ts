@@ -32,7 +32,7 @@ export interface AnalistaComVagas {
 /**
  * Calcular dias reais da vaga baseado em datas de abertura e fechamento
  */
-const calcularDiasReais = (
+export const calcularDiasReais = (
   data_abertura_vaga: string | null | undefined,
   data_fechamento_vaga: string | null | undefined,
   dias_em_aberto: number

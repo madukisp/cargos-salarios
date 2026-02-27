@@ -82,7 +82,7 @@ export function VacancyManagement() {
     marcarNaoEncontrada,
   } = useGestaoVagas() as any;
 
-  const { data: tlpData, updateTlp } = useTlpData();
+  const { data: tlpData, updateTlp, loadData: loadTlpData } = useTlpData();
   const [updatingTlp, setUpdatingTlp] = useState<string | null>(null);
   const [erroFechamento, setErroFechamento] = useState<number | null>(null);
   const [erroSalvar, setErroSalvar] = useState<Record<number, string>>({});
@@ -177,6 +177,11 @@ export function VacancyManagement() {
   useEffect(() => {
     carregarDados(lotacao === 'TODAS' ? undefined : lotacao, selectedFantasia);
   }, [lotacao, selectedFantasia, carregarDados]);
+
+  // Carregar TLP ao montar
+  useEffect(() => {
+    loadTlpData();
+  }, [loadTlpData]);
 
   // Usar lotações do hook quando carregarem
   const lotacoes = lotacoesFromHook;
@@ -1955,12 +1960,23 @@ function VagaCard({
 
   // Encontrar dados TLP correspondentes e Nome do Contrato
   const tlpEntry = useMemo(() => {
-    if (!tlpData) return null;
-    return tlpData.find(t =>
+    if (!tlpData || tlpData.length === 0) {
+      console.log('[TLP Debug] tlpData vazio ou null', { tlpDataLen: tlpData?.length });
+      return null;
+    }
+    const found = tlpData.find(t =>
       t.cargo.toLowerCase().trim() === vaga.cargo?.toLowerCase().trim() &&
       (t.centro_custo.toLowerCase().trim() === vaga.lotacao?.toLowerCase().trim() ||
         t.unidade.toLowerCase().trim() === vaga.lotacao?.toLowerCase().trim())
     );
+    if (!found) {
+      console.log('[TLP Debug] Nenhum match para:', {
+        cargo: vaga.cargo,
+        lotacao: vaga.lotacao,
+        exemplos: tlpData.slice(0, 3).map(t => ({ cargo: t.cargo, centro_custo: t.centro_custo, unidade: t.unidade }))
+      });
+    }
+    return found ?? null;
   }, [vaga.cargo, vaga.lotacao, tlpData]);
 
   const nomeContrato = useMemo(() => {

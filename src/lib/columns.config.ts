@@ -47,7 +47,7 @@ export const VISIBLE_COLUMNS: ColumnConfig[] = [
   { field: 'dt_admissao', label: 'Admissão', visible: true },
   { field: 'dt_rescisao', label: 'Data Rescisão', visible: true },
   { field: 'situacao', label: 'Situação', visible: true },
-  { field: 'dt_inicio_situacao', label: 'Início Situação', visible: true },
+  { field: 'dt_inicio_situacao', label: 'Data da Situação', visible: true },
   { field: 'dt_inicio_cargo', label: 'Início Cargo', visible: true },
   { field: 'dt_inicio_centro_custo', label: 'Início Centro Custo', visible: true },
   { field: 'dt_inicio_escala', label: 'Início Escala', visible: true },

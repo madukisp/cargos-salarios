@@ -30,7 +30,7 @@ import {
 import { useAgendaAnalistas } from '@/app/hooks/useAgendaAnalistas';
 import { useFantasiaFilter } from '@/app/hooks/useFantasiaFilter';
 import { formatarData } from '@/lib/column-formatters';
-import { VagaAtribuida } from '@/app/services/agendaAnalistasService';
+import { VagaAtribuida, calcularDiasReais } from '@/app/services/agendaAnalistasService';
 import { VagaDetalhesModal } from './VagaDetalhesModal';
 import { AtribuirVagaModal } from './AtribuirVagaModal';
 import { supabase } from '@/lib/supabase';
@@ -457,14 +457,13 @@ function AgendaAnalistas() {
             eventosRaw.forEach(e => { if (!eventosMap.has(e.id_evento)) eventosMap.set(e.id_evento, e); });
             const eventos = Array.from(eventosMap.values());
 
-            const hoje = new Date();
-            hoje.setHours(0, 0, 0, 0);
-
             const result: VagaSemAtribuicao[] = eventos.map(e => {
-                const dataSaida = e.data_evento ? new Date(e.data_evento + 'T00:00:00') : null;
-                const dias = dataSaida
-                    ? Math.ceil(Math.abs(hoje.getTime() - dataSaida.getTime()) / (1000 * 60 * 60 * 24))
-                    : e.dias_em_aberto || 0;
+                const resposta = mapaRespostas.get(e.id_evento);
+                const dias = calcularDiasReais(
+                    resposta?.data_abertura_vaga,
+                    resposta?.data_fechamento_vaga,
+                    e.dias_em_aberto || 0
+                );
                 return {
                     id_evento: e.id_evento,
                     nome: e.nome || '-',

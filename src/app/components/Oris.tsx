@@ -627,21 +627,27 @@ export function Oris() {
             {/* Modal Body */}
             <div className="px-6 py-4 max-h-96 overflow-y-auto">
               <div className="space-y-2">
-                {columns.map((col) => {
-                  const label = getColumnLabels()[col] || col;
-                  return (
-                    <label key={col} className="flex items-center gap-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={visibleColumns.has(col)}
-                        onChange={() => toggleColumn(col)}
-                        className="w-4 h-4 rounded border-slate-300 dark:border-slate-600"
-                      />
-                      <span className="text-sm text-slate-700 dark:text-slate-300 flex-1">{label}</span>
-                      <span className="text-xs text-slate-400">{col}</span>
-                    </label>
-                  );
-                })}
+                {[...columns]
+                  .sort((a, b) => {
+                    const labelA = getColumnLabels()[a] || a;
+                    const labelB = getColumnLabels()[b] || b;
+                    return labelA.localeCompare(labelB, 'pt-BR');
+                  })
+                  .map((col) => {
+                    const label = getColumnLabels()[col] || col;
+                    return (
+                      <label key={col} className="flex items-center gap-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={visibleColumns.has(col)}
+                          onChange={() => toggleColumn(col)}
+                          className="w-4 h-4 rounded border-slate-300 dark:border-slate-600"
+                        />
+                        <span className="text-sm text-slate-700 dark:text-slate-300 flex-1">{label}</span>
+                        <span className="text-xs text-slate-400">{col}</span>
+                      </label>
+                    );
+                  })}
               </div>
             </div>
 

@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { Dashboard } from './components/Dashboard';
 import { TlpPanel } from './components/TlpPanel';
+import { TlpComparativo } from './components/TlpComparativo';
 import { VacancyManagement } from './components/VacancyManagement';
 import { Requisitions } from './components/Requisitions';
 import { DatabaseDemo } from './components/DatabaseDemo';
@@ -55,6 +56,7 @@ function AppContent() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/tlp" element={<TlpPanel />} />
+            <Route path="/tlp/comparativo" element={<TlpComparativo />} />
             <Route path="/gestao-vagas" element={<VacancyManagement />} />
             <Route path="/agenda-analistas" element={<AgendaAnalistas />} />
             <Route path="/requisitions" element={<Requisitions />} />

@@ -3,7 +3,7 @@ import ReactConfetti from 'react-confetti';
 import { X, Loader2, AlertCircle, Search, CheckCircle, ChevronsUpDown, Check, FileSpreadsheet, Copy } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { formatarData, parseBrazilianDateToISO } from '@/lib/column-formatters';
-import { VagaAtribuida } from '@/app/services/agendaAnalistasService';
+import { VagaAtribuida, calcularDiasReais as calcularDiasReaisService } from '@/app/services/agendaAnalistasService';
 import { Badge } from './ui/badge';
 import { buscarSugestoesSubstitutos, salvarResposta } from '@/app/services/demissoesService';
 import { buscarRegistrosBIByNome, normBI } from '@/app/services/baseBiService';
@@ -425,16 +425,11 @@ export function VagaDetalhesModal({ vaga, onClose, onVagaFechada }: VagaDetalhes
     return () => clearTimeout(timer);
   }, [searchSubstituto]);
 
-  const calcularDiasReais = (): number => {
-    if (detalhes.resposta?.data_fechamento_vaga && detalhes.resposta?.data_abertura_vaga) {
-      const abertura = new Date(detalhes.resposta.data_abertura_vaga);
-      const fechamento = new Date(detalhes.resposta.data_fechamento_vaga);
-      return Math.floor((fechamento.getTime() - abertura.getTime()) / (1000 * 60 * 60 * 24));
-    }
-    return vaga.dias_em_aberto;
-  };
-
-  const diasReais = calcularDiasReais();
+  const diasReais = calcularDiasReaisService(
+    detalhes.resposta?.data_abertura_vaga,
+    detalhes.resposta?.data_fechamento_vaga,
+    vaga.dias_em_aberto
+  );
   const vagaFechada = detalhes.resposta?.vaga_preenchida === 'SIM';
   const statusBadge = getStatusBadge(diasReais);
 
