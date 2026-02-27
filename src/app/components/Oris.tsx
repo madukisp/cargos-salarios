@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Download, Search, Settings, X, GripVertical, ArrowUp, ArrowDown, Filter, ChevronDown } from 'lucide-react';
+import { Download, Search, Settings, X, GripVertical, ArrowUp, ArrowDown, Filter, ChevronDown, Check } from 'lucide-react';
 import { useOrisFuncionarios, useOrisFantasias, useOrisCentrosCusto, useOrisCargos } from '../hooks/useOrisFuncionarios';
 import { getVisibleColumnFields, getColumnLabels } from '@/lib/columns.config';
 import { getFormattedValue } from '@/lib/column-formatters';
@@ -8,7 +8,7 @@ import { FuncionarioProfile } from './FuncionarioProfile';
 const COLUMNS_STORAGE_KEY = 'oris_columns_order';
 const VISIBLE_COLUMNS_STORAGE_KEY = 'oris_visible_columns';
 
-export function Oris() {
+export default function Oris() {
   const [searchNome, setSearchNome] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'ativos' | 'demitidos'>('todos');
@@ -35,13 +35,41 @@ export function Oris() {
   const [showFantasiaFilter, setShowFantasiaFilter] = useState(false);
   const [showCentroCustoFilter, setShowCentroCustoFilter] = useState(false);
   const [showCargoFilter, setShowCargoFilter] = useState(false);
+  const [fantasiaSearch, setFantasiaSearch] = useState('');
+  const [ccSearch, setCcSearch] = useState('');
+  const [cargoSearch, setCargoSearch] = useState('');
   const [selectedFuncionario, setSelectedFuncionario] = useState<any | null>(null);
 
   // Obter colunas configuradas (memoizado para evitar infinite loop)
   const configuredFields = useMemo(() => getVisibleColumnFields(), []);
 
   // Obter lista única de fantasias usando o novo hook
-  const uniqueFantasias = useOrisFantasias();
+  const rawUniqueFantasias = useOrisFantasias();
+
+  // Ordenar conforme pedido do usuário: contratos específicos primeiro, depois ordem alfabética
+  const uniqueFantasias = useMemo(() => {
+    const customOrder = [
+      'SBCD - REDE ASSIST. NORTE-SP',
+      'SBCD - AME CRI ZN',
+      'SBCD - CORPORATIVO',
+      'SBCD - PAI ZN'
+    ];
+
+    return [...rawUniqueFantasias].sort((a, b) => {
+      const aIndex = customOrder.indexOf(a);
+      const bIndex = customOrder.indexOf(b);
+
+      // Se ambos estão na ordem personalizada, segue a posição no array customOrder
+      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+      // Se apenas 'a' está na ordem personalizada, ele vem antes
+      if (aIndex !== -1) return -1;
+      // Se apenas 'b' está na ordem personalizada, ele vem antes
+      if (bIndex !== -1) return 1;
+
+      // Caso contrário, ordem alfabética normal
+      return a.localeCompare(b, 'pt-BR');
+    });
+  }, [rawUniqueFantasias]);
 
   // Obter centros de custo filtrados pelos contratos selecionados
   const availableCentrosCusto = useOrisCentrosCusto(Array.from(selectedFantasias));
@@ -303,167 +331,248 @@ export function Oris() {
           </button>
         </div>
 
-        {/* Filtro Fantasias */}
-        <div className="space-y-2">
-          <button
-            onClick={() => setShowFantasiaFilter(!showFantasiaFilter)}
-            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
-          >
-            <Filter className="w-4 h-4" />
-            Filtrar por Contrato
-            {selectedFantasias.size > 0 && (
-              <span className="ml-2 px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full">
-                {selectedFantasias.size}
-              </span>
-            )}
-            <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${showFantasiaFilter ? 'rotate-180' : ''}`} />
-          </button>
+        {/* Filtros Dropdowns */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Filtro Fantasias */}
+          <div className="relative group">
+            <button
+              onClick={() => setShowFantasiaFilter(!showFantasiaFilter)}
+              className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors w-full md:w-auto ${showFantasiaFilter
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                }`}
+            >
+              <Filter className="w-4 h-4" />
+              Filtrar por Contrato
+              {selectedFantasias.size > 0 && (
+                <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${showFantasiaFilter ? 'bg-white text-blue-600' : 'bg-blue-600 text-white'}`}>
+                  {selectedFantasias.size}
+                </span>
+              )}
+              <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${showFantasiaFilter ? 'rotate-180' : ''}`} />
+            </button>
 
-          {showFantasiaFilter && (
-            <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2">
-              <div className="flex flex-wrap gap-2">
-                {uniqueFantasias.map((fantasia) => (
-                  <button
-                    key={fantasia}
-                    onClick={() => toggleFantasia(fantasia)}
-                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${selectedFantasias.has(fantasia)
-                      ? 'bg-blue-600 dark:bg-blue-700 text-white'
-                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:border-blue-500 dark:hover:border-blue-500'
-                      }`}
-                  >
-                    {fantasia}
-                  </button>
-                ))}
-              </div>
-              <div className="flex gap-2 pt-2">
-                <button
-                  onClick={() => setSelectedFantasias(new Set(uniqueFantasias))}
-                  className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                >
-                  Selecionar Todos
-                </button>
-                <button
-                  onClick={() => setSelectedFantasias(new Set())}
-                  className="text-xs px-2 py-1 bg-slate-400 dark:bg-slate-600 text-white rounded hover:bg-slate-500 dark:hover:bg-slate-700 transition-colors"
-                >
-                  Limpar Filtro
-                </button>
-              </div>
+            {showFantasiaFilter && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => {
+                    setShowFantasiaFilter(false);
+                    setFantasiaSearch('');
+                  }}
+                />
+                <div className="absolute top-full left-0 z-50 mt-2 w-full md:w-80 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2 animate-in fade-in zoom-in duration-200">
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Pesquisar contrato..."
+                      value={fantasiaSearch}
+                      onChange={(e) => setFantasiaSearch(e.target.value)}
+                      className="w-full pl-8 pr-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="max-h-60 overflow-y-auto space-y-0.5 custom-scrollbar">
+                    {uniqueFantasias
+                      .filter(f => f.toLowerCase().includes(fantasiaSearch.toLowerCase()))
+                      .map((fantasia) => (
+                        <div
+                          key={fantasia}
+                          onClick={() => toggleFantasia(fantasia)}
+                          className="flex items-center justify-between px-2 py-1.5 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 group transition-colors"
+                        >
+                          <span className="text-xs text-slate-700 dark:text-slate-200 truncate pr-2">
+                            {fantasia}
+                          </span>
+                          {selectedFantasias.has(fantasia) && (
+                            <Check className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                          )}
+                        </div>
+                      ))}
+                    {uniqueFantasias.filter(f => f.toLowerCase().includes(fantasiaSearch.toLowerCase())).length === 0 && (
+                      <div className="px-2 py-4 text-center text-xs text-slate-500">
+                        Nenhum contrato encontrado
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                    <button
+                      onClick={() => setSelectedFantasias(new Set(uniqueFantasias))}
+                      className="flex-1 text-[10px] px-2 py-1.5 bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-colors font-bold uppercase tracking-wider"
+                    >
+                      Todos
+                    </button>
+                    <button
+                      onClick={() => setSelectedFantasias(new Set())}
+                      className="flex-1 text-[10px] px-2 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors font-bold uppercase tracking-wider"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Filtro Centro de Custo */}
+          {selectedFantasias.size > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setShowCentroCustoFilter(!showCentroCustoFilter)}
+                className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors w-full md:w-auto ${showCentroCustoFilter
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                  }`}
+              >
+                <Filter className="w-4 h-4" />
+                Filtrar por Centro de Custo
+                {selectedCentrosCusto.size > 0 && (
+                  <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${showCentroCustoFilter ? 'bg-white text-purple-600' : 'bg-purple-600 text-white'}`}>
+                    {selectedCentrosCusto.size}
+                  </span>
+                )}
+                <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${showCentroCustoFilter ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showCentroCustoFilter && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => {
+                      setShowCentroCustoFilter(false);
+                      setCcSearch('');
+                    }}
+                  />
+                  <div className="absolute top-full left-0 z-50 mt-2 w-full md:w-80 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2 animate-in fade-in zoom-in duration-200">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Pesquisar Centro de Custo..."
+                        value={ccSearch}
+                        onChange={(e) => setCcSearch(e.target.value)}
+                        className="w-full pl-8 pr-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-purple-500"
+                        autoFocus
+                      />
+                    </div>
+                    <div className="max-h-60 overflow-y-auto space-y-0.5 custom-scrollbar">
+                      {availableCentrosCusto
+                        .filter(cc => cc.toLowerCase().includes(ccSearch.toLowerCase()))
+                        .map((cc) => (
+                          <div
+                            key={cc}
+                            onClick={() => toggleCentroCusto(cc)}
+                            className="flex items-center justify-between px-2 py-1.5 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                          >
+                            <span className="text-xs text-slate-700 dark:text-slate-200 truncate pr-2">
+                              {cc}
+                            </span>
+                            {selectedCentrosCusto.has(cc) && (
+                              <Check className="w-4 h-4 text-purple-600 flex-shrink-0" />
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                    <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                      <button
+                        onClick={() => setSelectedCentrosCusto(new Set(availableCentrosCusto))}
+                        className="flex-1 text-[10px] px-2 py-1.5 bg-purple-50 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 rounded hover:bg-purple-100 dark:hover:bg-purple-900/60 transition-colors font-bold uppercase tracking-wider"
+                      >
+                        Todos
+                      </button>
+                      <button
+                        onClick={() => setSelectedCentrosCusto(new Set())}
+                        className="flex-1 text-[10px] px-2 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors font-bold uppercase tracking-wider"
+                      >
+                        Limpar
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Filtro Cargo */}
+          {selectedFantasias.size > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setShowCargoFilter(!showCargoFilter)}
+                className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors w-full md:w-auto ${showCargoFilter
+                  ? 'bg-teal-600 text-white'
+                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                  }`}
+              >
+                <Filter className="w-4 h-4" />
+                Filtrar por Cargo
+                {selectedCargos.size > 0 && (
+                  <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${showCargoFilter ? 'bg-white text-teal-600' : 'bg-teal-600 text-white'}`}>
+                    {selectedCargos.size}
+                  </span>
+                )}
+                <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${showCargoFilter ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showCargoFilter && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => {
+                      setShowCargoFilter(false);
+                      setCargoSearch('');
+                    }}
+                  />
+                  <div className="absolute top-full left-0 z-50 mt-2 w-full md:w-80 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2 animate-in fade-in zoom-in duration-200">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Pesquisar Cargo..."
+                        value={cargoSearch}
+                        onChange={(e) => setCargoSearch(e.target.value)}
+                        className="w-full pl-8 pr-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-teal-500"
+                        autoFocus
+                      />
+                    </div>
+                    <div className="max-h-60 overflow-y-auto space-y-0.5 custom-scrollbar">
+                      {availableCargos
+                        .filter(c => c.toLowerCase().includes(cargoSearch.toLowerCase()))
+                        .map((cargo) => (
+                          <div
+                            key={cargo}
+                            onClick={() => toggleCargo(cargo)}
+                            className="flex items-center justify-between px-2 py-1.5 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                          >
+                            <span className="text-xs text-slate-700 dark:text-slate-200 truncate pr-2">
+                              {cargo}
+                            </span>
+                            {selectedCargos.has(cargo) && (
+                              <Check className="w-4 h-4 text-teal-600 flex-shrink-0" />
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                    <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                      <button
+                        onClick={() => setSelectedCargos(new Set(availableCargos))}
+                        className="flex-1 text-[10px] px-2 py-1.5 bg-teal-50 dark:bg-teal-900/40 text-teal-600 dark:text-teal-400 rounded hover:bg-teal-100 dark:hover:bg-teal-900/60 transition-colors font-bold uppercase tracking-wider"
+                      >
+                        Todos
+                      </button>
+                      <button
+                        onClick={() => setSelectedCargos(new Set())}
+                        className="flex-1 text-[10px] px-2 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors font-bold uppercase tracking-wider"
+                      >
+                        Limpar
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
-
-        {/* Filtro Centro de Custo */}
-        {selectedFantasias.size > 0 && (
-          <div className="space-y-2">
-            <button
-              onClick={() => setShowCentroCustoFilter(!showCentroCustoFilter)}
-              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
-            >
-              <Filter className="w-4 h-4" />
-              Filtrar por Centro de Custo
-              {selectedCentrosCusto.size > 0 && (
-                <span className="ml-2 px-2 py-0.5 bg-purple-600 text-white text-xs rounded-full">
-                  {selectedCentrosCusto.size}
-                </span>
-              )}
-              <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${showCentroCustoFilter ? 'rotate-180' : ''}`} />
-            </button>
-
-            {showCentroCustoFilter && (
-              <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2">
-                {availableCentrosCusto.length === 0 ? (
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Carregando centros de custo...</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {availableCentrosCusto.map((cc) => (
-                      <button
-                        key={cc}
-                        onClick={() => toggleCentroCusto(cc)}
-                        className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${selectedCentrosCusto.has(cc)
-                          ? 'bg-purple-600 dark:bg-purple-700 text-white'
-                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:border-purple-500 dark:hover:border-purple-500'
-                          }`}
-                      >
-                        {cc}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div className="flex gap-2 pt-2">
-                  <button
-                    onClick={() => setSelectedCentrosCusto(new Set(availableCentrosCusto))}
-                    className="text-xs px-2 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors"
-                  >
-                    Selecionar Todos
-                  </button>
-                  <button
-                    onClick={() => setSelectedCentrosCusto(new Set())}
-                    className="text-xs px-2 py-1 bg-slate-400 dark:bg-slate-600 text-white rounded hover:bg-slate-500 dark:hover:bg-slate-700 transition-colors"
-                  >
-                    Limpar Filtro
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Filtro Cargo */}
-        {selectedFantasias.size > 0 && (
-          <div className="space-y-2">
-            <button
-              onClick={() => setShowCargoFilter(!showCargoFilter)}
-              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
-            >
-              <Filter className="w-4 h-4" />
-              Filtrar por Cargo
-              {selectedCargos.size > 0 && (
-                <span className="ml-2 px-2 py-0.5 bg-teal-600 text-white text-xs rounded-full">
-                  {selectedCargos.size}
-                </span>
-              )}
-              <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${showCargoFilter ? 'rotate-180' : ''}`} />
-            </button>
-
-            {showCargoFilter && (
-              <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2">
-                {availableCargos.length === 0 ? (
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Carregando cargos...</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {availableCargos.map((cargo) => (
-                      <button
-                        key={cargo}
-                        onClick={() => toggleCargo(cargo)}
-                        className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${selectedCargos.has(cargo)
-                          ? 'bg-teal-600 dark:bg-teal-700 text-white'
-                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:border-teal-500 dark:hover:border-teal-500'
-                          }`}
-                      >
-                        {cargo}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div className="flex gap-2 pt-2">
-                  <button
-                    onClick={() => setSelectedCargos(new Set(availableCargos))}
-                    className="text-xs px-2 py-1 bg-teal-600 text-white rounded hover:bg-teal-700 transition-colors"
-                  >
-                    Selecionar Todos
-                  </button>
-                  <button
-                    onClick={() => setSelectedCargos(new Set())}
-                    className="text-xs px-2 py-1 bg-slate-400 dark:bg-slate-600 text-white rounded hover:bg-slate-500 dark:hover:bg-slate-700 transition-colors"
-                  >
-                    Limpar Filtro
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Busca Geral */}
         <div className="relative">
