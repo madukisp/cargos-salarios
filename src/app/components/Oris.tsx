@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Download, Search, Settings, X, GripVertical, Eye, EyeOff, ArrowUp, ArrowDown, Filter, ChevronDown } from 'lucide-react';
+import { Download, Search, Settings, X, GripVertical, ArrowUp, ArrowDown, Filter, ChevronDown } from 'lucide-react';
 import { useOrisFuncionarios, useOrisFantasias, useOrisCentrosCusto, useOrisCargos } from '../hooks/useOrisFuncionarios';
-import { getVisibleColumnFields, getColumnLabels, getOrderedColumns } from '@/lib/columns.config';
+import { getVisibleColumnFields, getColumnLabels } from '@/lib/columns.config';
 import { getFormattedValue } from '@/lib/column-formatters';
 import { FuncionarioProfile } from './FuncionarioProfile';
 
@@ -53,8 +53,8 @@ export function Oris() {
   useEffect(() => {
     if (initialColumns.length === 0) return;
 
-    // Filtrar colunas iniciais para apenas as configuradas
-    const filteredColumns = initialColumns.filter(col => configuredFields.includes(col));
+    // Usar as colunas configuradas como base para a lista disponível
+    const filteredColumns = configuredFields;
 
     const savedOrder = localStorage.getItem(COLUMNS_STORAGE_KEY);
     const savedVisible = localStorage.getItem(VISIBLE_COLUMNS_STORAGE_KEY);

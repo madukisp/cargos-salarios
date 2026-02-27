@@ -75,6 +75,7 @@ export function FuncionarioProfile({ funcionario, onClose, onBack }: Funcionario
         { label: 'Tipo de Funcionário', value: getFormattedValue('tipo_funcionario', funcionario.tipo_funcionario), icon: User },
         { label: 'Nome Fantasia', value: getFormattedValue('nome_fantasia', funcionario.nome_fantasia), icon: Briefcase },
         { label: 'Centro de Custo', value: getFormattedValue('centro_custo', funcionario.centro_custo), icon: Briefcase },
+        { label: 'Escala', value: getFormattedValue('escala', funcionario.escala), icon: Clock },
       ],
     },
     {
@@ -208,7 +209,7 @@ export function FuncionarioProfile({ funcionario, onClose, onBack }: Funcionario
                                   className={`ml-1 p-3 rounded-lg border text-sm ${isAtual
                                     ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
                                     : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'
-                                  } ${oc.id ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                                    } ${oc.id ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
                                   onClick={() => oc.id && abrirPerfilVinculado(oc.id)}
                                 >
                                   <div className="flex items-start justify-between gap-2">
@@ -302,8 +303,8 @@ export function FuncionarioProfile({ funcionario, onClose, onBack }: Funcionario
                           </div>
                           <div className="flex items-center gap-3 mt-2">
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${rastreio.substituidoPor.tipo_evento === 'DEMISSAO'
-                                ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                                : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                              ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                              : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                               }`}>
                               {rastreio.substituidoPor.tipo_evento === 'DEMISSAO' ? 'Demissão' : 'Afastamento'}
                             </span>
@@ -342,8 +343,8 @@ export function FuncionarioProfile({ funcionario, onClose, onBack }: Funcionario
                           </div>
                           <div className="flex items-center gap-3 mt-2">
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${rastreio.substituiuQuem.tipo_evento === 'DEMISSAO'
-                                ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                                : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                              ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                              : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                               }`}>
                               {rastreio.substituiuQuem.tipo_evento === 'DEMISSAO' ? 'Demissão' : 'Afastamento'}
                             </span>
