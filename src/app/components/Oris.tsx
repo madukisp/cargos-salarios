@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Download, Search, Settings, X, GripVertical, ArrowUp, ArrowDown, Filter, ChevronDown, Check } from 'lucide-react';
-import { useOrisFuncionarios, useOrisFantasias, useOrisCentrosCusto, useOrisCargos, useOrisSituacoes } from '../hooks/useOrisFuncionarios';
+import { useOrisFuncionarios, useOrisFantasias, useOrisCentrosCusto, useOrisCargos, useOrisSituacoes, useOrisCargaHorariaSemanal } from '../hooks/useOrisFuncionarios';
 import { getVisibleColumnFields, getColumnLabels } from '@/lib/columns.config';
 import { getFormattedValue } from '@/lib/column-formatters';
 import { FuncionarioProfile } from './FuncionarioProfile';
@@ -16,6 +16,7 @@ function Oris() {
   const [selectedCentrosCusto, setSelectedCentrosCusto] = useState<Set<string>>(new Set());
   const [selectedCargos, setSelectedCargos] = useState<Set<string>>(new Set());
   const [selectedSituacoes, setSelectedSituacoes] = useState<Set<string>>(new Set());
+  const [selectedCargaHoraria, setSelectedCargaHoraria] = useState<Set<string>>(new Set());
 
   // Passar filtros para o hook
   const { data, columns: initialColumns, loading, error, totalCount } = useOrisFuncionarios({
@@ -25,7 +26,8 @@ function Oris() {
     fantasias: Array.from(selectedFantasias),
     centrosCusto: Array.from(selectedCentrosCusto),
     cargos: Array.from(selectedCargos),
-    situacoes: Array.from(selectedSituacoes)
+    situacoes: Array.from(selectedSituacoes),
+    cargaHorariaSemanal: Array.from(selectedCargaHoraria)
   });
 
   const [columns, setColumns] = useState<string[]>([]);
@@ -38,10 +40,12 @@ function Oris() {
   const [showCentroCustoFilter, setShowCentroCustoFilter] = useState(false);
   const [showCargoFilter, setShowCargoFilter] = useState(false);
   const [showSituacaoFilter, setShowSituacaoFilter] = useState(false);
+  const [showCargaHorariaFilter, setShowCargaHorariaFilter] = useState(false);
   const [fantasiaSearch, setFantasiaSearch] = useState('');
   const [ccSearch, setCcSearch] = useState('');
   const [cargoSearch, setCargoSearch] = useState('');
   const [situacaoSearch, setSituacaoSearch] = useState('');
+  const [cargaHorariaSearch, setCargaHorariaSearch] = useState('');
   const [selectedFuncionario, setSelectedFuncionario] = useState<any | null>(null);
 
   // Obter colunas configuradas (memoizado para evitar infinite loop)
@@ -83,6 +87,13 @@ function Oris() {
 
   // Obter situações disponíveis — filtradas por contratos, centros de custo e cargos selecionados (se houver)
   const availableSituacoes = useOrisSituacoes(
+    Array.from(selectedFantasias),
+    Array.from(selectedCentrosCusto),
+    Array.from(selectedCargos)
+  );
+
+  // Obter cargas horárias semanais disponíveis — filtradas pelo contexto atual
+  const availableCargaHoraria = useOrisCargaHorariaSemanal(
     Array.from(selectedFantasias),
     Array.from(selectedCentrosCusto),
     Array.from(selectedCargos)
@@ -204,6 +215,17 @@ function Oris() {
     setSelectedSituacoes(newSituacoes);
   };
 
+  // Toggle carga horária semanal selecionada
+  const toggleCargaHoraria = (carga: string) => {
+    const newCargaHoraria = new Set(selectedCargaHoraria);
+    if (newCargaHoraria.has(carga)) {
+      newCargaHoraria.delete(carga);
+    } else {
+      newCargaHoraria.add(carga);
+    }
+    setSelectedCargaHoraria(newCargaHoraria);
+  };
+
   // Limpar todos os filtros
   const clearAllFilters = () => {
     setSearchNome('');
@@ -213,6 +235,7 @@ function Oris() {
     setSelectedCentrosCusto(new Set());
     setSelectedCargos(new Set());
     setSelectedSituacoes(new Set());
+    setSelectedCargaHoraria(new Set());
   };
 
   // Toggle visibilidade de coluna
@@ -673,8 +696,85 @@ function Oris() {
             )}
           </div>
 
+          {/* Filtro Carga Horária Semanal */}
+          <div className="relative">
+            <button
+              onClick={() => setShowCargaHorariaFilter(!showCargaHorariaFilter)}
+              className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors w-full md:w-auto ${showCargaHorariaFilter
+                ? 'bg-indigo-600 text-white'
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                }`}
+            >
+              <Filter className="w-4 h-4" />
+              Filtrar por C. H. Semanal
+              {selectedCargaHoraria.size > 0 && (
+                <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${showCargaHorariaFilter ? 'bg-white text-indigo-600' : 'bg-indigo-600 text-white'}`}>
+                  {selectedCargaHoraria.size}
+                </span>
+              )}
+              <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${showCargaHorariaFilter ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showCargaHorariaFilter && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => {
+                    setShowCargaHorariaFilter(false);
+                    setCargaHorariaSearch('');
+                  }}
+                />
+                <div className="absolute top-full left-0 z-50 mt-2 w-full md:w-64 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2 animate-in fade-in zoom-in duration-200">
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Pesquisar horas..."
+                      value={cargaHorariaSearch}
+                      onChange={(e) => setCargaHorariaSearch(e.target.value)}
+                      className="w-full pl-8 pr-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="max-h-60 overflow-y-auto space-y-0.5 custom-scrollbar">
+                    {availableCargaHoraria
+                      .filter(c => String(c).includes(cargaHorariaSearch))
+                      .map((carga) => (
+                        <div
+                          key={carga}
+                          onClick={() => toggleCargaHoraria(String(carga))}
+                          className="flex items-center justify-between px-2 py-1.5 rounded cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                        >
+                          <span className="text-xs text-slate-700 dark:text-slate-200 pr-2">
+                            {carga}h/semana
+                          </span>
+                          {selectedCargaHoraria.has(String(carga)) && (
+                            <Check className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                  <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                    <button
+                      onClick={() => setSelectedCargaHoraria(new Set(availableCargaHoraria.map(String)))}
+                      className="flex-1 text-[10px] px-2 py-1.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors font-bold uppercase tracking-wider"
+                    >
+                      Todos
+                    </button>
+                    <button
+                      onClick={() => setSelectedCargaHoraria(new Set())}
+                      className="flex-1 text-[10px] px-2 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors font-bold uppercase tracking-wider"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
           {/* Botão Limpar Tudo */}
-          {(selectedFantasias.size > 0 || selectedCentrosCusto.size > 0 || selectedCargos.size > 0 || selectedSituacoes.size > 0 || searchNome || searchTerm || statusFilter !== 'todos') && (
+          {(selectedFantasias.size > 0 || selectedCentrosCusto.size > 0 || selectedCargos.size > 0 || selectedSituacoes.size > 0 || selectedCargaHoraria.size > 0 || searchNome || searchTerm || statusFilter !== 'todos') && (
             <button
               onClick={clearAllFilters}
               className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors border border-red-100 dark:border-red-900/50 ml-auto"
