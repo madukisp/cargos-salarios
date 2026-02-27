@@ -10,6 +10,8 @@ export interface OrisFilters {
   cargos?: string[];
   situacoes?: string[];
   cargaHorariaSemanal?: string[];
+  cargaHorariaMensal?: string[];
+  escalas?: string[];
 }
 
 export function useOrisFuncionarios(filters: OrisFilters = {}) {
@@ -71,6 +73,14 @@ export function useOrisFuncionarios(filters: OrisFilters = {}) {
           query = query.in('carga_horaria_semanal', filters.cargaHorariaSemanal);
         }
 
+        if (filters.cargaHorariaMensal && filters.cargaHorariaMensal.length > 0) {
+          query = query.in('carga_horaria_mensal', filters.cargaHorariaMensal);
+        }
+
+        if (filters.escalas && filters.escalas.length > 0) {
+          query = query.in('escala', filters.escalas);
+        }
+
         if (filters.searchTerm) {
           const term = `%${filters.searchTerm}%`;
           // Busca em colunas principais para performance
@@ -119,7 +129,7 @@ export function useOrisFuncionarios(filters: OrisFilters = {}) {
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [filters.searchNome, filters.searchTerm, filters.statusFilter, JSON.stringify(filters.fantasias), JSON.stringify(filters.centrosCusto), JSON.stringify(filters.cargos), JSON.stringify(filters.situacoes), JSON.stringify(filters.cargaHorariaSemanal)]);
+  }, [filters.searchNome, filters.searchTerm, filters.statusFilter, JSON.stringify(filters.fantasias), JSON.stringify(filters.centrosCusto), JSON.stringify(filters.cargos), JSON.stringify(filters.situacoes), JSON.stringify(filters.cargaHorariaSemanal), JSON.stringify(filters.cargaHorariaMensal), JSON.stringify(filters.escalas)]);
 
   return { data, columns, loading, error, totalCount };
 }
@@ -271,4 +281,66 @@ export function useOrisCargaHorariaSemanal(
   }, [JSON.stringify(fantasias), JSON.stringify(centrosCusto), JSON.stringify(cargos)]);
 
   return cargasHorarias;
+}
+
+export function useOrisCargaHorariaMensal(
+  fantasias: string[] = [],
+  centrosCusto: string[] = [],
+  cargos: string[] = []
+) {
+  const [cargasMensais, setCargasMensais] = useState<string[]>([]);
+
+  useEffect(() => {
+    async function load() {
+      let query = supabase
+        .from('oris_funcionarios')
+        .select('carga_horaria_mensal');
+
+      if (fantasias.length > 0) query = query.in('nome_fantasia', fantasias);
+      if (centrosCusto.length > 0) query = query.in('centro_custo', centrosCusto);
+      if (cargos.length > 0) query = query.in('cargo', cargos);
+
+      const { data, error } = await query;
+
+      if (!error && data) {
+        const unique = Array.from(
+          new Set(data.map(d => d.carga_horaria_mensal).filter(v => v !== null && v !== undefined))
+        ).sort((a: any, b: any) => Number(a) - Number(b)) as string[];
+        setCargasMensais(unique);
+      }
+    }
+    load();
+  }, [JSON.stringify(fantasias), JSON.stringify(centrosCusto), JSON.stringify(cargos)]);
+
+  return cargasMensais;
+}
+
+export function useOrisEscalas(
+  fantasias: string[] = [],
+  centrosCusto: string[] = [],
+  cargos: string[] = []
+) {
+  const [escalas, setEscalas] = useState<string[]>([]);
+
+  useEffect(() => {
+    async function load() {
+      let query = supabase
+        .from('oris_funcionarios')
+        .select('escala');
+
+      if (fantasias.length > 0) query = query.in('nome_fantasia', fantasias);
+      if (centrosCusto.length > 0) query = query.in('centro_custo', centrosCusto);
+      if (cargos.length > 0) query = query.in('cargo', cargos);
+
+      const { data, error } = await query;
+
+      if (!error && data) {
+        const unique = Array.from(new Set(data.map(d => d.escala).filter(Boolean))).sort() as string[];
+        setEscalas(unique);
+      }
+    }
+    load();
+  }, [JSON.stringify(fantasias), JSON.stringify(centrosCusto), JSON.stringify(cargos)]);
+
+  return escalas;
 }
