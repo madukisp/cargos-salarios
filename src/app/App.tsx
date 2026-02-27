@@ -7,7 +7,7 @@ import { TlpComparativo } from './components/TlpComparativo';
 import { VacancyManagement } from './components/VacancyManagement';
 import { Requisitions } from './components/Requisitions';
 import { DatabaseDemo } from './components/DatabaseDemo';
-import Oris from './components/Oris';
+import { Oris } from './components/Oris';
 import { EmployeeSearch } from './components/EmployeeSearch';
 import { Login } from './components/Login';
 import { ThemeProvider } from './components/ThemeProvider';

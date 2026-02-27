@@ -8,7 +8,7 @@ import { FuncionarioProfile } from './FuncionarioProfile';
 const COLUMNS_STORAGE_KEY = 'oris_columns_order';
 const VISIBLE_COLUMNS_STORAGE_KEY = 'oris_visible_columns';
 
-export default function Oris() {
+function Oris() {
   const [searchNome, setSearchNome] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'ativos' | 'demitidos'>('todos');
@@ -75,14 +75,18 @@ export default function Oris() {
     });
   }, [rawUniqueFantasias]);
 
-  // Obter centros de custo usando o novo hook (sem hierarquia)
-  const availableCentrosCusto = useOrisCentrosCusto();
+  // Obter centros de custo disponíveis — filtrados pelos contratos selecionados (se houver)
+  const availableCentrosCusto = useOrisCentrosCusto(Array.from(selectedFantasias));
 
-  // Obter cargos usando o novo hook (sem hierarquia)
-  const availableCargos = useOrisCargos();
+  // Obter cargos disponíveis — filtrados por contratos e centros de custo selecionados (se houver)
+  const availableCargos = useOrisCargos(Array.from(selectedFantasias), Array.from(selectedCentrosCusto));
 
-  // Obter situações usando o novo hook (sem hierarquia)
-  const availableSituacoes = useOrisSituacoes();
+  // Obter situações disponíveis — filtradas por contratos, centros de custo e cargos selecionados (se houver)
+  const availableSituacoes = useOrisSituacoes(
+    Array.from(selectedFantasias),
+    Array.from(selectedCentrosCusto),
+    Array.from(selectedCargos)
+  );
 
   // Carregar preferências do localStorage e configuração de colunas
   useEffect(() => {
@@ -198,6 +202,17 @@ export default function Oris() {
       newSituacoes.add(situacao);
     }
     setSelectedSituacoes(newSituacoes);
+  };
+
+  // Limpar todos os filtros
+  const clearAllFilters = () => {
+    setSearchNome('');
+    setSearchTerm('');
+    setStatusFilter('todos');
+    setSelectedFantasias(new Set());
+    setSelectedCentrosCusto(new Set());
+    setSelectedCargos(new Set());
+    setSelectedSituacoes(new Set());
   };
 
   // Toggle visibilidade de coluna
@@ -582,7 +597,6 @@ export default function Oris() {
             )}
           </div>
 
-          {/* Filtro Situação */}
           <div className="relative">
             <button
               onClick={() => setShowSituacaoFilter(!showSituacaoFilter)}
@@ -658,6 +672,17 @@ export default function Oris() {
               </>
             )}
           </div>
+
+          {/* Botão Limpar Tudo */}
+          {(selectedFantasias.size > 0 || selectedCentrosCusto.size > 0 || selectedCargos.size > 0 || selectedSituacoes.size > 0 || searchNome || searchTerm || statusFilter !== 'todos') && (
+            <button
+              onClick={clearAllFilters}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors border border-red-100 dark:border-red-900/50 ml-auto"
+            >
+              <X className="w-4 h-4" />
+              Limpar Todos os Filtros
+            </button>
+          )}
         </div>
 
 
@@ -891,3 +916,5 @@ export default function Oris() {
     </div >
   );
 }
+
+export { Oris };

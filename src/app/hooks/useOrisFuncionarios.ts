@@ -142,14 +142,20 @@ export function useOrisFantasias() {
   return fantasias;
 }
 
-export function useOrisCentrosCusto() {
+export function useOrisCentrosCusto(fantasias: string[] = []) {
   const [centrosCusto, setCentrosCusto] = useState<string[]>([]);
 
   useEffect(() => {
     async function loadCentrosCusto() {
-      const { data, error } = await supabase
+      let query = supabase
         .from('oris_funcionarios')
         .select('centro_custo');
+
+      if (fantasias.length > 0) {
+        query = query.in('nome_fantasia', fantasias);
+      }
+
+      const { data, error } = await query;
 
       if (!error && data) {
         const unique = Array.from(new Set(data.map(d => d.centro_custo).filter(Boolean))).sort();
@@ -157,19 +163,28 @@ export function useOrisCentrosCusto() {
       }
     }
     loadCentrosCusto();
-  }, []);
+  }, [JSON.stringify(fantasias)]);
 
   return centrosCusto;
 }
 
-export function useOrisCargos() {
+export function useOrisCargos(fantasias: string[] = [], centrosCusto: string[] = []) {
   const [cargos, setCargos] = useState<string[]>([]);
 
   useEffect(() => {
     async function loadCargos() {
-      const { data, error } = await supabase
+      let query = supabase
         .from('oris_funcionarios')
         .select('cargo');
+
+      if (fantasias.length > 0) {
+        query = query.in('nome_fantasia', fantasias);
+      }
+      if (centrosCusto.length > 0) {
+        query = query.in('centro_custo', centrosCusto);
+      }
+
+      const { data, error } = await query;
 
       if (!error && data) {
         const unique = Array.from(new Set(data.map(d => d.cargo).filter(Boolean))).sort();
@@ -177,19 +192,31 @@ export function useOrisCargos() {
       }
     }
     loadCargos();
-  }, []);
+  }, [JSON.stringify(fantasias), JSON.stringify(centrosCusto)]);
 
   return cargos;
 }
 
-export function useOrisSituacoes() {
+export function useOrisSituacoes(fantasias: string[] = [], centrosCusto: string[] = [], cargos: string[] = []) {
   const [situacoes, setSituacoes] = useState<string[]>([]);
 
   useEffect(() => {
     async function loadSituacoes() {
-      const { data, error } = await supabase
+      let query = supabase
         .from('oris_funcionarios')
         .select('situacao');
+
+      if (fantasias.length > 0) {
+        query = query.in('nome_fantasia', fantasias);
+      }
+      if (centrosCusto.length > 0) {
+        query = query.in('centro_custo', centrosCusto);
+      }
+      if (cargos.length > 0) {
+        query = query.in('cargo', cargos);
+      }
+
+      const { data, error } = await query;
 
       if (!error && data) {
         const unique = Array.from(new Set(data.map(d => d.situacao).filter(Boolean))).sort();
@@ -197,7 +224,7 @@ export function useOrisSituacoes() {
       }
     }
     loadSituacoes();
-  }, []);
+  }, [JSON.stringify(fantasias), JSON.stringify(centrosCusto), JSON.stringify(cargos)]);
 
   return situacoes;
 }
