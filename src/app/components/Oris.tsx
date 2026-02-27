@@ -432,7 +432,7 @@ function Oris() {
                 }`}
             >
               <Filter className="w-4 h-4" />
-              Filtrar por Contrato
+              Contrato
               {selectedFantasias.size > 0 && (
                 <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${showFantasiaFilter ? 'bg-white text-blue-600' : 'bg-blue-600 text-white'}`}>
                   {selectedFantasias.size}
@@ -514,7 +514,7 @@ function Oris() {
                 }`}
             >
               <Filter className="w-4 h-4" />
-              Filtrar por Centro de Custo
+              Centro de Custo
               {selectedCentrosCusto.size > 0 && (
                 <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${showCentroCustoFilter ? 'bg-white text-purple-600' : 'bg-purple-600 text-white'}`}>
                   {selectedCentrosCusto.size}
@@ -591,7 +591,7 @@ function Oris() {
                 }`}
             >
               <Filter className="w-4 h-4" />
-              Filtrar por Cargo
+              Cargo
               {selectedCargos.size > 0 && (
                 <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${showCargoFilter ? 'bg-white text-teal-600' : 'bg-teal-600 text-white'}`}>
                   {selectedCargos.size}
@@ -667,7 +667,7 @@ function Oris() {
                 }`}
             >
               <Filter className="w-4 h-4" />
-              Filtrar por Situação
+              Situação
               {selectedSituacoes.size > 0 && (
                 <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${showSituacaoFilter ? 'bg-white text-amber-600' : 'bg-amber-600 text-white'}`}>
                   {selectedSituacoes.size}
@@ -744,7 +744,7 @@ function Oris() {
                 }`}
             >
               <Filter className="w-4 h-4" />
-              Filtrar por C. H. Semanal
+              C. H. Semanal
               {selectedCargaHoraria.size > 0 && (
                 <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${showCargaHorariaFilter ? 'bg-white text-indigo-600' : 'bg-indigo-600 text-white'}`}>
                   {selectedCargaHoraria.size}
@@ -821,7 +821,7 @@ function Oris() {
                 }`}
             >
               <Filter className="w-4 h-4" />
-              Filtrar por C. H. Mensal
+              C. H. Mensal
               {selectedCargaMensal.size > 0 && (
                 <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${showCargaMensalFilter ? 'bg-white text-teal-600' : 'bg-teal-600 text-white'}`}>
                   {selectedCargaMensal.size}
@@ -869,7 +869,7 @@ function Oris() {
                 }`}
             >
               <Filter className="w-4 h-4" />
-              Filtrar por Escala
+              Escala
               {selectedEscalas.size > 0 && (
                 <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${showEscalaFilter ? 'bg-white text-rose-600' : 'bg-rose-600 text-white'}`}>
                   {selectedEscalas.size}
